@@ -35,8 +35,10 @@ class ThreadingStrategy {
   // Returns a pointer to the ThreadPool that is to be used for Tile
   // multi-threading.
   ThreadPool* tile_thread_pool() const {
-    return use_tile_threads_ ? thread_pool_.get() : nullptr;
+    return (tile_thread_count_ != 0) ? thread_pool_.get() : nullptr;
   }
+
+  int tile_thread_count() const { return tile_thread_count_; }
 
   // Returns a pointer to the ThreadPool that is to be used within the Tile at
   // index |tile_index| for superblock row multi-threading.
@@ -51,7 +53,7 @@ class ThreadingStrategy {
 
  private:
   std::unique_ptr<ThreadPool> thread_pool_;
-  bool use_tile_threads_;
+  int tile_thread_count_;
   int max_tile_index_for_row_threads_;
 };
 

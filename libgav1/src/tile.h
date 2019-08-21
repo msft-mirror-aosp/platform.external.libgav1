@@ -24,6 +24,7 @@
 #include "src/symbol_decoder_context.h"
 #include "src/utils/array_2d.h"
 #include "src/utils/block_parameters_holder.h"
+#include "src/utils/blocking_counter.h"
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
@@ -64,7 +65,8 @@ class Tile : public Allocable {
        const SegmentationMap* prev_segment_ids, PostFilter* post_filter,
        BlockParametersHolder* block_parameters, Array2D<int16_t>* cdef_index,
        Array2D<TransformSize>* inter_transform_sizes, const dsp::Dsp* dsp,
-       ThreadPool* thread_pool, ResidualBufferPool* residual_buffer_pool);
+       ThreadPool* thread_pool, ResidualBufferPool* residual_buffer_pool,
+       BlockingCounterWithStatus* pending_tiles);
 
   // Move only.
   Tile(Tile&& tile) noexcept;
@@ -74,7 +76,7 @@ class Tile : public Allocable {
 
   struct Block;  // Defined after this class.
 
-  bool Decode();  // 5.11.2.
+  bool Decode(bool is_main_thread);  // 5.11.2.
   const ObuSequenceHeader& sequence_header() const { return sequence_header_; }
   const ObuFrameHeader& frame_header() const { return frame_header_; }
   const RefCountedBuffer& current_frame() const { return current_frame_; }
@@ -92,51 +94,42 @@ class Tile : public Allocable {
   int superblock_columns() const { return superblock_columns_; }
 
  private:
-  struct EntropyContext : public Allocable {
-    static const int kLeft = 0;
-    static const int kTop = 1;
-
-    EntropyContext() = default;
-    ~EntropyContext() = default;
-    EntropyContext(const EntropyContext&) = default;
-    EntropyContext& operator=(const EntropyContext&) = default;
-
-    uint8_t coefficient_level = 0;
-    uint8_t dc_category = 0;
-  };
-
-  // Stores the transform tree state when reading variable size transform trees.
+  // Stores the transform tree state when reading variable size transform trees
+  // and when applying the transform tree. When applying the transform tree,
+  // |depth| is not used.
   struct TransformTreeNode {
-    TransformTreeNode(int row4x4, int column4x4, TransformSize tx_size,
-                      int depth)
-        : row4x4(row4x4),
-          column4x4(column4x4),
-          tx_size(tx_size),
-          depth(depth) {}
+    // The default constructor is invoked by the Stack<TransformTreeNode, n>
+    // constructor. Stack<> does not use the default-constructed elements, so it
+    // is safe for the default constructor to not initialize the members.
+    TransformTreeNode() = default;
+    TransformTreeNode(int x, int y, TransformSize tx_size, int depth = -1)
+        : x(x), y(y), tx_size(tx_size), depth(depth) {}
 
-    int row4x4;
-    int column4x4;
+    int x;
+    int y;
     TransformSize tx_size;
     int depth;
   };
 
+  static constexpr int kBlockDecodedStride = 34;
   // Buffer to facilitate decoding a superblock. When |split_parse_and_decode_|
   // is true, each superblock that is being decoded will get its own instance of
   // this buffer.
   struct SuperBlockBuffer {
-    uint8_t prediction_mask[kMaxSuperBlockSizeInPixels *
-                            kMaxSuperBlockSizeInPixels];
-    // This stores the decoded state of every 4x4 block in a superblock. It has
-    // 1 row/column border on all 4 sides. The left and top borders are handled
-    // by the |BlockDecoded()| function. The bottom and right borders are
-    // included in the array itself (hence the 33x33 dimension instead of
-    // 32x32).
-    bool block_decoded[kMaxPlanes][33][33];
-    // Stores the thresholds for determining if top-right and bottom-left pixels
-    // are available. Equivalent to the sbWidth4 and sbHeight4 variables in
-    // section 5.11.3 of the spec.
-    int block_decoded_width_threshold;
-    int block_decoded_height_threshold;
+    // The size of mask is 128x128.
+    AlignedUniquePtr<uint8_t> prediction_mask;
+    // Buffer used for inter prediction process. The buffers have an alignment
+    // of 8 bytes when allocated.
+    AlignedUniquePtr<uint16_t> prediction_buffer[2];
+    size_t prediction_buffer_size[2] = {};
+    // Equivalent to BlockDecoded array in the spec. This stores the decoded
+    // state of every 4x4 block in a superblock. It has 1 row/column border on
+    // all 4 sides (hence the 34x34 dimension instead of 32x32). Note that the
+    // spec uses "-1" as an index to access the left and top borders. In the
+    // code, we treat the index (1, 1) as equivalent to the spec's (0, 0). So
+    // all accesses into this array will be offset by +1 when compared with the
+    // spec.
+    bool block_decoded[kMaxPlanes][kBlockDecodedStride][kBlockDecodedStride];
     // Buffer used for storing subsampled luma samples needed for CFL
     // prediction. This buffer is used to avoid repetition of the subsampling
     // for the V plane when it is already done for the U plane.
@@ -176,27 +169,28 @@ class Tile : public Allocable {
     std::condition_variable pending_jobs_zero_condvar;
   };
 
+  // Performs member initializations that may fail. Called by Decode().
+  LIBGAV1_MUST_USE_RESULT bool Init();
+
   // Entry point for multi-threaded decoding. This function performs the same
   // functionality as Decode(). The current thread does the "parse" step while
   // the worker threads do the "decode" step.
   bool ThreadedDecode();
 
   // Returns whether or not the prerequisites for decoding the superblock at
-  // |row_index| and |column_index| are satisfied. |threading_parameters.mutex|
-  // must be held when calling this function.
-  bool CanDecode(int row_index, int column_index,
-                 const Array2D<SuperBlockState>& sb_state);
+  // |row_index| and |column_index| are satisfied. |threading_.mutex| must be
+  // held when calling this function.
+  bool CanDecode(int row_index, int column_index) const;
 
   // This function is run by the worker threads when multi-threaded decoding is
   // enabled. Once a superblock is decoded, this function will set the
-  // corresponding |threading->sb_state| entry to kSuperBlockStateDecoded. On
-  // failure, |threading->abort| will be set to true. If at any point
-  // |threading->abort| becomes true, this function will return as early as it
+  // corresponding |threading_.sb_state| entry to kSuperBlockStateDecoded. On
+  // failure, |threading_.abort| will be set to true. If at any point
+  // |threading_.abort| becomes true, this function will return as early as it
   // can. If the decoding succeeds, this function will also schedule the
   // decoding jobs for the superblock to the bottom-left and the superblock to
   // the right of this superblock (if it is allowed).
-  void DecodeSuperBlock(int row_index, int column_index, int block_width4x4,
-                        ThreadingParameters* threading);
+  void DecodeSuperBlock(int row_index, int column_index, int block_width4x4);
 
   uint16_t* GetPartitionCdf(int row4x4, int column4x4, BlockSize block_size);
   bool ReadPartition(int row4x4, int column4x4, BlockSize block_size,
@@ -219,6 +213,8 @@ class Tile : public Allocable {
   // function in the spec is equivalent to ProcessBlock() in the code.
   bool DecodeBlock(ParameterTree* tree, SuperBlockBuffer* sb_buffer);
 
+  void ClearBlockDecoded(SuperBlockBuffer* sb_buffer, int row4x4,
+                         int column4x4);  // 5.11.3.
   bool ProcessSuperBlock(int row4x4, int column4x4, int block_width4x4,
                          SuperBlockBuffer* sb_buffer, ProcessingMode mode);
   void ResetLoopRestorationParams();
@@ -239,12 +235,14 @@ class Tile : public Allocable {
   void ReadSkip(const Block& block);            // 5.11.11.
   void ReadSkipMode(const Block& block);        // 5.11.10.
   void ReadCdef(const Block& block);            // 5.11.56.
-  // Returns the new value.
-  int ReadAndClipDelta(uint16_t* cdf, int symbol_count, int delta_small,
-                       int scale, int min_value, int max_value, int value);
+  // Returns the new value. |cdf| is an array of size kDeltaSymbolCount + 1.
+  int ReadAndClipDelta(uint16_t* cdf, int delta_small, int scale, int min_value,
+                       int max_value, int value);
   void ReadQuantizerIndexDelta(const Block& block);  // 5.11.12.
   void ReadLoopFilterDelta(const Block& block);      // 5.11.13.
-  void ComputeDeblockFilterLevel(const Block& block);
+  // Populates |BlockParameters::deblock_filter_level| for the given |block|
+  // using |deblock_filter_levels_|.
+  void PopulateDeblockFilterLevel(const Block& block);
   void ReadPredictionModeY(const Block& block, bool intra_y_mode);
   void ReadIntraAngleInfo(const Block& block,
                           PlaneType plane_type);  // 5.11.42 and 5.11.43.
@@ -267,18 +265,26 @@ class Tile : public Allocable {
                               bool intra_y_mode);  // 5.11.22.
   int GetUseCompoundReferenceContext(const Block& block);
   CompoundReferenceType ReadCompoundReferenceType(const Block& block);
-  int GetReferenceContext(const Block& block,
-                          const std::vector<ReferenceFrameType>& types1,
-                          const std::vector<ReferenceFrameType>& types2) const;
-  uint16_t* GetReferenceCdf(
-      const Block& block, bool is_single, bool is_backward, int index,
-      CompoundReferenceType type = kNumCompoundReferenceTypes);
+  // Calculates count0 by calling block.CountReferences() on the frame types
+  // from type0_start to type0_end, inclusive, and summing the results.
+  // Calculates count1 by calling block.CountReferences() on the frame types
+  // from type1_start to type1_end, inclusive, and summing the results.
+  // Compares count0 with count1 and returns 0, 1 or 2.
+  //
+  // See count_refs and ref_count_ctx in 8.3.2.
+  int GetReferenceContext(const Block& block, ReferenceFrameType type0_start,
+                          ReferenceFrameType type0_end,
+                          ReferenceFrameType type1_start,
+                          ReferenceFrameType type1_end) const;
+  template <bool is_single, bool is_backward, int index>
+  uint16_t* GetReferenceCdf(const Block& block, CompoundReferenceType type =
+                                                    kNumCompoundReferenceTypes);
   void ReadReferenceFrames(const Block& block);  // 5.11.25.
   void ReadInterPredictionModeY(const Block& block,
                                 const MvContexts& mode_contexts);
   void ReadRefMvIndex(const Block& block);
   void ReadInterIntraMode(const Block& block, bool is_compound);  // 5.11.28.
-  bool IsScaled(ReferenceFrameType type);  // Part of 5.11.27.
+  bool IsScaled(ReferenceFrameType type) const;  // Part of 5.11.27.
   void ReadMotionMode(const Block& block, bool is_compound);  // 5.11.27.
   uint16_t* GetIsExplicitCompoundTypeCdf(const Block& block);
   uint16_t* GetIsCompoundTypeAverageCdf(const Block& block);
@@ -300,7 +306,7 @@ class Tile : public Allocable {
                                  TransformSize tx_size);
   void DecodeTransformSize(const Block& block);  // 5.11.16.
   bool ComputePrediction(const Block& block);    // 5.11.33.
-  // |x4| and |y4| are the row and column positions of the 4x4 block. |w4| and
+  // |x4| and |y4| are the column and row positions of the 4x4 block. |w4| and
   // |h4| are the width and height in 4x4 units of |tx_size|.
   int GetTransformAllZeroContext(const Block& block, Plane plane,
                                  TransformSize tx_size, int x4, int y4, int w4,
@@ -324,21 +330,35 @@ class Tile : public Allocable {
   int GetCoeffBaseRangeContextVertical(int adjusted_tx_width_log2, int pos);
   int GetDcSignContext(int x4, int y4, int w4, int h4, Plane plane);
   void SetEntropyContexts(int x4, int y4, int w4, int h4, Plane plane,
-                          uint8_t coefficient_level, uint8_t dc_category);
-  void InterIntraPrediction(
+                          uint8_t coefficient_level, int8_t dc_category);
+  bool InterIntraPrediction(
       uint16_t* prediction[2], ptrdiff_t prediction_stride,
       const uint8_t* prediction_mask, ptrdiff_t prediction_mask_stride,
       const PredictionParameters& prediction_parameters, int prediction_width,
       int prediction_height, int subsampling_x, int subsampling_y,
-      uint8_t post_round_bits, uint8_t* dest,
+      uint8_t* dest,
       ptrdiff_t dest_stride);  // Part of section 7.11.3.1 in the spec.
-  void CompoundInterPrediction(
-      const Block& block, uint16_t* prediction[2], ptrdiff_t prediction_stride,
+  // Several prediction modes need a prediction mask:
+  // kCompoundPredictionTypeDiffWeighted, kCompoundPredictionTypeWedge,
+  // kCompoundPredictionTypeIntra. They are mutually exclusive. So the mask is
+  // allocated in each case. The mask only needs to be allocated for kPlaneY
+  // and then used for other planes.
+  LIBGAV1_MUST_USE_RESULT static bool AllocatePredictionMask(
+      SuperBlockBuffer* sb_buffer);
+  bool CompoundInterPrediction(
+      const Block& block, ptrdiff_t prediction_stride,
       ptrdiff_t prediction_mask_stride, int prediction_width,
       int prediction_height, Plane plane, int subsampling_x, int subsampling_y,
       int bitdepth, int candidate_row, int candidate_column, uint8_t* dest,
-      ptrdiff_t dest_stride,
-      uint8_t post_round_bits);  // Part of section 7.11.3.1 in the spec.
+      ptrdiff_t dest_stride);  // Part of section 7.11.3.1 in the spec.
+  GlobalMotion* GetWarpParams(const Block& block, Plane plane,
+                              int prediction_width, int prediction_height,
+                              const PredictionParameters& prediction_parameters,
+                              ReferenceFrameType reference_type,
+                              bool* is_local_valid,
+                              GlobalMotion* global_motion_params,
+                              GlobalMotion* local_warp_params)
+      const;  // Part of section 7.11.3.1 in the spec.
   bool InterPrediction(const Block& block, Plane plane, int x, int y,
                        int prediction_width, int prediction_height,
                        int candidate_row, int candidate_column,
@@ -369,24 +389,42 @@ class Tile : public Allocable {
                             const uint8_t* round_bits, bool is_compound,
                             bool is_inter_intra, uint8_t* dest,
                             ptrdiff_t dest_stride);  // 7.11.3.4.
-  bool BlockWarpProcess(const Block& block, Plane plane, int index, int width,
-                        int height, uint16_t* prediction,
-                        ptrdiff_t prediction_stride, GlobalMotion* warp_params,
-                        const uint8_t* round_bits, bool is_compound,
-                        bool is_inter_intra, uint8_t* dest,
+  bool BlockWarpProcess(const Block& block, Plane plane, int index,
+                        int block_start_x, int block_start_y, int width,
+                        int height, ptrdiff_t prediction_stride,
+                        GlobalMotion* warp_params, const uint8_t* round_bits,
+                        bool is_compound, bool is_inter_intra, uint8_t* dest,
                         ptrdiff_t dest_stride);  // 7.11.3.5.
   void ObmcBlockPrediction(const MotionVector& mv, Plane plane,
                            int reference_frame_index, int width, int height,
                            int x, int y, int candidate_row,
-                           int candidate_column, const uint8_t* mask,
-                           int blending_direction, const uint8_t* round_bits);
+                           int candidate_column,
+                           ObmcDirection blending_direction,
+                           const uint8_t* round_bits);
   void ObmcPrediction(const Block& block, Plane plane, int width, int height,
                       const uint8_t* round_bits);  // 7.11.3.9.
-  void DistanceWeightedPrediction(
-      uint16_t* prediction_0, ptrdiff_t prediction_stride_0,
-      uint16_t* prediction_1, ptrdiff_t prediction_stride_1, int width,
-      int height, int candidate_row, int candidate_column, uint8_t* dest,
-      ptrdiff_t dest_stride, uint8_t post_round_bits);  // 7.11.3.15.
+  void DistanceWeightedPrediction(uint16_t* prediction_0,
+                                  ptrdiff_t prediction_stride_0,
+                                  uint16_t* prediction_1,
+                                  ptrdiff_t prediction_stride_1, int width,
+                                  int height, int candidate_row,
+                                  int candidate_column, uint8_t* dest,
+                                  ptrdiff_t dest_stride);  // 7.11.3.15.
+  // This function specializes the parsing of DC coefficient by removing some of
+  // the branches when i == 0 (since scan[0] is always 0 and scan[i] is always
+  // non-zero for all other possible values of i). |dc_category| is an output
+  // parameter that is populated when |is_dc_coefficient| is true.
+  // |coefficient_level| is an output parameter which accumulates the
+  // coefficient level.
+  template <bool is_dc_coefficient>
+  bool ReadSignAndApplyDequantization(
+      const Block& block, const uint16_t* scan, int i,
+      int adjusted_tx_width_log2, int tx_width, int q_value,
+      const uint8_t* quantizer_matrix, int shift, int min_value, int max_value,
+      uint16_t* dc_sign_cdf, int8_t* dc_category,
+      int* coefficient_level);  // Part of 5.11.39.
+  int ReadCoeffBaseRange(int clamped_tx_size_context, int cdf_context,
+                         int plane_type);  // Part of 5.11.39.
   // Returns the number of non-zero coefficients that were read. |tx_type| is an
   // output parameter that stores the computed transform type for the plane
   // whose coefficients were read. Returns -1 on failure.
@@ -397,8 +435,9 @@ class Tile : public Allocable {
   bool TransformBlock(const Block& block, Plane plane, int base_x, int base_y,
                       TransformSize tx_size, int x, int y,
                       ProcessingMode mode);  // 5.11.35.
-  bool TransformTree(const Block& block, int start_x, int start_y, int width,
-                     int height, ProcessingMode mode);  // 5.11.36.
+  // Iterative implementation of 5.11.36.
+  bool TransformTree(const Block& block, int start_x, int start_y,
+                     BlockSize plane_size, ProcessingMode mode);
   void ReconstructBlock(const Block& block, Plane plane, int start_x,
                         int start_y, TransformSize tx_size,
                         TransformType tx_type,
@@ -406,21 +445,19 @@ class Tile : public Allocable {
   bool Residual(const Block& block, ProcessingMode mode);  // 5.11.34.
   // part of 5.11.5 (reset_block_context() in the spec).
   void ResetEntropyContext(const Block& block);
-  int GetPaletteColorContext(const Block& block, PlaneType plane_type, int row,
-                             int column, int palette_size,
-                             uint8_t color_order[kMaxPaletteSize]);  // 5.11.50.
-  void ReadPaletteTokens(const Block& block);                        // 5.11.49.
-  // Helper function for handling the border cases in 5.11.3 of the spec.
-  // Early return if has_top_or_left is false, since has_bottom_left
-  // (has_top_right) must be false if has_left(has_top) is false.
-  bool BlockDecoded(const Block& block, Plane plane, int row4x4, int column4x4,
-                    bool has_top_or_left) const;
+  // Populates the |color_context| and |color_order| for the |i|th iteration
+  // with entries counting down from |start| to |end| (|start| > |end|).
+  void PopulatePaletteColorContexts(
+      const Block& block, PlaneType plane_type, int i, int start, int end,
+      uint8_t color_order[kMaxPaletteSquare][kMaxPaletteSize],
+      uint8_t color_context[kMaxPaletteSquare]);                 // 5.11.50.
+  bool ReadPaletteTokens(const Block& block);                    // 5.11.49.
   template <typename Pixel>
   void IntraPrediction(const Block& block, Plane plane, int x, int y,
                        bool has_left, bool has_top, bool has_top_right,
                        bool has_bottom_left, PredictionMode mode,
                        TransformSize tx_size);
-  bool UsesSmoothPrediction(int row, int column, Plane plane) const;
+  bool IsSmoothPrediction(int row, int column, Plane plane) const;
   int GetIntraEdgeFilterType(const Block& block,
                              Plane plane) const;  // 7.11.2.8.
   template <typename Pixel>
@@ -449,12 +486,6 @@ class Tile : public Allocable {
     return sequence_header_.color_config.is_monochrome ? kMaxPlanesMonochrome
                                                        : kMaxPlanes;
   }
-  int SubsamplingX(Plane plane) const {
-    return (plane > kPlaneY) ? sequence_header_.color_config.subsampling_x : 0;
-  }
-  int SubsamplingY(Plane plane) const {
-    return (plane > kPlaneY) ? sequence_header_.color_config.subsampling_y : 0;
-  }
 
   const int number_;
   int row_;
@@ -468,11 +499,46 @@ class Tile : public Allocable {
   int superblock_rows_;
   int superblock_columns_;
   bool read_deltas_;
+  const int8_t subsampling_x_[kMaxPlanes];
+  const int8_t subsampling_y_[kMaxPlanes];
+
+  // The dimensions (in order) are: segment_id, level_index (based on plane and
+  // direction), reference_frame and mode_id.
+  uint8_t deblock_filter_levels_[kMaxSegments][kFrameLfCount]
+                                [kNumReferenceFrameTypes][2];
+
   // current_quantizer_index_ is in the range [0, 255].
-  int current_quantizer_index_;
-  // First dimension: left/top; Second dimension: plane; Third dimension:
-  // row4x4/column4x4.
-  std::array<Array2D<EntropyContext>, 2> entropy_contexts_;
+  uint8_t current_quantizer_index_;
+  // These two arrays (|coefficient_levels_| and |dc_categories_|) are used to
+  // store the entropy context. Their dimensions are as follows: First -
+  // left/top; Second - plane; Third - row4x4 (if first dimension is
+  // left)/column4x4 (if first dimension is top).
+  //
+  // This is equivalent to the LeftLevelContext and AboveLevelContext arrays in
+  // the spec. In the spec, it stores values from 0 through 63 (inclusive). The
+  // stored values are used to compute the left and top contexts in
+  // GetTransformAllZeroContext. In that function, we only care about the
+  // following values: 0, 1, 2, 3 and >= 4. So instead of clamping to 63, we
+  // clamp to 4 (i.e.) all the values greater than 4 are stored as 4.
+  std::array<Array2D<uint8_t>, 2> coefficient_levels_;
+  // This is equivalent to the LeftDcContext and AboveDcContext arrays in the
+  // spec. In the spec, it can store 3 possible values: 0, 1 and 2 (where 1
+  // means the value is < 0, 2 means the value is > 0 and 0 means the value is
+  // equal to 0).
+  //
+  // The stored values are used in two places:
+  //  * GetTransformAllZeroContext: Here, we only care about whether the
+  //  value is 0 or not (whether it is 1 or 2 is irrelevant).
+  //  * GetDcSignContext: Here, we do the following computation: if the
+  //  stored value is 1, we decrement a counter. If the stored value is 2
+  //  we increment a counter.
+  //
+  // Based on this usage, we can simply replace 1 with -1 and 2 with 1 and
+  // use that value to compute the counter.
+  //
+  // The usage on GetTransformAllZeroContext is unaffected since there we
+  // only care about whether it is 0 or not.
+  std::array<Array2D<int8_t>, 2> dc_categories_;
   const ObuSequenceHeader& sequence_header_;
   const ObuFrameHeader& frame_header_;
   RefCountedBuffer& current_frame_;
@@ -496,6 +562,18 @@ class Tile : public Allocable {
   // array will be used by each call to ReadTransformCoefficients() depending on
   // the transform size.
   int32_t quantized_[kQuantizedCoefficientBufferSize];
+  // Stores the "color order" for a block for each iteration in
+  // ReadPaletteTokens(). The "color order" is used to populate the
+  // |color_index_map| used for palette prediction. This is declared as a class
+  // variable because only the first few values in each dimension are used by
+  // each call depending on the block size and the palette size.
+  uint8_t color_order_[kMaxPaletteSquare][kMaxPaletteSize];
+  // Stores the "color context" for a block for each iteration in
+  // ReadPaletteTokens(). The "color context" is the cdf context index used to
+  // read the |palette_color_idx_y| variable in the spec. This is declared as a
+  // class variable because only the first few values in each dimension are used
+  // by each call depending on the block size and the palette size.
+  uint8_t color_context_[kMaxPaletteSquare];
   // When there is no multi-threading within the Tile, |residual_buffer_| is
   // used. When there is multi-threading within the Tile,
   // |residual_buffer_threaded_| is used. In the following comment,
@@ -542,7 +620,9 @@ class Tile : public Allocable {
   // thread will do the parsing while the thread pool workers will do the
   // decoding.
   ThreadPool* const thread_pool_;
+  ThreadingParameters threading_;
   ResidualBufferPool* const residual_buffer_pool_;
+  BlockingCounterWithStatus* const pending_tiles_;
   bool split_parse_and_decode_;
   // This is used only when |split_parse_and_decode_| is false.
   std::unique_ptr<PredictionParameters> prediction_parameters_ = nullptr;
@@ -552,6 +632,9 @@ class Tile : public Allocable {
   TransformType transform_types_[32][32];
   // delta_lf_[i] is in the range [-63, 63].
   int8_t delta_lf_[kFrameLfCount];
+  // True if all the values in |delta_lf_| are zero. False otherwise.
+  bool delta_lf_all_zero_;
+  bool build_bit_mask_when_parsing_;
 };
 
 struct Tile::Block {
@@ -590,7 +673,7 @@ struct Tile::Block {
 
   bool TopAvailableChroma() const {
     if (!HasChroma()) return false;
-    if ((tile.sequence_header_.color_config.subsampling_y |
+    if ((tile.sequence_header_.color_config.subsampling_y &
          kNum4x4BlocksHigh[size]) == 1) {
       return tile.IsInside(row4x4 - 2, column4x4);
     }
@@ -599,7 +682,7 @@ struct Tile::Block {
 
   bool LeftAvailableChroma() const {
     if (!HasChroma()) return false;
-    if ((tile.sequence_header_.color_config.subsampling_x |
+    if ((tile.sequence_header_.color_config.subsampling_x &
          kNum4x4BlocksWide[size]) == 1) {
       return tile.IsInside(row4x4, column4x4 - 2);
     }

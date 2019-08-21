@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
-#include <vector>
 
 #include "src/dsp/constants.h"
 #include "src/obu_parser.h"
@@ -13,14 +12,30 @@
 #include "src/utils/constants.h"
 #include "src/utils/entropy_decoder.h"
 #include "src/utils/segmentation.h"
+#include "src/utils/stack.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {
 namespace {
 
-const uint8_t kMaxVariableTransformTreeDepth = 2;
+constexpr uint8_t kMaxVariableTransformTreeDepth = 2;
+// Max_Tx_Depth array from section 5.11.5 in the spec with the following
+// modification: If the element is not zero, it is subtracted by one. That is
+// the only way in which this array is being used.
+constexpr int kTxDepthCdfIndex[kMaxBlockSizes] = {
+    0, 0, 1, 0, 0, 1, 2, 1, 1, 1, 2, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3};
 
-inline TransformSize GetSquareTransformSize(uint8_t pixels) {
+constexpr TransformSize kMaxTransformSizeRectangle[kMaxBlockSizes] = {
+    kTransformSize4x4,   kTransformSize4x8,   kTransformSize4x16,
+    kTransformSize8x4,   kTransformSize8x8,   kTransformSize8x16,
+    kTransformSize8x32,  kTransformSize16x4,  kTransformSize16x8,
+    kTransformSize16x16, kTransformSize16x32, kTransformSize16x64,
+    kTransformSize32x8,  kTransformSize32x16, kTransformSize32x32,
+    kTransformSize32x64, kTransformSize64x16, kTransformSize64x32,
+    kTransformSize64x64, kTransformSize64x64, kTransformSize64x64,
+    kTransformSize64x64};
+
+TransformSize GetSquareTransformSize(uint8_t pixels) {
   switch (pixels) {
     case 128:
     case 64:
@@ -71,7 +86,7 @@ TransformSize Tile::ReadFixedTransformSize(const Block& block) {
   }
   const TransformSize max_rect_tx_size = kMaxTransformSizeRectangle[block.size];
   const bool allow_select = !bp.skip || !bp.is_inter;
-  if (block.size <= kBlock4x4 || !allow_select ||
+  if (block.size == kBlock4x4 || !allow_select ||
       frame_header_.tx_mode != kTxModeSelect) {
     return max_rect_tx_size;
   }
@@ -87,16 +102,16 @@ TransformSize Tile::ReadFixedTransformSize(const Block& block) {
           : 0;
   const auto context = static_cast<int>(top_width >= max_tx_width) +
                        static_cast<int>(left_height >= max_tx_height);
-  const int max_tx_depth = kMaxTransformDepth[block.size];
-  const int cdf_index = (max_tx_depth > 0) ? max_tx_depth - 1 : 0;
-  const int symbol_count = (cdf_index == 0) ? 2 : 3;
+  const int cdf_index = kTxDepthCdfIndex[block.size];
+  const int symbol_count = 3 - static_cast<int>(cdf_index == 0);
   const int tx_depth = reader_.ReadSymbol(
       symbol_decoder_context_.tx_depth_cdf[cdf_index][context], symbol_count);
+  assert(tx_depth < 3);
   TransformSize tx_size = max_rect_tx_size;
-  for (int i = 0; i < tx_depth; ++i) {
-    tx_size = kSplitTransformSize[tx_size];
-  }
-  return tx_size;
+  if (tx_depth == 0) return tx_size;
+  tx_size = kSplitTransformSize[tx_size];
+  if (tx_depth == 1) return tx_size;
+  return kSplitTransformSize[tx_size];
 }
 
 void Tile::ReadVariableTransformTree(const Block& block, int row4x4,
@@ -108,24 +123,22 @@ void Tile::ReadVariableTransformTree(const Block& block, int row4x4,
                              TransformSizeToSquareTransformIndex(max_tx_size)) *
                             6;
 
-  std::vector<TransformTreeNode> stack;
   // Branching factor is 4 and maximum depth is 2. So the maximum stack size
-  // necessary is 8.
-  stack.reserve(8);
-  stack.emplace_back(row4x4, column4x4, tx_size, 0);
+  // necessary is (4 - 1) + 4 = 7.
+  Stack<TransformTreeNode, 7> stack;
+  stack.Push(TransformTreeNode(column4x4, row4x4, tx_size, 0));
 
-  while (!stack.empty()) {
-    TransformTreeNode node = stack.back();
-    stack.pop_back();
-    const int tx_width4x4 = DivideBy4(kTransformWidth[node.tx_size]);
-    const int tx_height4x4 = DivideBy4(kTransformHeight[node.tx_size]);
+  while (!stack.Empty()) {
+    TransformTreeNode node = stack.Pop();
+    const int tx_width4x4 = kTransformWidth4x4[node.tx_size];
+    const int tx_height4x4 = kTransformHeight4x4[node.tx_size];
     if (node.tx_size != kTransformSize4x4 &&
         node.depth != kMaxVariableTransformTreeDepth) {
-      const auto top = static_cast<int>(
-          GetTopTransformWidth(block, node.row4x4, node.column4x4, false) <
-          kTransformWidth[node.tx_size]);
+      const auto top =
+          static_cast<int>(GetTopTransformWidth(block, node.y, node.x, false) <
+                           kTransformWidth[node.tx_size]);
       const auto left = static_cast<int>(
-          GetLeftTransformHeight(block, node.row4x4, node.column4x4, false) <
+          GetLeftTransformHeight(block, node.y, node.x, false) <
           kTransformHeight[node.tx_size]);
       const int context =
           static_cast<int>(max_tx_size > kTransformSize8x8 &&
@@ -136,20 +149,20 @@ void Tile::ReadVariableTransformTree(const Block& block, int row4x4,
       // tx_split.
       if (reader_.ReadSymbol(symbol_decoder_context_.tx_split_cdf[context])) {
         const TransformSize sub_tx_size = kSplitTransformSize[node.tx_size];
-        const int step_width4x4 = DivideBy4(kTransformWidth[sub_tx_size]);
-        const int step_height4x4 = DivideBy4(kTransformHeight[sub_tx_size]);
+        const int step_width4x4 = kTransformWidth4x4[sub_tx_size];
+        const int step_height4x4 = kTransformHeight4x4[sub_tx_size];
         // The loops have to run in reverse order because we use a stack for
         // DFS.
         for (int i = tx_height4x4 - step_height4x4; i >= 0;
              i -= step_height4x4) {
           for (int j = tx_width4x4 - step_width4x4; j >= 0;
                j -= step_width4x4) {
-            if (node.row4x4 + i >= frame_header_.rows4x4 ||
-                node.column4x4 + j >= frame_header_.columns4x4) {
+            if (node.y + i >= frame_header_.rows4x4 ||
+                node.x + j >= frame_header_.columns4x4) {
               continue;
             }
-            stack.emplace_back(node.row4x4 + i, node.column4x4 + j, sub_tx_size,
-                               node.depth + 1);
+            stack.Push(TransformTreeNode(node.x + j, node.y + i, sub_tx_size,
+                                         node.depth + 1));
           }
         }
         continue;
@@ -158,10 +171,10 @@ void Tile::ReadVariableTransformTree(const Block& block, int row4x4,
     // tx_split is false.
     for (int i = 0; i < tx_height4x4; ++i) {
       static_assert(sizeof(TransformSize) == 1, "");
-      memset(&inter_transform_sizes_[node.row4x4 + i][node.column4x4],
-             node.tx_size, tx_width4x4);
+      memset(&inter_transform_sizes_[node.y + i][node.x], node.tx_size,
+             tx_width4x4);
     }
-    block_parameters_holder_.Find(node.row4x4, node.column4x4)->transform_size =
+    block_parameters_holder_.Find(node.y, node.x)->transform_size =
         node.tx_size;
   }
 }
@@ -174,8 +187,8 @@ void Tile::DecodeTransformSize(const Block& block) {
       bp.is_inter && !bp.skip &&
       !frame_header_.segmentation.lossless[bp.segment_id]) {
     const TransformSize max_tx_size = kMaxTransformSizeRectangle[block.size];
-    const int tx_width4x4 = kTransformWidth[max_tx_size] / 4;
-    const int tx_height4x4 = kTransformHeight[max_tx_size] / 4;
+    const int tx_width4x4 = kTransformWidth4x4[max_tx_size];
+    const int tx_height4x4 = kTransformHeight4x4[max_tx_size];
     for (int row = block.row4x4; row < block.row4x4 + block_height4x4;
          row += tx_height4x4) {
       for (int column = block.column4x4;

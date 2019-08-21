@@ -3,13 +3,14 @@
 
 #include "src/dsp/cpu.h"
 #include "src/dsp/dsp.h"
-#include "src/dsp/intrapred.h"
 
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::intra_predictors with neon implementations. This function is
-// not thread-safe.
+// Initializes Dsp::intra_predictors, Dsp::directional_intra_predictor_zone*,
+// Dsp::cfl_intra_predictors, Dsp::cfl_subsamplers and
+// Dsp::filter_intra_predictor, see the defines below for specifics. These
+// functions are not thread-safe.
 void IntraPredCflInit_NEON();
 void IntraPredDirectionalInit_NEON();
 void IntraPredFilterIntraInit_NEON();
@@ -24,6 +25,7 @@ void IntraPredSmoothInit_NEON();
 #define LIBGAV1_Dsp8bpp_FilterIntraPredictor LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone1 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone2 LIBGAV1_DSP_NEON
 #define LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone3 LIBGAV1_DSP_NEON
 
 // 4x4
@@ -38,6 +40,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize4x4_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize4x4_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize4x4_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 4x8
 #define LIBGAV1_Dsp8bpp_TransformSize4x8_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -51,6 +55,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize4x8_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize4x8_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize4x8_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 4x16
 #define LIBGAV1_Dsp8bpp_TransformSize4x16_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -64,6 +70,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize4x16_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize4x16_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize4x16_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 8x4
 #define LIBGAV1_Dsp8bpp_TransformSize8x4_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -77,6 +85,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize8x4_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x4_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x4_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 8x8
 #define LIBGAV1_Dsp8bpp_TransformSize8x8_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -90,6 +100,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize8x8_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x8_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x8_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 8x16
 #define LIBGAV1_Dsp8bpp_TransformSize8x16_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -103,6 +115,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize8x16_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x16_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x16_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 8x32
 #define LIBGAV1_Dsp8bpp_TransformSize8x32_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -116,6 +130,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize8x32_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x32_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize8x32_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 16x4
 #define LIBGAV1_Dsp8bpp_TransformSize16x4_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -129,6 +145,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize16x4_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x4_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x4_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 16x8
 #define LIBGAV1_Dsp8bpp_TransformSize16x8_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -142,6 +160,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize16x8_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x8_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x8_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 16x16
 #define LIBGAV1_Dsp8bpp_TransformSize16x16_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -155,6 +175,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize16x16_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x16_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x16_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 16x32
 #define LIBGAV1_Dsp8bpp_TransformSize16x32_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -168,6 +190,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize16x32_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x32_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize16x32_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 16x64
 #define LIBGAV1_Dsp8bpp_TransformSize16x64_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -192,6 +216,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize32x8_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize32x8_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize32x8_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 32x16
 #define LIBGAV1_Dsp8bpp_TransformSize32x16_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -205,6 +231,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize32x16_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize32x16_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize32x16_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 32x32
 #define LIBGAV1_Dsp8bpp_TransformSize32x32_IntraPredictorDcTop LIBGAV1_DSP_NEON
@@ -218,6 +246,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_DSP_NEON
 
 #define LIBGAV1_Dsp8bpp_TransformSize32x32_CflIntraPredictor LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize32x32_CflSubsampler420 LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_TransformSize32x32_CflSubsampler444 LIBGAV1_DSP_NEON
 
 // 32x64
 #define LIBGAV1_Dsp8bpp_TransformSize32x64_IntraPredictorDcTop LIBGAV1_DSP_NEON

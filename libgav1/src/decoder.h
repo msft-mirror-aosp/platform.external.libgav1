@@ -8,13 +8,14 @@
 #include "src/decoder_buffer.h"
 #include "src/decoder_settings.h"
 #include "src/status_code.h"
+#include "src/symbol_visibility.h"
 
 namespace libgav1 {
 
 // Forward declaration.
 class DecoderImpl;
 
-class Decoder {
+class LIBGAV1_PUBLIC Decoder {
  public:
   Decoder();
   ~Decoder();
@@ -54,6 +55,9 @@ class Decoder {
   // decoder will reject frames beyond this count. If |settings_.frame_parallel|
   // is false, then this function will always return 1.
   int GetMaxAllowedFrames() const;
+
+  // Returns the maximum bitdepth that is supported by this decoder.
+  static int GetMaxBitdepth();
 
  private:
   bool initialized_ = false;

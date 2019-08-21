@@ -134,16 +134,12 @@ bool WarpEstimation(const int num_samples, const int block_width4x4,
   int bx[2] = {};
   int by[2] = {};
 
-  // TODO(chengchen): for simplicity, the spec always uses absolute coordinates
+  // Note: for simplicity, the spec always uses absolute coordinates
   // in the warp estimation process. subpixel_mid_x, subpixel_mid_y,
   // and candidates are relative to the top left of the frame.
   // In contrast, libaom uses a mixture of coordinate systems.
   // In av1/common/warped_motion.c:find_affine_int(). The coordinate is relative
   // to the top left of the block.
-  // On one hand, we need to make sure libgav1 always keep consistency in
-  // coordinate system.
-  // On the other hand, we might investigate which representation is better for
-  // the sake of efficiency.
   // mid_y/mid_x: the row/column coordinate of the center of the block.
   const int mid_y = MultiplyBy4(row4x4) + MultiplyBy2(block_height4x4) - 1;
   const int mid_x = MultiplyBy4(column4x4) + MultiplyBy2(block_width4x4) - 1;
@@ -167,8 +163,6 @@ bool WarpEstimation(const int num_samples, const int block_width4x4,
     // block, with center of the reference block as origin.
     const int dy = candidates[i][2] - reference_subpixel_mid_y;
     const int dx = candidates[i][3] - reference_subpixel_mid_x;
-    // TODO(chengchen): If this check is done somewhere (in find samples), we
-    // can remove it. If remove, remember to change unit tests input range.
     if (std::abs(sx - dx) < kLargestMotionVectorDiff &&
         std::abs(sy - dy) < kLargestMotionVectorDiff) {
       a[0][0] += LeastSquareProduct(sx, sx) + 8;

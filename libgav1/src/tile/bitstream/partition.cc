@@ -12,12 +12,11 @@
 namespace libgav1 {
 namespace {
 
-inline uint16_t InverseCdfProbability(uint16_t probability) {
+uint16_t InverseCdfProbability(uint16_t probability) {
   return kCdfMaxProbability - probability;
 }
 
-inline uint16_t CdfElementProbability(const uint16_t* const cdf,
-                                      uint8_t element) {
+uint16_t CdfElementProbability(const uint16_t* const cdf, uint8_t element) {
   return (element > 0 ? cdf[element - 1] : uint16_t{kCdfMaxProbability}) -
          cdf[element];
 }

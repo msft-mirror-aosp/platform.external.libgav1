@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "src/utils/array_2d.h"
 #include "src/utils/constants.h"
 #include "src/utils/memory.h"
 
@@ -63,7 +64,7 @@ struct PredictionParameters : public Allocable {
   int8_t cfl_alpha_v;
   int max_luma_width;
   int max_luma_height;
-  uint8_t color_index_map[kNumPlaneTypes][kMaxPaletteSquare][kMaxPaletteSquare];
+  Array2D<uint8_t> color_index_map[kNumPlaneTypes];
   bool use_intra_block_copy;
   InterIntraMode inter_intra_mode;
   bool is_wedge_inter_intra;
@@ -97,13 +98,19 @@ struct BlockParameters : public Allocable {
   PredictionMode y_mode;
   PredictionMode uv_mode;
   TransformSize transform_size;
+  TransformSize uv_transform_size;
   PaletteModeInfo palette_mode_info;
   ReferenceFrameType reference_frame[2];
   MotionVector mv[2];
   bool is_explicit_compound_type;  // comp_group_idx in the spec.
   bool is_compound_type_average;   // compound_idx in the spec.
   InterpolationFilter interpolation_filter[2];
-  uint8_t deblock_filter_level[kMaxPlanes][kNumLoopFilterTypes];
+  // The index of this array is as follows:
+  //  0 - Y plane vertical filtering.
+  //  1 - Y plane horizontal filtering.
+  //  2 - U plane (both directions).
+  //  3 - V plane (both directions).
+  uint8_t deblock_filter_level[kFrameLfCount];
   // When |Tile::split_parse_and_decode_| is true, each block gets its own
   // instance of |prediction_parameters|. When it is false, all the blocks point
   // to |Tile::prediction_parameters_|. This field is valid only as long as the

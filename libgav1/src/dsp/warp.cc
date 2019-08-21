@@ -22,19 +22,25 @@ template <int bitdepth, typename Pixel>
 void Warp_C(const void* const source, ptrdiff_t source_stride,
             const int source_width, const int source_height,
             const int* const warp_params, const int subsampling_x,
-            const int subsampling_y, const uint8_t inter_round_bits[2],
+            const int subsampling_y, const uint8_t inter_round_bits_vertical,
             const int block_start_x, const int block_start_y,
             const int block_width, const int block_height, const int16_t alpha,
             const int16_t beta, const int16_t gamma, const int16_t delta,
             uint16_t* dest, const ptrdiff_t dest_stride) {
-  // Intermediate_result is the output of the horizontal filtering.
-  // The range is within 16 bits.
+  constexpr int kRoundBitsHorizontal = (bitdepth == 12)
+                                           ? kInterRoundBitsHorizontal12bpp
+                                           : kInterRoundBitsHorizontal;
+  // Intermediate_result is the output of the horizontal filtering and rounding.
+  // The range is within 16 bits (unsigned).
   uint16_t intermediate_result[15][8];  // 15 rows, 8 columns.
-  const int horizontal_offset_bits = bitdepth + kFilterBits - 1;
-  const int vertical_offset_bits =
-      bitdepth + 2 * kFilterBits - inter_round_bits[0];
+  const int horizontal_offset = 1 << (bitdepth + kFilterBits - 1);
+  const int vertical_offset =
+      1 << (bitdepth + 2 * kFilterBits - kRoundBitsHorizontal);
   const auto* const src = static_cast<const Pixel*>(source);
   source_stride /= sizeof(Pixel);
+
+  assert(block_width >= 8);
+  assert(block_height >= 8);
 
   // Warp process applies for each 8x8 block (or smaller).
   for (int start_y = block_start_y; start_y < block_start_y + block_height;
@@ -50,28 +56,32 @@ void Warp_C(const void* const source, ptrdiff_t source_stride,
       const int x4 = dst_x >> subsampling_x;
       const int y4 = dst_y >> subsampling_y;
       const int ix4 = x4 >> kWarpedModelPrecisionBits;
-      const int sx4 = x4 & ((1 << kWarpedModelPrecisionBits) - 1);
       const int iy4 = y4 >> kWarpedModelPrecisionBits;
-      const int sy4 = y4 & ((1 << kWarpedModelPrecisionBits) - 1);
 
       // Horizontal filter.
+      int sx4 = (x4 & ((1 << kWarpedModelPrecisionBits) - 1)) - beta * 7;
       for (int y = -7; y < 8; ++y) {
-        // TODO(chenghchen):
+        // TODO(chengchen):
         // Because of warping, the index could be out of frame boundary. Thus
         // clip is needed. However, can we remove or reduce usage of clip?
         // Besides, special cases exist, for example,
-        // if iy4 - 7 >= source_height, there's no need to do the filtering.
+        // if iy4 - 7 >= source_height or iy4 + 7 < 0, there's no need to do the
+        // filtering.
         const int row = Clip3(iy4 + y, 0, source_height - 1);
         const Pixel* const src_row = src + row * source_stride;
+        int sx = sx4 - MultiplyBy4(alpha);
         for (int x = -4; x < 4; ++x) {
-          const int sx = sx4 + alpha * x + beta * y;
           const int offset =
               RightShiftWithRounding(sx, kWarpedDiffPrecisionBits) +
               kWarpedPixelPrecisionShifts;
+          // Since alpha and beta have been validated by SetupShear(), one can
+          // prove that 0 <= offset <= 3 * 2^6.
+          assert(offset >= 0);
+          assert(offset < 3 * kWarpedPixelPrecisionShifts + 1);
           // For SIMD optimization:
           // For 8 bit, the range of sum is within uint16_t, if we add an
           // horizontal offset:
-          int sum = 1 << horizontal_offset_bits;
+          int sum = horizontal_offset;
           // Horizontal_offset guarantees sum is non negative.
           // If horizontal_offset is used, intermediate_result needs to be
           // uint16_t.
@@ -80,37 +90,64 @@ void Warp_C(const void* const source, ptrdiff_t source_stride,
             const int column = Clip3(ix4 + x + k - 3, 0, source_width - 1);
             sum += kWarpedFilters[offset][k] * src_row[column];
           }
-          assert(sum >= 0 && sum < (1 << (horizontal_offset_bits + 2)));
+          assert(sum >= 0 && sum < (horizontal_offset << 2));
           intermediate_result[y + 7][x + 4] = static_cast<uint16_t>(
-              RightShiftWithRounding(sum, inter_round_bits[0]));
+              RightShiftWithRounding(sum, kRoundBitsHorizontal));
+          sx += alpha;
         }
+        sx4 += beta;
       }
 
       // Vertical filter.
       uint16_t* dst_row = dest + start_x - block_start_x;
-      for (int y = -4;
-           y < std::min(4, block_start_y + block_height - start_y - 4); ++y) {
-        for (int x = -4;
-             x < std::min(4, block_start_x + block_width - start_x - 4); ++x) {
-          const int sy = sy4 + gamma * x + delta * y;
+      int sy4 =
+          (y4 & ((1 << kWarpedModelPrecisionBits) - 1)) - MultiplyBy4(delta);
+      // The spec says we should use the following loop condition:
+      //   y < std::min(4, block_start_y + block_height - start_y - 4);
+      // We can prove that block_start_y + block_height - start_y >= 8, which
+      // implies std::min(4, block_start_y + block_height - start_y - 4) = 4.
+      // So the loop condition is simply y < 4.
+      //
+      // Proof:
+      //    start_y < block_start_y + block_height
+      // => block_start_y + block_height - start_y > 0
+      // => block_height - (start_y - block_start_y) > 0
+      //
+      // Since block_height >= 8 and is a power of 2, it follows that
+      // block_height is a multiple of 8. start_y - block_start_y is also a
+      // multiple of 8. Therefore their difference is a multiple of 8. Since
+      // their difference is > 0, their difference must be >= 8.
+      for (int y = -4; y < 4; ++y) {
+        int sy = sy4 - MultiplyBy4(gamma);
+        // The spec says we should use the following loop condition:
+        //   x < std::min(4, block_start_x + block_width - start_x - 4);
+        // Similar to the above, we can prove that the loop condition can be
+        // simplified to x < 4.
+        for (int x = -4; x < 4; ++x) {
           const int offset =
               RightShiftWithRounding(sy, kWarpedDiffPrecisionBits) +
               kWarpedPixelPrecisionShifts;
+          // Since gamma and delta have been validated by SetupShear(), one can
+          // prove that 0 <= offset <= 3 * 2^6.
+          assert(offset >= 0);
+          assert(offset < 3 * kWarpedPixelPrecisionShifts + 1);
           // Similar to horizontal_offset, vertical_offset guarantees sum
           // before shifting is non negative:
-          int sum = 1 << vertical_offset_bits;
+          int sum = vertical_offset;
           for (int k = 0; k < 8; ++k) {
             sum += kWarpedFilters[offset][k] *
-                   intermediate_result[y + k + 4][x + 4];
+                   intermediate_result[y + 4 + k][x + 4];
           }
-          assert(sum >= 0 && sum < (1 << (vertical_offset_bits + 2)));
-          sum = RightShiftWithRounding(sum, inter_round_bits[1]);
+          assert(sum >= 0 && sum < (vertical_offset << 2));
+          sum = RightShiftWithRounding(sum, inter_round_bits_vertical);
           // Warp output is a predictor, whose type is uint16_t.
           // Do not clip it here. The clipping is applied at the stage of
           // final pixel value output.
           dst_row[x + 4] = static_cast<uint16_t>(sum);
+          sy += gamma;
         }
         dst_row += dest_stride;
+        sy4 += delta;
       }
     }
     dest += 8 * dest_stride;
@@ -120,14 +157,28 @@ void Warp_C(const void* const source, ptrdiff_t source_stride,
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
   assert(dsp != nullptr);
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   dsp->warp = Warp_C<8, uint8_t>;
+#else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
+#ifndef LIBGAV1_Dsp8bpp_Warp
+  dsp->warp = Warp_C<8, uint8_t>;
+#endif
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(10);
   assert(dsp != nullptr);
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   dsp->warp = Warp_C<10, uint16_t>;
+#else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
+#ifndef LIBGAV1_Dsp10bpp_Warp
+  dsp->warp = Warp_C<10, uint16_t>;
+#endif
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
 #endif
 

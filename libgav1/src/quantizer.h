@@ -10,7 +10,8 @@ namespace libgav1 {
 
 // Stores the quantization parameters of Section 5.9.12.
 struct QuantizerParameters {
-  int16_t base_index;
+  // base_index is in the range [0, 255].
+  uint8_t base_index;
   int8_t delta_dc[kMaxPlanes];
   // delta_ac[kPlaneY] is always 0.
   int8_t delta_ac[kMaxPlanes];

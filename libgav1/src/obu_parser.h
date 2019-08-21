@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <vector>
 
 #include "src/decoder_buffer.h"
 #include "src/dsp/common.h"
@@ -15,6 +14,7 @@
 #include "src/utils/constants.h"
 #include "src/utils/raw_bit_reader.h"
 #include "src/utils/segmentation.h"
+#include "src/utils/vector.h"
 
 namespace libgav1 {
 
@@ -43,6 +43,13 @@ enum {
   kPrimaryReferenceNone = 7
 };  // anonymous enum
 
+struct ObuHeader {
+  ObuType type;
+  bool has_extension;
+  int8_t temporal_id;
+  int8_t spatial_id;
+};
+
 enum BitstreamProfile : uint8_t {
   kProfile0,
   kProfile1,
@@ -50,9 +57,17 @@ enum BitstreamProfile : uint8_t {
   kMaxProfiles
 };
 
+// In the bitstream the level is encoded in five bits: the first three bits
+// encode |major| - 2 and the last two bits encode |minor|.
+//
+// If the mapped level (major.minor) is in the tables in Annex A.3, there are
+// bitstream conformance requirements on the maximum or minimum values of
+// several variables. The encoded value of 31 (which corresponds to the mapped
+// level 9.3) is the "maximum parameters" level and imposes no level-based
+// constraints on the bitstream.
 struct BitStreamLevel {
-  uint8_t major;
-  uint8_t minor;
+  uint8_t major;  // Range: 2-9.
+  uint8_t minor;  // Range: 0-3.
 };
 
 enum ColorPrimaries : uint8_t {
@@ -262,6 +277,21 @@ struct GlobalMotion {
   int32_t params[6];
 
   // Represent two shearing operations. Computed from |params| by SetupShear().
+  //
+  // The least significant six (= kWarpParamRoundingBits) bits are all zeros.
+  // (This means alpha, beta, gamma, and delta could be represented by a 10-bit
+  // signed integer.) The minimum value is INT16_MIN (= -32768) and the maximum
+  // value is 32704 = 0x7fc0, the largest int16_t value whose least significant
+  // six bits are all zeros.
+  //
+  // Valid warp parameters (as validated by SetupShear()) have smaller ranges.
+  // Their absolute values are less than 2^14 (= 16384). (This follows from
+  // the warpValid check at the end of Section 7.11.3.6.)
+  //
+  // NOTE: Section 7.11.3.6 of the spec allows a maximum value of 32768, which
+  // is outside the range of int16_t. When cast to int16_t, 32768 becomes
+  // -32768. This potential int16_t overflow does not matter because either
+  // 32768 or -32768 causes SetupShear() to return false,
   int16_t alpha;
   int16_t beta;
   int16_t gamma;
@@ -279,7 +309,7 @@ struct TileInfo {
   int tile_rows_log2;
   int tile_rows;
   int tile_row_start[kMaxTileRows + 1];
-  uint8_t context_update_id;
+  int16_t context_update_id;
   uint8_t tile_size_bytes;
 };
 
@@ -368,13 +398,12 @@ struct ObuFrameHeader {
 };
 
 enum MetadataType : uint8_t {
-  kMetadataTypePrivateData,
-  kMetadataTypeHdrContentLightLevel,
+  // 0 is reserved for AOM use.
+  kMetadataTypeHdrContentLightLevel = 1,
   kMetadataTypeHdrMasteringDisplayColorVolume
 };
 
 struct ObuMetadata {
-  std::vector<uint8_t> private_data;
   // Maximum content light level.
   uint16_t max_cll;
   // Maximum frame-average light level.
@@ -424,17 +453,16 @@ class ObuParser : public Allocable {
   bool ParseOneFrame();
 
   // Getters. Only valid if ParseOneFrame() completes successfully.
-  const std::vector<ObuType>& types() const { return types_; }
-  const std::vector<int8_t>& temporal_ids() const { return temporal_ids_; }
-  const std::vector<int8_t>& spatial_ids() const { return spatial_ids_; }
+  const Vector<ObuHeader>& obu_headers() const { return obu_headers_; }
   const ObuSequenceHeader& sequence_header() const { return sequence_header_; }
   const ObuFrameHeader& frame_header() const { return frame_header_; }
   const ObuMetadata& metadata() const { return metadata_; }
-  const std::vector<ObuTileGroup>& tile_groups() const { return tile_groups_; }
+  const Vector<ObuTileGroup>& tile_groups() const { return tile_groups_; }
 
   // Setters.
   void set_sequence_header(const ObuSequenceHeader& sequence_header) {
     sequence_header_ = sequence_header;
+    has_sequence_header_ = true;
   }
 
  private:
@@ -512,16 +540,15 @@ class ObuParser : public Allocable {
   size_t size_;
 
   // OBU elements. Only valid if ParseOneFrame() completes successfully.
-  std::vector<ObuType> types_;
-  std::vector<bool> has_extension_;
-  std::vector<int8_t> temporal_ids_;
-  std::vector<int8_t> spatial_ids_;
+  Vector<ObuHeader> obu_headers_;
   ObuSequenceHeader sequence_header_ = {};
   ObuFrameHeader frame_header_ = {};
   ObuMetadata metadata_ = {};
-  std::vector<ObuTileGroup> tile_groups_;
+  Vector<ObuTileGroup> tile_groups_;
   // The expected |start| value of the next ObuTileGroup.
   int next_tile_group_start_ = 0;
+  // If true, the sequence_header_ field is valid.
+  bool has_sequence_header_ = false;
   // If true, the obu_extension_flag syntax element in the OBU header must be
   // 0. Set to true when parsing a sequence header if OperatingPointIdc is 0.
   bool extension_disallowed_ = false;

@@ -10,7 +10,7 @@ namespace {
 // Import all the constants in the anonymous namespace.
 #include "src/symbol_decoder_context_cdfs.inc"
 
-inline uint8_t GetQuantizerContext(int base_quantizer_index) {
+uint8_t GetQuantizerContext(int base_quantizer_index) {
   if (base_quantizer_index <= 20) return 0;
   if (base_quantizer_index <= 60) return 1;
   if (base_quantizer_index <= 120) return 2;
@@ -83,11 +83,6 @@ void ResetUVModeCounters(SymbolDecoderContext* const context) {
 }
 
 }  // namespace
-
-const int kEobPtSymbolCount[7] = {kEobPt16SymbolCount,  kEobPt32SymbolCount,
-                                  kEobPt64SymbolCount,  kEobPt128SymbolCount,
-                                  kEobPt256SymbolCount, kEobPt512SymbolCount,
-                                  kEobPt1024SymbolCount};
 
 #define CDF_COPY(source, destination) \
   memcpy(destination, source, sizeof(source))

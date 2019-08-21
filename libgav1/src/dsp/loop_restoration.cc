@@ -90,15 +90,14 @@ void LoopRestorationFuncs_C<bitdepth, Pixel>::WienerFilter(
     const RestorationUnitInfo& restoration_info, ptrdiff_t source_stride,
     ptrdiff_t dest_stride, int width, int height,
     RestorationBuffer* const buffer) {
-  const int* const inter_round_bits = buffer->inter_round_bits;
-  if (bitdepth == 12) {
-    assert(inter_round_bits[0] == 5 && inter_round_bits[1] == 9);
-  } else {
-    assert(inter_round_bits[0] == 3 && inter_round_bits[1] == 11);
-  }
+  constexpr int kRoundBitsHorizontal = (bitdepth == 12)
+                                           ? kInterRoundBitsHorizontal12bpp
+                                           : kInterRoundBitsHorizontal;
+  constexpr int kRoundBitsVertical =
+      (bitdepth == 12) ? kInterRoundBitsVertical12bpp : kInterRoundBitsVertical;
   int16_t filter[kSubPixelTaps - 1];
   const int limit =
-      (1 << (bitdepth + 1 + kWienerFilterBits - inter_round_bits[0])) - 1;
+      (1 << (bitdepth + 1 + kWienerFilterBits - kRoundBitsHorizontal)) - 1;
   const auto* src = static_cast<const Pixel*>(source);
   auto* dst = static_cast<Pixel*>(dest);
   source_stride /= sizeof(Pixel);
@@ -117,10 +116,7 @@ void LoopRestorationFuncs_C<bitdepth, Pixel>::WienerFilter(
       for (int k = 0; k < kSubPixelTaps - 1; ++k) {
         sum += filter[k] * src[x + k];
       }
-      const int rounded_sum = RightShiftWithRounding(sum, inter_round_bits[0]);
-      // TODO(chengchen): make sure the horizontal and vertical rounding offset
-      // is correct and whether they ensure rounded_sum is non-negative.
-      // If yes, replace Clip3() with std::min().
+      const int rounded_sum = RightShiftWithRounding(sum, kRoundBitsHorizontal);
       wiener_buffer[x] = static_cast<uint16_t>(Clip3(rounded_sum, 0, limit));
     }
     src += source_stride;
@@ -129,7 +125,7 @@ void LoopRestorationFuncs_C<bitdepth, Pixel>::WienerFilter(
   wiener_buffer = buffer->wiener_buffer;
   // vertical filtering.
   PopulateWienerCoefficients(restoration_info, WienerInfo::kVertical, filter);
-  const int vertical_rounding = -(1 << (bitdepth + inter_round_bits[1] - 1));
+  const int vertical_rounding = -(1 << (bitdepth + kRoundBitsVertical - 1));
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       // sum needs 32 bits.
@@ -137,7 +133,7 @@ void LoopRestorationFuncs_C<bitdepth, Pixel>::WienerFilter(
       for (int k = 0; k < kSubPixelTaps - 1; ++k) {
         sum += filter[k] * wiener_buffer[k * buffer_stride + x];
       }
-      const int rounded_sum = RightShiftWithRounding(sum, inter_round_bits[1]);
+      const int rounded_sum = RightShiftWithRounding(sum, kRoundBitsVertical);
       dst[x] = static_cast<Pixel>(Clip3(rounded_sum, 0, (1 << bitdepth) - 1));
     }
     dst += dest_stride;

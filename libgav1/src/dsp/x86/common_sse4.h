@@ -12,10 +12,8 @@
 #include <cstdint>
 #include <cstring>
 
-namespace libgav1 {
-namespace dsp {
-
 #if 0
+#include <cinttypes>
 #include <cstdio>
 
 // Quite useful macro for debugging. Left here for convenience.
@@ -37,8 +35,8 @@ inline void PrintReg(const __m128i r, const char* const name, int size) {
   } else if (size == 32) {
     for (n = 0; n < 4; ++n) fprintf(stderr, "%.8x ", tmp.i32[n]);
   } else {
-    for (n = 0; n < 2; ++n) fprintf(
-        stderr, "%.16llx ", static_cast<uint64_t>(tmp.i64[n]));
+    for (n = 0; n < 2; ++n)
+      fprintf(stderr, "%.16" PRIx64 " ", static_cast<uint64_t>(tmp.i64[n]));
   }
   fprintf(stderr, "\n");
 }
@@ -56,10 +54,33 @@ inline void PrintRegX(const int r, const char* const name) {
 #define PX(var) PrintRegX(var, #var);
 #endif  // 0
 
+namespace libgav1 {
+namespace dsp {
+
 //------------------------------------------------------------------------------
 // Load functions.
 
+inline __m128i Load2(const void* src) {
+  int16_t val;
+  memcpy(&val, src, sizeof(val));
+  return _mm_cvtsi32_si128(val);
+}
+
+inline __m128i Load2x2(const void* src1, const void* src2) {
+  uint16_t val1;
+  uint16_t val2;
+  memcpy(&val1, src1, sizeof(val1));
+  memcpy(&val2, src2, sizeof(val2));
+  return _mm_cvtsi32_si128(val1 | (val2 << 16));
+}
+
 inline __m128i Load4(const void* src) {
+  // With new compilers such as clang 8.0.0 we can use the new _mm_loadu_si32
+  // intrinsic. Both _mm_loadu_si32(src) and the code here are compiled into a
+  // movss instruction.
+  //
+  // Until compiler support of _mm_loadu_si32 is widespread, use of
+  // _mm_loadu_si32 is banned.
   int val;
   memcpy(&val, src, sizeof(val));
   return _mm_cvtsi32_si128(val);
@@ -81,6 +102,11 @@ inline __m128i LoadUnaligned16(const void* a) {
 
 //------------------------------------------------------------------------------
 // Store functions.
+
+inline void Store2(void* dst, const __m128i x) {
+  const int val = _mm_cvtsi128_si32(x);
+  memcpy(dst, &val, 2);
+}
 
 inline void Store4(void* dst, const __m128i x) {
   const int val = _mm_cvtsi128_si32(x);

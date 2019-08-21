@@ -1,4 +1,5 @@
-#include "src/dsp/x86/loop_restoration_sse4.h"
+#include "src/dsp/dsp.h"
+#include "src/dsp/loop_restoration.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 #include <smmintrin.h>
@@ -9,6 +10,7 @@
 #include <cstring>
 
 #include "src/dsp/common.h"
+#include "src/dsp/constants.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
@@ -63,10 +65,9 @@ void WienerFilter_SSE4_1(const void* source, void* const dest,
                          ptrdiff_t source_stride, ptrdiff_t dest_stride,
                          int width, int height,
                          RestorationBuffer* const buffer) {
-  const int* const inter_round_bits = buffer->inter_round_bits;
   int8_t filter[kSubPixelTaps];
   const int limit =
-      (1 << (8 + 1 + kWienerFilterBits - inter_round_bits[0])) - 1;
+      (1 << (8 + 1 + kWienerFilterBits - kInterRoundBitsHorizontal)) - 1;
   const auto* src = static_cast<const uint8_t*>(source);
   auto* dst = static_cast<uint8_t*>(dest);
   const ptrdiff_t buffer_stride = buffer->wiener_buffer_stride;
@@ -77,7 +78,7 @@ void WienerFilter_SSE4_1(const void* source, void* const dest,
   src -= center_tap * source_stride + center_tap;
 
   const int horizontal_rounding =
-      1 << (8 + kWienerFilterBits - inter_round_bits[0] - 1);
+      1 << (8 + kWienerFilterBits - kInterRoundBitsHorizontal - 1);
   const __m128i v_horizontal_rounding =
       _mm_shufflelo_epi16(_mm_cvtsi32_si128(horizontal_rounding), 0);
   const __m128i v_limit = _mm_shufflelo_epi16(_mm_cvtsi32_si128(limit), 0);
@@ -86,13 +87,16 @@ void WienerFilter_SSE4_1(const void* source, void* const dest,
   __m128i v_k3k2 = _mm_shufflelo_epi16(v_horizontal_filter, 0x55);
   __m128i v_k5k4 = _mm_shufflelo_epi16(v_horizontal_filter, 0xaa);
   __m128i v_k7k6 = _mm_shufflelo_epi16(v_horizontal_filter, 0xff);
-  const __m128i v_round_0 =
-      _mm_shufflelo_epi16(_mm_cvtsi32_si128(1 << (inter_round_bits[0] - 1)), 0);
-  const __m128i v_round_0_shift = _mm_cvtsi32_si128(inter_round_bits[0]);
-  const __m128i v_offset_shift = _mm_cvtsi32_si128(7 - inter_round_bits[0]);
+  const __m128i v_round_0 = _mm_shufflelo_epi16(
+      _mm_cvtsi32_si128(1 << (kInterRoundBitsHorizontal - 1)), 0);
+  const __m128i v_round_0_shift = _mm_cvtsi32_si128(kInterRoundBitsHorizontal);
+  const __m128i v_offset_shift =
+      _mm_cvtsi32_si128(7 - kInterRoundBitsHorizontal);
 
-  for (int y = 0; y < height + kSubPixelTaps - 2; ++y) {
-    for (int x = 0; x < width; x += 4) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       // Run the Wiener filter on four sets of source samples at a time:
       //   src[x + 0] ... src[x + 6]
       //   src[x + 1] ... src[x + 7]
@@ -126,29 +130,30 @@ void WienerFilter_SSE4_1(const void* source, void* const dest,
           _mm_add_epi16(v_rounded_sum0, v_horizontal_rounding);
       // Zero out the even bytes, calculate scaled down offset correction, and
       // add to sum here to prevent signed 16 bit outranging.
-      // (src[3] * 128) >> inter_round_bits[0]
+      // (src[3] * 128) >> kInterRoundBitsHorizontal
       const __m128i v_src_3x128 =
           _mm_sll_epi16(_mm_srli_epi16(v_src_32, 8), v_offset_shift);
       const __m128i v_rounded_sum = _mm_add_epi16(v_rounded_sum1, v_src_3x128);
       const __m128i v_a = _mm_max_epi16(v_rounded_sum, _mm_setzero_si128());
       const __m128i v_b = _mm_min_epi16(v_a, v_limit);
       StoreLo8(&wiener_buffer[x], v_b);
-    }
+      x += 4;
+    } while (x < width);
     src += source_stride;
     wiener_buffer += buffer_stride;
-  }
+  } while (++y < height + kSubPixelTaps - 2);
 
   wiener_buffer = buffer->wiener_buffer;
   // vertical filtering.
   PopulateWienerCoefficients(restoration_info, WienerInfo::kVertical, filter);
 
-  const int vertical_rounding = -(1 << (8 + inter_round_bits[1] - 1));
+  const int vertical_rounding = -(1 << (8 + kInterRoundBitsVertical - 1));
   const __m128i v_vertical_rounding =
       _mm_shuffle_epi32(_mm_cvtsi32_si128(vertical_rounding), 0);
   const __m128i v_offset_correction = _mm_set_epi16(0, 0, 0, 0, 128, 0, 0, 0);
-  const __m128i v_round_1 =
-      _mm_shuffle_epi32(_mm_cvtsi32_si128(1 << (inter_round_bits[1] - 1)), 0);
-  const __m128i v_round_1_shift = _mm_cvtsi32_si128(inter_round_bits[1]);
+  const __m128i v_round_1 = _mm_shuffle_epi32(
+      _mm_cvtsi32_si128(1 << (kInterRoundBitsVertical - 1)), 0);
+  const __m128i v_round_1_shift = _mm_cvtsi32_si128(kInterRoundBitsVertical);
   const __m128i v_vertical_filter0 = _mm_cvtepi8_epi16(LoadLo8(filter));
   const __m128i v_vertical_filter =
       _mm_add_epi16(v_vertical_filter0, v_offset_correction);
@@ -156,8 +161,10 @@ void WienerFilter_SSE4_1(const void* source, void* const dest,
   v_k3k2 = _mm_shuffle_epi32(v_vertical_filter, 0x55);
   v_k5k4 = _mm_shuffle_epi32(v_vertical_filter, 0xaa);
   v_k7k6 = _mm_shuffle_epi32(v_vertical_filter, 0xff);
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; x += 4) {
+  y = 0;
+  do {
+    int x = 0;
+    do {
       const __m128i v_wb_0 = LoadLo8(&wiener_buffer[0 * buffer_stride + x]);
       const __m128i v_wb_1 = LoadLo8(&wiener_buffer[1 * buffer_stride + x]);
       const __m128i v_wb_2 = LoadLo8(&wiener_buffer[2 * buffer_stride + x]);
@@ -182,10 +189,11 @@ void WienerFilter_SSE4_1(const void* source, void* const dest,
       const __m128i v_a = _mm_packs_epi32(v_rounded_sum, v_rounded_sum);
       const __m128i v_b = _mm_packus_epi16(v_a, v_a);
       Store4(&dst[x], v_b);
-    }
+      x += 4;
+    } while (x < width);
     dst += dest_stride;
     wiener_buffer += buffer_stride;
-  }
+  } while (++y < height);
 }
 
 // Section 7.17.3.
@@ -196,7 +204,7 @@ void WienerFilter_SSE4_1(const void* source, void* const dest,
 //   a2 = 1;
 // else
 //   a2 = ((z << kSgrProjSgrBits) + (z >> 1)) / (z + 1);
-constexpr int x_by_xplus1[256] = {
+constexpr int kXByXPlus1[256] = {
     1,   128, 171, 192, 205, 213, 219, 224, 228, 230, 233, 235, 236, 238, 239,
     240, 241, 242, 243, 243, 244, 244, 245, 245, 246, 246, 247, 247, 247, 247,
     248, 248, 248, 248, 249, 249, 249, 249, 249, 250, 250, 250, 250, 250, 250,
@@ -262,10 +270,12 @@ void BoxFilterPreProcessRadius1_SSE4_1(
 
   // Calculate intermediate results, including one-pixel border, for example,
   // if unit size is 64x64, we calculate 66x66 pixels.
-  for (int y = -1; y <= height; ++y) {
+  int y = -1;
+  do {
     const uint8_t* top_left = &src[(y - 1) * stride - 2];
     // Calculate the box vertical sums for each x position.
-    for (int vsx = -2; vsx <= width + 1; vsx += 4, top_left += 4) {
+    int vsx = -2;
+    do {
       const __m128i v_box0 = _mm_cvtepu8_epi32(Load4(top_left));
       const __m128i v_box1 = _mm_cvtepu8_epi32(Load4(top_left + stride));
       const __m128i v_box2 = _mm_cvtepu8_epi32(Load4(top_left + stride * 2));
@@ -278,9 +288,12 @@ void BoxFilterPreProcessRadius1_SSE4_1(
       const __m128i v_b012 = _mm_add_epi32(v_b01, v_box2);
       StoreUnaligned16(&vertical_sum_of_squares[vsx], v_a012);
       StoreUnaligned16(&vertical_sums[vsx], v_b012);
-    }
+      top_left += 4;
+      vsx += 4;
+    } while (vsx <= width + 1);
 
-    for (int x = -1; x <= width; x += 4) {
+    int x = -1;
+    do {
       const __m128i v_a =
           HorizontalAddVerticalSumsRadius1(&vertical_sum_of_squares[x - 1]);
       const __m128i v_b =
@@ -297,11 +310,10 @@ void BoxFilterPreProcessRadius1_SSE4_1(
       const __m128i v_z = _mm_min_epi32(
           v_255, RightShiftWithRounding_U32(_mm_mullo_epi32(v_p, v_s),
                                             kSgrProjScaleBits));
-      const __m128i v_a2 =
-          _mm_set_epi32(x_by_xplus1[_mm_extract_epi32(v_z, 3)],
-                        x_by_xplus1[_mm_extract_epi32(v_z, 2)],
-                        x_by_xplus1[_mm_extract_epi32(v_z, 1)],
-                        x_by_xplus1[_mm_extract_epi32(v_z, 0)]);
+      const __m128i v_a2 = _mm_set_epi32(kXByXPlus1[_mm_extract_epi32(v_z, 3)],
+                                         kXByXPlus1[_mm_extract_epi32(v_z, 2)],
+                                         kXByXPlus1[_mm_extract_epi32(v_z, 1)],
+                                         kXByXPlus1[_mm_extract_epi32(v_z, 0)]);
       // -----------------------
       // calc b2 and store
       // -----------------------
@@ -312,10 +324,11 @@ void BoxFilterPreProcessRadius1_SSE4_1(
       StoreUnaligned16(
           &intermediate_result[1][x],
           RightShiftWithRounding_U32(v_b2, kSgrProjReciprocalBits));
-    }
+      x += 4;
+    } while (x <= width);
     intermediate_result[0] += array_stride;
     intermediate_result[1] += array_stride;
-  }
+  } while (++y <= height);
 }
 
 void BoxFilterPreProcessRadius2_SSE4_1(
@@ -332,10 +345,12 @@ void BoxFilterPreProcessRadius2_SSE4_1(
 
   // Calculate intermediate results, including one-pixel border, for example,
   // if unit size is 64x64, we calculate 66x66 pixels.
-  for (int y = -1; y <= height; y += 2) {
+  int y = -1;
+  do {
     // Calculate the box vertical sums for each x position.
     const uint8_t* top_left = &src[(y - 2) * stride - 3];
-    for (int vsx = -3; vsx <= width + 2; vsx += 4, top_left += 4) {
+    int vsx = -3;
+    do {
       const __m128i v_box0 = _mm_cvtepu8_epi32(Load4(top_left));
       const __m128i v_box1 = _mm_cvtepu8_epi32(Load4(top_left + stride));
       const __m128i v_box2 = _mm_cvtepu8_epi32(Load4(top_left + stride * 2));
@@ -356,9 +371,12 @@ void BoxFilterPreProcessRadius2_SSE4_1(
       const __m128i v_b01234 = _mm_add_epi32(v_b0123, v_box4);
       StoreUnaligned16(&vertical_sum_of_squares[vsx], v_a01234);
       StoreUnaligned16(&vertical_sums[vsx], v_b01234);
-    }
+      top_left += 4;
+      vsx += 4;
+    } while (vsx <= width + 2);
 
-    for (int x = -1; x <= width; x += 4) {
+    int x = -1;
+    do {
       const __m128i v_a =
           HorizontalAddVerticalSumsRadius2(&vertical_sum_of_squares[x - 2]);
       const __m128i v_b =
@@ -375,11 +393,10 @@ void BoxFilterPreProcessRadius2_SSE4_1(
       const __m128i v_z = _mm_min_epi32(
           v_255, RightShiftWithRounding_U32(_mm_mullo_epi32(v_p, v_s),
                                             kSgrProjScaleBits));
-      const __m128i v_a2 =
-          _mm_set_epi32(x_by_xplus1[_mm_extract_epi32(v_z, 3)],
-                        x_by_xplus1[_mm_extract_epi32(v_z, 2)],
-                        x_by_xplus1[_mm_extract_epi32(v_z, 1)],
-                        x_by_xplus1[_mm_extract_epi32(v_z, 0)]);
+      const __m128i v_a2 = _mm_set_epi32(kXByXPlus1[_mm_extract_epi32(v_z, 3)],
+                                         kXByXPlus1[_mm_extract_epi32(v_z, 2)],
+                                         kXByXPlus1[_mm_extract_epi32(v_z, 1)],
+                                         kXByXPlus1[_mm_extract_epi32(v_z, 0)]);
       // -----------------------
       // calc b2 and store
       // -----------------------
@@ -390,10 +407,12 @@ void BoxFilterPreProcessRadius2_SSE4_1(
       StoreUnaligned16(
           &intermediate_result[1][x],
           RightShiftWithRounding_U32(v_b2, kSgrProjReciprocalBits));
-    }
+      x += 4;
+    } while (x <= width);
     intermediate_result[0] += 2 * array_stride;
     intermediate_result[1] += 2 * array_stride;
-  }
+    y += 2;
+  } while (y <= height);
 }
 
 void BoxFilterPreProcess_SSE4_1(const RestorationUnitInfo& restoration_info,
@@ -543,7 +562,8 @@ void BoxFilterProcess_SSE4_1(const RestorationUnitInfo& restoration_info,
         kRestorationBorder * intermediate_stride + kRestorationBorder;
 
     if (pass == 0) {
-      for (int y = 0; y < height; ++y) {
+      int y = 0;
+      do {
         const int shift = ((y & 1) != 0) ? 4 : 5;
         uint32_t* const array_start[2] = {
             buffer->box_filter_process_intermediate[0] +
@@ -554,7 +574,8 @@ void BoxFilterProcess_SSE4_1(const RestorationUnitInfo& restoration_info,
             array_start[0] - intermediate_stride,
             array_start[1] - intermediate_stride};
         if ((y & 1) == 0) {  // even row
-          for (int x = 0; x < width; x += 4) {
+          int x = 0;
+          do {
             // 5 6 5
             // 0 0 0
             // 5 6 5
@@ -569,9 +590,11 @@ void BoxFilterProcess_SSE4_1(const RestorationUnitInfo& restoration_info,
                 v_v, kSgrProjSgrBits + shift - kSgrProjRestoreBits);
 
             StoreUnaligned16(&filtered_output[x], v_filtered);
-          }
+            x += 4;
+          } while (x < width);
         } else {
-          for (int x = 0; x < width; x += 4) {
+          int x = 0;
+          do {
             // 0 0 0
             // 5 6 5
             // 0 0 0
@@ -586,13 +609,15 @@ void BoxFilterProcess_SSE4_1(const RestorationUnitInfo& restoration_info,
                 v_v, kSgrProjSgrBits + shift - kSgrProjRestoreBits);
 
             StoreUnaligned16(&filtered_output[x], v_filtered);
-          }
+            x += 4;
+          } while (x < width);
         }
         src_ptr += stride;
         filtered_output += filtered_output_stride;
-      }
+      } while (++y < height);
     } else {
-      for (int y = 0; y < height; ++y) {
+      int y = 0;
+      do {
         const int shift = 5;
         uint32_t* const array_start[2] = {
             buffer->box_filter_process_intermediate[0] +
@@ -602,7 +627,8 @@ void BoxFilterProcess_SSE4_1(const RestorationUnitInfo& restoration_info,
         uint32_t* intermediate_result2[2] = {
             array_start[0] - intermediate_stride,
             array_start[1] - intermediate_stride};
-        for (int x = 0; x < width; x += 4) {
+        int x = 0;
+        do {
           const __m128i v_A = Process3x3Block_343(&intermediate_result2[0][x],
                                                   intermediate_stride);
           const __m128i v_B = Process3x3Block_343(&intermediate_result2[1][x],
@@ -614,10 +640,11 @@ void BoxFilterProcess_SSE4_1(const RestorationUnitInfo& restoration_info,
               v_v, kSgrProjSgrBits + shift - kSgrProjRestoreBits);
 
           StoreUnaligned16(&filtered_output[x], v_filtered);
-        }
+          x += 4;
+        } while (x < width);
         src_ptr += stride;
         filtered_output += filtered_output_stride;
-      }
+      } while (++y < height);
     }
   }
 }
@@ -652,8 +679,10 @@ void SelfGuidedFilter_SSE4_1(const void* source, void* dest,
   const __m128i v_r0_mask = _mm_cmpeq_epi32(v_r0, zero);
   const __m128i v_r1_mask = _mm_cmpeq_epi32(v_r1, zero);
 
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; x += 4) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       const __m128i v_src = _mm_cvtepu8_epi32(Load4(src + x));
       const __m128i v_u = _mm_slli_epi32(v_src, kSgrProjRestoreBits);
       const __m128i v_v_a = _mm_mullo_epi32(v_w1, v_u);
@@ -674,13 +703,14 @@ void SelfGuidedFilter_SSE4_1(const void* source, void* dest,
       v_s = _mm_packs_epi32(v_s, v_s);
       v_s = _mm_packus_epi16(v_s, v_s);
       Store4(&dst[x], v_s);
-    }
+      x += 4;
+    } while (x < width);
 
     src += source_stride;
     dst += dest_stride;
     box_filter_process_output[0] += array_stride;
     box_filter_process_output[1] += array_stride;
-  }
+  } while (++y < height);
 }
 
 void Init8bpp() {

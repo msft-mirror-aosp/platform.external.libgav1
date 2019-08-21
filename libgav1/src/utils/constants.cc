@@ -117,24 +117,17 @@ const uint8_t kTransformWidth[kNumTransformSizes] = {
 const uint8_t kTransformHeight[kNumTransformSizes] = {
     4, 8, 16, 4, 8, 16, 32, 4, 8, 16, 32, 64, 8, 16, 32, 64, 16, 32, 64};
 
+const uint8_t kTransformWidth4x4[kNumTransformSizes] = {
+    1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 8, 8, 8, 8, 16, 16, 16};
+
+const uint8_t kTransformHeight4x4[kNumTransformSizes] = {
+    1, 2, 4, 1, 2, 4, 8, 1, 2, 4, 8, 16, 2, 4, 8, 16, 4, 8, 16};
+
 const uint8_t kTransformWidthLog2[kNumTransformSizes] = {
     2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6};
 
 const uint8_t kTransformHeightLog2[kNumTransformSizes] = {
     2, 3, 4, 2, 3, 4, 5, 2, 3, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6};
-
-const TransformSize kMaxTransformSizeRectangle[kMaxBlockSizes] = {
-    kTransformSize4x4,   kTransformSize4x8,   kTransformSize4x16,
-    kTransformSize8x4,   kTransformSize8x8,   kTransformSize8x16,
-    kTransformSize8x32,  kTransformSize16x4,  kTransformSize16x8,
-    kTransformSize16x16, kTransformSize16x32, kTransformSize16x64,
-    kTransformSize32x8,  kTransformSize32x16, kTransformSize32x32,
-    kTransformSize32x64, kTransformSize64x16, kTransformSize64x32,
-    kTransformSize64x64, kTransformSize64x64, kTransformSize64x64,
-    kTransformSize64x64};
-
-const int kMaxTransformDepth[kMaxBlockSizes] = {
-    0, 1, 2, 1, 1, 2, 3, 2, 2, 2, 3, 4, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4};
 
 // 9.3 -- Split_Tx_Size[]
 const TransformSize kSplitTransformSize[kNumTransformSizes] = {
@@ -166,50 +159,7 @@ const TransformSize kTransformSizeSquareMax[kNumTransformSizes] = {
     kTransformSize64x64, kTransformSize64x64, kTransformSize64x64,
     kTransformSize64x64};
 
-// Defined in section 9.3 of the spec.
-const TransformType kModeToTransformType[kIntraPredictionModesUV] = {
-    kTransformTypeDctDct,   kTransformTypeDctAdst,  kTransformTypeAdstDct,
-    kTransformTypeDctDct,   kTransformTypeAdstAdst, kTransformTypeDctAdst,
-    kTransformTypeAdstDct,  kTransformTypeAdstDct,  kTransformTypeDctAdst,
-    kTransformTypeAdstAdst, kTransformTypeDctAdst,  kTransformTypeAdstDct,
-    kTransformTypeAdstAdst, kTransformTypeDctDct};
-
 const uint8_t kNumTransformTypesInSet[kNumTransformSets] = {1, 7, 5, 16, 12, 2};
-
-// Defined in section 5.11.47 of the spec. This array does not contain an entry
-// for kTransformSetDctOnly, so the first dimension needs to be
-// |kNumTransformSets| - 1.
-const TransformType kInverseTransformTypeBySet[kNumTransformSets - 1][16] = {
-    {kTransformTypeIdentityIdentity, kTransformTypeDctDct,
-     kTransformTypeIdentityDct, kTransformTypeDctIdentity,
-     kTransformTypeAdstAdst, kTransformTypeDctAdst, kTransformTypeAdstDct},
-    {kTransformTypeIdentityIdentity, kTransformTypeDctDct,
-     kTransformTypeAdstAdst, kTransformTypeDctAdst, kTransformTypeAdstDct},
-    {kTransformTypeIdentityIdentity, kTransformTypeIdentityDct,
-     kTransformTypeDctIdentity, kTransformTypeIdentityAdst,
-     kTransformTypeAdstIdentity, kTransformTypeIdentityFlipadst,
-     kTransformTypeFlipadstIdentity, kTransformTypeDctDct,
-     kTransformTypeDctAdst, kTransformTypeAdstDct, kTransformTypeDctFlipadst,
-     kTransformTypeFlipadstDct, kTransformTypeAdstAdst,
-     kTransformTypeFlipadstFlipadst, kTransformTypeFlipadstAdst,
-     kTransformTypeAdstFlipadst},
-    {kTransformTypeIdentityIdentity, kTransformTypeIdentityDct,
-     kTransformTypeDctIdentity, kTransformTypeDctDct, kTransformTypeDctAdst,
-     kTransformTypeAdstDct, kTransformTypeDctFlipadst,
-     kTransformTypeFlipadstDct, kTransformTypeAdstAdst,
-     kTransformTypeFlipadstFlipadst, kTransformTypeFlipadstAdst,
-     kTransformTypeAdstFlipadst},
-    {kTransformTypeIdentityIdentity, kTransformTypeDctDct}};
-
-// Replaces all occurrences of 64x* and *x64 with 32x* and *x32 respectively.
-const TransformSize kAdjustedTransformSize[kNumTransformSizes] = {
-    kTransformSize4x4,   kTransformSize4x8,   kTransformSize4x16,
-    kTransformSize8x4,   kTransformSize8x8,   kTransformSize8x16,
-    kTransformSize8x32,  kTransformSize16x4,  kTransformSize16x8,
-    kTransformSize16x16, kTransformSize16x32, kTransformSize16x32,
-    kTransformSize32x8,  kTransformSize32x16, kTransformSize32x32,
-    kTransformSize32x32, kTransformSize32x16, kTransformSize32x32,
-    kTransformSize32x32};
 
 const uint8_t kSgrProjParams[1 << kSgrProjParamsBits][4] = {
     {2, 12, 1, 4},  {2, 15, 1, 6},  {2, 18, 1, 8},  {2, 21, 1, 9},
@@ -220,10 +170,6 @@ const uint8_t kSgrProjParams[1 << kSgrProjParamsBits][4] = {
 const int8_t kSgrProjMultiplierMin[2] = {-96, -32};
 
 const int8_t kSgrProjMultiplierMax[2] = {31, 95};
-
-const int8_t kSgrProjDefaultMultiplier[2] = {-32, 31};
-
-const int8_t kWienerDefaultFilter[3] = {3, -7, 15};
 
 const int8_t kWienerTapsMin[3] = {-5, -23, -17};
 
@@ -595,11 +541,314 @@ const int16_t kDirectionalIntraPredictorDerivative[44] = {
     3,           // 87, ...
 };
 
-const uint8_t kPredictionModeDeltasLookup[kNumPredictionModes] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // Intra modes.
-    0,                      // ChromaFromLuma mode, not used in y mode.
-    1, 1, 0, 1,             // Inter modes.
-    1, 1, 1, 1, 1, 1, 0, 1  // Compound inter modes.
+const uint8_t kDeblockFilterLevelIndex[kMaxPlanes][kNumLoopFilterTypes] = {
+    {0, 1}, {2, 2}, {3, 3}};
+
+const int8_t kMaskIdLookup[4][kMaxBlockSizes] = {
+    // transform size 4x4.
+    {0,  1,  13, 2, 3,  4,  15, 14, 5,  6,  7,
+     17, 16, 8,  9, 10, 18, 11, 12, -1, -1, -1},
+    // transform size 8x8.
+    {-1, -1, -1, -1, 19, 20, 29, -1, 21, 22, 23,
+     31, 30, 24, 25, 26, 32, 27, 28, -1, -1, -1},
+    // transform size 16x16.
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, 33, 34,
+     40, -1, 35, 36, 37, 41, 38, 39, -1, -1, -1},
+    // transform size 32x32.
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+     -1, -1, -1, 42, 43, -1, 44, 45, -1, -1, -1},
+};
+
+const int8_t kVerticalBorderMaskIdLookup[kMaxBlockSizes] = {
+    0,  47, 61, 49, 19, 51, 63, 62, 53, 33, 55,
+    65, 64, 57, 42, 59, 66, 60, 46, -1, -1, -1};
+
+const uint64_t kTopMaskLookup[67][4] = {
+    // transform size 4X4
+    {0x0000000000000001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X4, transform size 4X4
+    {0x0000000000010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X8, transform size 4X4
+    {0x0000000000000003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X4, transform size 4X4
+    {0x0000000000030003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X8, transform size 4X4
+    {0x0003000300030003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X16, transform size 4X4
+    {0x00000000000f000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X8, transform size 4X4
+    {0x000f000f000f000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X16, transform size 4X4
+    {0x000f000f000f000fULL, 0x000f000f000f000fULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 4X4
+    {0x00ff00ff00ff00ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 4X4
+    {0x00ff00ff00ff00ffULL, 0x00ff00ff00ff00ffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 4X4
+    {0x00ff00ff00ff00ffULL, 0x00ff00ff00ff00ffULL, 0x00ff00ff00ff00ffULL,
+     0x00ff00ff00ff00ffULL},  // block size 32X64, transform size 4X4
+    {0xffffffffffffffffULL, 0xffffffffffffffffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 4X4
+    {0xffffffffffffffffULL, 0xffffffffffffffffULL, 0xffffffffffffffffULL,
+     0xffffffffffffffffULL},  // block size 64X64, transform size 4x4
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X16, transform size 4X4
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X4, transform size 4X4
+    {0x0003000300030003ULL, 0x0003000300030003ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 4X4
+    {0x0000000000ff00ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 4X4
+    {0x000f000f000f000fULL, 0x000f000f000f000fULL, 0x000f000f000f000fULL,
+     0x000f000f000f000fULL},  // block size 16X64, transform size 4X4
+    {0xffffffffffffffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 4X4
+    // transform size 8X8
+    {0x0000000000000003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X8, transform size 8X8
+    {0x0000000300000003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X16, transform size 8X8
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X8, transform size 8X8
+    {0x0000000f0000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X16, transform size 8X8
+    {0x0000000f0000000fULL, 0x0000000f0000000fULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 8X8
+    {0x000000ff000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 8X8
+    {0x000000ff000000ffULL, 0x000000ff000000ffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 8X8
+    {0x000000ff000000ffULL, 0x000000ff000000ffULL, 0x000000ff000000ffULL,
+     0x000000ff000000ffULL},  // block size 32X64, transform size 8X8
+    {0x0000ffff0000ffffULL, 0x0000ffff0000ffffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 8X8
+    {0x0000ffff0000ffffULL, 0x0000ffff0000ffffULL, 0x0000ffff0000ffffULL,
+     0x0000ffff0000ffffULL},  // block size 64X64, transform size 8X8
+    {0x0000000300000003ULL, 0x0000000300000003ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 8X8
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 8X8
+    {0x0000000f0000000fULL, 0x0000000f0000000fULL, 0x0000000f0000000fULL,
+     0x0000000f0000000fULL},  // block size 16X64, transform size 8X8
+    {0x0000ffff0000ffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 8X8
+    // transform size 16X16
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X16, transform size 16X16
+    {0x000000000000000fULL, 0x000000000000000fULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 16X16
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 16X16
+    {0x00000000000000ffULL, 0x00000000000000ffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 16X16
+    {0x00000000000000ffULL, 0x00000000000000ffULL, 0x00000000000000ffULL,
+     0x00000000000000ffULL},  // block size 32X64, transform size 16X16
+    {0x000000000000ffffULL, 0x000000000000ffffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 16X16
+    {0x000000000000ffffULL, 0x000000000000ffffULL, 0x000000000000ffffULL,
+     0x000000000000ffffULL},  // block size 64X64, transform size 16X16
+    {0x000000000000000fULL, 0x000000000000000fULL, 0x000000000000000fULL,
+     0x000000000000000fULL},  // block size 16X64, transform size 16X16
+    {0x000000000000ffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 16X16
+    // transform size 32X32
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 32X32
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x00000000000000ffULL,
+     0x0000000000000000ULL},  // block size 32X64, transform size 32X32
+    {0x000000000000ffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 32X32
+    {0x000000000000ffffULL, 0x0000000000000000ULL, 0x000000000000ffffULL,
+     0x0000000000000000ULL},  // block size 64X64, transform size 32X32
+    // transform size 64X64
+    {0x000000000000ffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X64, transform size 64X64
+    // 2:1, 1:2 transform sizes.
+    {0x0000000000000001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X8, transform size 4X8
+    {0x0000000100000001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X16, transform size 4X8
+    {0x0000000000000003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X4, transform size 8X4
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X4, transform size 8X4
+    {0x0000000000000003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X16, transform size 8X16
+    {0x0000000000000003ULL, 0x0000000000000003ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 8X16
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X8, transform size 16X8
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 16X8
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 16X32
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x000000000000000fULL,
+     0x0000000000000000ULL},  // block size 16X64, transform size 16X32
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 32X16
+    {0x000000000000ffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 32X16
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X64, transform size 32X64
+    {0x000000000000ffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 64X32
+    // 4:1, 1:4 transform sizes.
+    {0x0000000000000001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X16, transform size 4X16
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X4, transform size 16X4
+    {0x0000000000000003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 8X32
+    {0x00000000000000ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 32X8
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X64, transform size 16X64
+    {0x000000000000ffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 64X16
+};
+
+const uint64_t kLeftMaskLookup[67][4] = {
+    // transform size 4X4
+    {0x0000000000000001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X4, transform size 4X4
+    {0x0000000000010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X8, transform size 4X4
+    {0x0000000000000003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X4, transform size 4X4
+    {0x0000000000030003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X8, transform size 4X4
+    {0x0003000300030003ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X16, transform size 4X4
+    {0x00000000000f000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X8, transform size 4X4
+    {0x000f000f000f000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X16, transform size 4X4
+    {0x000f000f000f000fULL, 0x000f000f000f000fULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 4X4
+    {0x00ff00ff00ff00ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 4X4
+    {0x00ff00ff00ff00ffULL, 0x00ff00ff00ff00ffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 4X4
+    {0x00ff00ff00ff00ffULL, 0x00ff00ff00ff00ffULL, 0x00ff00ff00ff00ffULL,
+     0x00ff00ff00ff00ffULL},  // block size 32X64, transform size 4X4
+    {0xffffffffffffffffULL, 0xffffffffffffffffULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 4X4
+    {0xffffffffffffffffULL, 0xffffffffffffffffULL, 0xffffffffffffffffULL,
+     0xffffffffffffffffULL},  // block size 64X64, transform size 4X4
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X16, transform size 4X4
+    {0x000000000000000fULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X4, transform size 4X4
+    {0x0003000300030003ULL, 0x0003000300030003ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 4X4
+    {0x0000000000ff00ffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 4X4
+    {0x000f000f000f000fULL, 0x000f000f000f000fULL, 0x000f000f000f000fULL,
+     0x000f000f000f000fULL},  // block size 16X64, transform size 4X4
+    {0xffffffffffffffffULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 4X4
+    // transform size 8X8
+    {0x0000000000010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X8, transform size 8X8
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X16, transform size 8X8
+    {0x0000000000050005ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X8, transform size 8X8
+    {0x0005000500050005ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X16, transform size 8X8
+    {0x0005000500050005ULL, 0x0005000500050005ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 8X8
+    {0x0055005500550055ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 8X8
+    {0x0055005500550055ULL, 0x0055005500550055ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 8X8
+    {0x0055005500550055ULL, 0x0055005500550055ULL, 0x0055005500550055ULL,
+     0x0055005500550055ULL},  // block size 32X64, transform size 8X8
+    {0x5555555555555555ULL, 0x5555555555555555ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 8X8
+    {0x5555555555555555ULL, 0x5555555555555555ULL, 0x5555555555555555ULL,
+     0x5555555555555555ULL},  // block size 64X64, transform size 8X8
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 8X8
+    {0x0000000000550055ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 8X8
+    {0x0005000500050005ULL, 0x0005000500050005ULL, 0x0005000500050005ULL,
+     0x0005000500050005ULL},  // block size 16X64, transform size 8X8
+    {0x5555555555555555ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 8X8
+    // transform size 16X16
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X16, transform size 16X16
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 16X16
+    {0x0011001100110011ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 16X16
+    {0x0011001100110011ULL, 0x0011001100110011ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 16X16
+    {0x0011001100110011ULL, 0x0011001100110011ULL, 0x0011001100110011ULL,
+     0x0011001100110011ULL},  // block size 32X64, transform size 16X16
+    {0x1111111111111111ULL, 0x1111111111111111ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 16X16
+    {0x1111111111111111ULL, 0x1111111111111111ULL, 0x1111111111111111ULL,
+     0x1111111111111111ULL},  // block size 64X64, transform size 16X16
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0001000100010001ULL,
+     0x0001000100010001ULL},  // block size 16X64, transform size 16X16
+    {0x1111111111111111ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 16X16
+    // transform size 32X32
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X32, transform size 32X32
+    {0x0101010101010101ULL, 0x0101010101010101ULL, 0x0101010101010101ULL,
+     0x0101010101010101ULL},  // block size 32X64, transform size 32X32
+    {0x0101010101010101ULL, 0x0101010101010101ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 32X32
+    {0x0101010101010101ULL, 0x0101010101010101ULL, 0x0101010101010101ULL,
+     0x0101010101010101ULL},  // block size 64X64, transform size 32X32
+    // transform size 64X64
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0001000100010001ULL,
+     0x0001000100010001ULL},  // block size 64X64, transform size 64X64
+    // 2:1, 1:2 transform sizes.
+    {0x0000000000010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X8, transform size 4X8
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X16, transform size 4X8
+    {0x0000000000000001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X4, transform size 8X4
+    {0x0000000000000005ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X4, transform size 8X4
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X16, transform size 8X16
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 8X16
+    {0x0000000000010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X8, transform size 16X8
+    {0x0000000000110011ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 16X8
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X32, transform size 16X32
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0001000100010001ULL,
+     0x0001000100010001ULL},  // block size 16X64, transform size 16X32
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X16, transform size 32X16
+    {0x0101010101010101ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 32X16
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0001000100010001ULL,
+     0x0001000100010001ULL},  // block size 32X64, transform size 32X64
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X32, transform size 64X32
+    // 4:1, 1:4 transform sizes.
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 4X16, transform size 4X16
+    {0x0000000000000001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 16X4, transform size 16X4
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 8X32, transform size 8X32
+    {0x0000000000010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 32X8, transform size 32X8
+    {0x0001000100010001ULL, 0x0001000100010001ULL, 0x0001000100010001ULL,
+     0x0001000100010001ULL},  // block size 16X64, transform size 16X64
+    {0x0001000100010001ULL, 0x0000000000000000ULL, 0x0000000000000000ULL,
+     0x0000000000000000ULL},  // block size 64X16, transform size 64X16
 };
 
 }  // namespace libgav1

@@ -1,15 +1,16 @@
 #include "src/post_filter.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
-#include <condition_variable>  // NOLINT (unapproved c++11 header)
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <mutex>  // NOLINT (unapproved c++11 header)
+#include <memory>
 
 #include "src/dsp/constants.h"
 #include "src/utils/array_2d.h"
+#include "src/utils/blocking_counter.h"
 #include "src/utils/logging.h"
 #include "src/utils/memory.h"
 #include "src/utils/types.h"
@@ -22,6 +23,37 @@ constexpr uint8_t kCdefUvDirection[2][2][8] = {
     {{7, 0, 2, 4, 5, 6, 6, 6}, {0, 1, 2, 3, 4, 5, 6, 7}}};
 
 template <typename Pixel>
+void ExtendFrame(uint8_t* const frame_start, const int width, const int height,
+                 ptrdiff_t stride, const int left, const int right,
+                 const int top, const int bottom) {
+  auto* const start = reinterpret_cast<Pixel*>(frame_start);
+  const Pixel* src = start;
+  Pixel* dst = start - left;
+  stride /= sizeof(Pixel);
+  // Copy to left and right borders.
+  for (int y = 0; y < height; ++y) {
+    Memset(dst, src[0], left);
+    Memset(dst + (left + width), src[width - 1], right);
+    src += stride;
+    dst += stride;
+  }
+  // Copy to top borders.
+  src = start - left;
+  dst = start - left - top * stride;
+  for (int y = 0; y < top; ++y) {
+    memcpy(dst, src, sizeof(Pixel) * stride);
+    dst += stride;
+  }
+  // Copy to bottom borders.
+  dst = start - left + height * stride;
+  src = dst - stride;
+  for (int y = 0; y < bottom; ++y) {
+    memcpy(dst, src, sizeof(Pixel) * stride);
+    dst += stride;
+  }
+}
+
+template <typename Pixel>
 void CopyPlane(const uint8_t* source, int source_stride, const int width,
                const int height, uint8_t* dest, int dest_stride) {
   auto* dst = reinterpret_cast<Pixel*>(dest);
@@ -32,29 +64,6 @@ void CopyPlane(const uint8_t* source, int source_stride, const int width,
     memcpy(dst, src, width * sizeof(Pixel));
     src += source_stride;
     dst += dest_stride;
-  }
-}
-
-void CopyYuvBufferToSource(const YuvBuffer* const filtered_frame,
-                           YuvBuffer* const source_frame) {
-  const int num_planes =
-      filtered_frame->is_monochrome() ? kMaxPlanesMonochrome : kMaxPlanes;
-  for (int plane = kPlaneY; plane < num_planes; ++plane) {
-    if (filtered_frame->bitdepth() == 8) {
-      CopyPlane<uint8_t>(
-          filtered_frame->data(plane), filtered_frame->stride(plane),
-          filtered_frame->displayed_width(plane),
-          filtered_frame->displayed_height(plane), source_frame->data(plane),
-          source_frame->stride(plane));
-#if LIBGAV1_MAX_BITDEPTH >= 10
-    } else {
-      CopyPlane<uint16_t>(
-          filtered_frame->data(plane), filtered_frame->stride(plane),
-          filtered_frame->displayed_width(plane),
-          filtered_frame->displayed_height(plane), source_frame->data(plane),
-          source_frame->stride(plane));
-#endif
-    }
   }
 }
 
@@ -89,49 +98,14 @@ void ComputeSuperRes(const uint8_t* source, uint32_t source_stride,
 
 }  // namespace
 
-template <typename Pixel>
-void ExtendFrame(uint8_t* const frame_start, const int width, const int height,
-                 ptrdiff_t stride, const int left, const int right,
-                 const int top, const int bottom) {
-  auto* const start = reinterpret_cast<Pixel*>(frame_start);
-  const Pixel* src = start;
-  Pixel* dst = start - left;
-  stride /= sizeof(Pixel);
-  // Copy to left and right borders.
-  for (int y = 0; y < height; ++y) {
-    Memset(dst, src[0], left);
-    Memset(dst + (left + width), src[width - 1], right);
-    src += stride;
-    dst += stride;
-  }
-  // Copy to top borders.
-  src = start - left;
-  dst = start - left - top * stride;
-  for (int y = 0; y < top; ++y) {
-    memcpy(dst, src, sizeof(Pixel) * stride);
-    dst += stride;
-  }
-  // Copy to bottom borders.
-  dst = start - left + height * stride;
-  src = dst - stride;
-  for (int y = 0; y < bottom; ++y) {
-    memcpy(dst, src, sizeof(Pixel) * stride);
-    dst += stride;
-  }
-}
-
-// Matching definition of static data members.
-constexpr int PostFilter::kRestorationWindowWidth;
+// Static data member definitions.
+constexpr int PostFilter::kCdefLargeValue;
 
 bool PostFilter::ApplyFiltering() {
   if (DoDeblock() && !ApplyDeblockFilter()) return false;
   if (DoCdef() && !ApplyCdef()) return false;
   if (DoSuperRes() && !ApplySuperRes()) return false;
   if (DoRestoration() && !ApplyLoopRestoration()) return false;
-  if (DoCdef() && !DoRestoration()) {
-    // Copy (upscaled) cdef filtered frame to output source buffer.
-    CopyYuvBufferToSource(cdef_buffer_, source_buffer_);
-  }
   // Extend frame boundary for inter frame convolution, referencing.
   for (int plane = kPlaneY; plane < planes_; ++plane) {
     const int8_t subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x_;
@@ -177,18 +151,39 @@ void PostFilter::ExtendFrameBoundary(uint8_t* const frame_start,
   }
 }
 
+void PostFilter::DeblockFilterWorker(const DeblockFilterJob* jobs, int num_jobs,
+                                     std::atomic<int>* job_counter,
+                                     DeblockFilter deblock_filter) {
+  int job_index;
+  while ((job_index = job_counter->fetch_add(1, std::memory_order_relaxed)) <
+         num_jobs) {
+    const DeblockFilterJob& job = jobs[job_index];
+    for (int column4x4 = 0, column_unit = 0;
+         column4x4 < frame_header_.columns4x4;
+         column4x4 += kNum4x4InLoopFilterMaskUnit, ++column_unit) {
+      const int unit_id = GetDeblockUnitId(job.row_unit, column_unit);
+      (this->*deblock_filter)(static_cast<Plane>(job.plane), job.row4x4,
+                              column4x4, unit_id);
+    }
+  }
+}
+
 bool PostFilter::ApplyDeblockFilterThreaded() {
-  std::mutex mutex;
-  int pending_jobs = 0;  // Guarded by |mutex|.
-  std::condition_variable pending_jobs_zero_condvar;
   const int jobs_per_plane = DivideBy16(frame_header_.rows4x4 + 15);
   const int num_workers = thread_pool_->num_threads();
-  const int jobs_for_threadpool_per_plane =
-      jobs_per_plane * num_workers / (num_workers + 1);
-  assert(jobs_for_threadpool_per_plane < jobs_per_plane);
-  std::vector<std::function<void()>> current_thread_jobs;
-  current_thread_jobs.reserve(planes_ *
-                              (jobs_per_plane - jobs_for_threadpool_per_plane));
+  int planes[kMaxPlanes];
+  planes[0] = kPlaneY;
+  int num_planes = 1;
+  for (int plane = kPlaneU; plane < planes_; ++plane) {
+    if (frame_header_.loop_filter.level[plane + 1] != 0) {
+      planes[num_planes++] = plane;
+    }
+  }
+  const int num_jobs = num_planes * jobs_per_plane;
+  std::unique_ptr<DeblockFilterJob[]> jobs_unique_ptr(
+      new (std::nothrow) DeblockFilterJob[num_jobs]);
+  if (jobs_unique_ptr == nullptr) return false;
+  DeblockFilterJob* jobs = jobs_unique_ptr.get();
   // The vertical filters are not dependent on each other. So simply schedule
   // them for all possible rows.
   //
@@ -200,62 +195,34 @@ bool PostFilter::ApplyDeblockFilterThreaded() {
   //
   // The only synchronization involved is to know when the each directional
   // filter is complete for the entire frame.
-  for (auto deblock_filter : {&PostFilter::VerticalDeblockFilter,
-                              &PostFilter::HorizontalDeblockFilter}) {
-    for (int plane = kPlaneY; plane < planes_; ++plane) {
-      if (plane != kPlaneY && frame_header_.loop_filter.level[plane + 1] == 0) {
-        continue;
-      }
-      {
-        std::lock_guard<std::mutex> lock(mutex);
-        pending_jobs += jobs_for_threadpool_per_plane;
-      }
+  for (DeblockFilter deblock_filter : {&PostFilter::VerticalDeblockFilter,
+                                       &PostFilter::HorizontalDeblockFilter}) {
+    int job_index = 0;
+    for (int i = 0; i < num_planes; ++i) {
+      const int plane = planes[i];
       for (int row4x4 = 0, row_unit = 0; row4x4 < frame_header_.rows4x4;
            row4x4 += kNum4x4InLoopFilterMaskUnit, ++row_unit) {
-        if (row_unit < jobs_for_threadpool_per_plane) {
-          thread_pool_->Schedule([this, plane, row4x4, row_unit, deblock_filter,
-                                  &mutex, &pending_jobs,
-                                  &pending_jobs_zero_condvar]() {
-            for (int column4x4 = 0, column_unit = 0;
-                 column4x4 < frame_header_.columns4x4;
-                 column4x4 += kNum4x4InLoopFilterMaskUnit, ++column_unit) {
-              const int unit_id = GetDeblockUnitId(row_unit, column_unit);
-              (this->*deblock_filter)(static_cast<Plane>(plane), row4x4,
-                                      column4x4, unit_id);
-            }
-            std::lock_guard<std::mutex> lock(mutex);
-            if (--pending_jobs == 0) {
-              // TODO(jzern): the mutex doesn't need to be locked to signal the
-              // condition.
-              pending_jobs_zero_condvar.notify_one();
-            }
-          });
-        } else {
-          current_thread_jobs.push_back(
-              [this, plane, row4x4, row_unit, deblock_filter]() {
-                for (int column4x4 = 0, column_unit = 0;
-                     column4x4 < frame_header_.columns4x4;
-                     column4x4 += kNum4x4InLoopFilterMaskUnit, ++column_unit) {
-                  const int unit_id = GetDeblockUnitId(row_unit, column_unit);
-                  (this->*deblock_filter)(static_cast<Plane>(plane), row4x4,
-                                          column4x4, unit_id);
-                }
-              });
-        }
+        assert(job_index < num_jobs);
+        DeblockFilterJob& job = jobs[job_index++];
+        job.plane = plane;
+        job.row4x4 = row4x4;
+        job.row_unit = row_unit;
       }
     }
-    // Run the jobs for current thread.
-    for (const auto& job : current_thread_jobs) {
-      job();
+    assert(job_index == num_jobs);
+    std::atomic<int> job_counter(0);
+    BlockingCounter pending_workers(num_workers);
+    for (int i = 0; i < num_workers; ++i) {
+      thread_pool_->Schedule([this, jobs, num_jobs, &job_counter,
+                              deblock_filter, &pending_workers]() {
+        DeblockFilterWorker(jobs, num_jobs, &job_counter, deblock_filter);
+        pending_workers.Decrement();
+      });
     }
-    current_thread_jobs.clear();
+    // Run the jobs on the current thread.
+    DeblockFilterWorker(jobs, num_jobs, &job_counter, deblock_filter);
     // Wait for the threadpool jobs to finish.
-    {
-      std::unique_lock<std::mutex> lock(mutex);
-      while (pending_jobs != 0) {
-        pending_jobs_zero_condvar.wait(lock);
-      }
-    }
+    pending_workers.Wait();
   }
   return true;
 }
@@ -300,132 +267,352 @@ bool PostFilter::ApplyDeblockFilter() {
   return true;
 }
 
-bool PostFilter::ApplyCdef() {
-  if (!cdef_filtered_buffer_.Realloc(
-          bitdepth_, planes_ == kMaxPlanesMonochrome, upscaled_width_, height_,
-          subsampling_x_, subsampling_y_, kBorderPixels,
-          /*byte_alignment=*/0, nullptr, nullptr, nullptr)) {
-    return false;
+void PostFilter::ComputeDeblockFilterLevels(
+    const int8_t delta_lf[kFrameLfCount],
+    uint8_t deblock_filter_levels[kMaxSegments][kFrameLfCount]
+                                 [kNumReferenceFrameTypes][2]) const {
+  if (!DoDeblock()) return;
+  for (int segment_id = 0;
+       segment_id < (frame_header_.segmentation.enabled ? kMaxSegments : 1);
+       ++segment_id) {
+    int level_index = 0;
+    for (; level_index < 2; ++level_index) {
+      LoopFilterMask::ComputeDeblockFilterLevels(
+          frame_header_, segment_id, level_index, delta_lf,
+          deblock_filter_levels[segment_id][level_index]);
+    }
+    for (; level_index < kFrameLfCount; ++level_index) {
+      if (frame_header_.loop_filter.level[level_index] != 0) {
+        LoopFilterMask::ComputeDeblockFilterLevels(
+            frame_header_, segment_id, level_index, delta_lf,
+            deblock_filter_levels[segment_id][level_index]);
+      }
+    }
   }
-  cdef_buffer_ = &cdef_filtered_buffer_;
+}
 
-  const size_t pixel_size =
-      (bitdepth_ == 8) ? sizeof(uint8_t) : sizeof(uint16_t);
+uint8_t* PostFilter::GetCdefBufferAndStride(
+    const int start_x, const int start_y, const int plane,
+    const int subsampling_x, const int subsampling_y,
+    const int window_buffer_plane_size, const int vertical_shift,
+    const int horizontal_shift, int* cdef_stride) {
+  if (!DoRestoration() && thread_pool_ != nullptr) {
+    // write output to threaded_window_buffer.
+    *cdef_stride = window_buffer_width_ * pixel_size_;
+    const int column_window = start_x % (window_buffer_width_ >> subsampling_x);
+    const int row_window = start_y % (window_buffer_height_ >> subsampling_y);
+    return threaded_window_buffer_ + plane * window_buffer_plane_size +
+           row_window * (*cdef_stride) + column_window * pixel_size_;
+  }
+  // write output to cdef_buffer_.
+  *cdef_stride = cdef_buffer_->stride(plane);
+  // In-place cdef is applied by writing the output to the top-left
+  // corner, if restoration is not present. In this case,
+  // cdef_buffer_ == source_buffer_.
+  const ptrdiff_t buffer_offset =
+      DoRestoration()
+          ? 0
+          : vertical_shift * (*cdef_stride) + horizontal_shift * pixel_size_;
+  return cdef_buffer_->data(plane) + start_y * (*cdef_stride) +
+         start_x * pixel_size_ + buffer_offset;
+}
+
+template <typename Pixel>
+void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
+                                     const int block_width4x4,
+                                     const int block_height4x4,
+                                     const int row4x4_start,
+                                     const int column4x4_start) {
   const int coeff_shift = bitdepth_ - 8;
-  const int step_64x64 = kNum4x4BlocksWide[kBlock64x64];
   const int step = kNum4x4BlocksWide[kBlock8x8];
-  // Apply cdef on each 8x8 Y block and
-  // (8 >> subsampling_x)x(8 >> subsampling_y) UV block.
-  for (int row = 0; row < frame_header_.rows4x4; row += step_64x64) {
-    for (int column = 0; column < frame_header_.columns4x4;
-         column += step_64x64) {
-      const int index = cdef_index_[DivideBy16(row)][DivideBy16(column)];
-      const int block_width4x4 =
-          std::min(step_64x64, frame_header_.columns4x4 - column);
-      const int block_height4x4 =
-          std::min(step_64x64, frame_header_.rows4x4 - row);
-      if (index == -1) {
-        for (int plane = kPlaneY; plane < planes_; ++plane) {
-          const int subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x_;
-          const int subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y_;
-          const int start_x = MultiplyBy4(column) >> subsampling_x;
-          const int start_y = MultiplyBy4(row) >> subsampling_y;
-          const ptrdiff_t cdef_stride = cdef_buffer_->stride(plane);
-          uint8_t* const cdef_buffer = cdef_buffer_->data(plane) +
-                                       start_y * cdef_stride +
-                                       start_x * pixel_size;
-          const int src_stride = source_buffer_->stride(plane);
-          uint8_t* const src_buffer = source_buffer_->data(plane) +
-                                      start_y * src_stride +
-                                      start_x * pixel_size;
-          const int block_width = MultiplyBy4(block_width4x4) >> subsampling_x;
-          const int block_height =
-              MultiplyBy4(block_height4x4) >> subsampling_y;
+  const int horizontal_shift = -source_buffer_->alignment() / pixel_size_;
+  const int vertical_shift = -kCdefBorder;
+  const int window_buffer_plane_size =
+      window_buffer_width_ * window_buffer_height_ * pixel_size_;
+
+  if (index == -1) {
+    for (int plane = kPlaneY; plane < planes_; ++plane) {
+      const int subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x_;
+      const int subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y_;
+      const int start_x = MultiplyBy4(column4x4_start) >> subsampling_x;
+      const int start_y = MultiplyBy4(row4x4_start) >> subsampling_y;
+      int cdef_stride;
+      uint8_t* const cdef_buffer = GetCdefBufferAndStride(
+          start_x, start_y, plane, subsampling_x, subsampling_y,
+          window_buffer_plane_size, vertical_shift, horizontal_shift,
+          &cdef_stride);
+      const int src_stride = source_buffer_->stride(plane);
+      uint8_t* const src_buffer = source_buffer_->data(plane) +
+                                  start_y * src_stride + start_x * pixel_size_;
+      const int block_width = MultiplyBy4(block_width4x4) >> subsampling_x;
+      const int block_height = MultiplyBy4(block_height4x4) >> subsampling_y;
+      for (int y = 0; y < block_height; ++y) {
+        memcpy(cdef_buffer + y * cdef_stride, src_buffer + y * src_stride,
+               block_width * pixel_size_);
+      }
+    }
+    return;
+  }
+
+  PrepareCdefBlock<Pixel>(source_buffer_, planes_, subsampling_x_,
+                          subsampling_y_, frame_header_.width,
+                          frame_header_.height, block_width4x4, block_height4x4,
+                          row4x4_start, column4x4_start, cdef_block,
+                          kRestorationProcessingUnitSizeWithBorders);
+
+  for (int row4x4 = row4x4_start; row4x4 < row4x4_start + block_height4x4;
+       row4x4 += step) {
+    for (int column4x4 = column4x4_start;
+         column4x4 < column4x4_start + block_width4x4; column4x4 += step) {
+      const bool skip =
+          block_parameters_.Find(row4x4, column4x4) != nullptr &&
+          block_parameters_.Find(row4x4 + 1, column4x4) != nullptr &&
+          block_parameters_.Find(row4x4, column4x4 + 1) != nullptr &&
+          block_parameters_.Find(row4x4 + 1, column4x4 + 1) != nullptr &&
+          block_parameters_.Find(row4x4, column4x4)->skip &&
+          block_parameters_.Find(row4x4 + 1, column4x4)->skip &&
+          block_parameters_.Find(row4x4, column4x4 + 1)->skip &&
+          block_parameters_.Find(row4x4 + 1, column4x4 + 1)->skip;
+      int damping = frame_header_.cdef.damping + coeff_shift;
+      int direction_y;
+      int direction;
+      int variance;
+      uint8_t primary_strength;
+      uint8_t secondary_strength;
+
+      for (int plane = kPlaneY; plane < planes_; ++plane) {
+        const int subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x_;
+        const int subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y_;
+        const int start_x = MultiplyBy4(column4x4) >> subsampling_x;
+        const int start_y = MultiplyBy4(row4x4) >> subsampling_y;
+        const int block_width = 8 >> subsampling_x;
+        const int block_height = 8 >> subsampling_y;
+        int cdef_stride;
+        uint8_t* const cdef_buffer = GetCdefBufferAndStride(
+            start_x, start_y, plane, subsampling_x, subsampling_y,
+            window_buffer_plane_size, vertical_shift, horizontal_shift,
+            &cdef_stride);
+        const int src_stride = source_buffer_->stride(plane);
+        uint8_t* const src_buffer = source_buffer_->data(plane) +
+                                    start_y * src_stride +
+                                    start_x * pixel_size_;
+
+        if (skip) {  // No cdef filtering.
           for (int y = 0; y < block_height; ++y) {
             memcpy(cdef_buffer + y * cdef_stride, src_buffer + y * src_stride,
-                   block_width * pixel_size);
+                   block_width * pixel_size_);
           }
+          continue;
         }
+
+        if (plane == kPlaneY) {
+          dsp_.cdef_direction(src_buffer, src_stride, &direction_y, &variance);
+          primary_strength = frame_header_.cdef.y_primary_strength[index]
+                             << coeff_shift;
+          secondary_strength = frame_header_.cdef.y_secondary_strength[index]
+                               << coeff_shift;
+          direction = (primary_strength == 0) ? 0 : direction_y;
+          const int variance_strength =
+              ((variance >> 6) != 0) ? std::min(FloorLog2(variance >> 6), 12)
+                                     : 0;
+          primary_strength =
+              (variance != 0)
+                  ? (primary_strength * (4 + variance_strength) + 8) >> 4
+                  : 0;
+        } else {
+          primary_strength = frame_header_.cdef.uv_primary_strength[index]
+                             << coeff_shift;
+          secondary_strength = frame_header_.cdef.uv_secondary_strength[index]
+                               << coeff_shift;
+          direction = (primary_strength == 0)
+                          ? 0
+                          : kCdefUvDirection[subsampling_x_][subsampling_y_]
+                                            [direction_y];
+          damping = frame_header_.cdef.damping + coeff_shift - 1;
+        }
+
+        if ((primary_strength | secondary_strength) == 0) {
+          for (int y = 0; y < block_height; ++y) {
+            memcpy(cdef_buffer + y * cdef_stride, src_buffer + y * src_stride,
+                   block_width * pixel_size_);
+          }
+          continue;
+        }
+        uint16_t* cdef_src =
+            cdef_block + plane * kRestorationProcessingUnitSizeWithBorders *
+                             kRestorationProcessingUnitSizeWithBorders;
+        cdef_src += kCdefBorder * kRestorationProcessingUnitSizeWithBorders +
+                    kCdefBorder;
+        cdef_src += (MultiplyBy4(row4x4 - row4x4_start) >> subsampling_y) *
+                        kRestorationProcessingUnitSizeWithBorders +
+                    (MultiplyBy4(column4x4 - column4x4_start) >> subsampling_x);
+        dsp_.cdef_filter(cdef_src, kRestorationProcessingUnitSizeWithBorders,
+                         frame_header_.rows4x4, frame_header_.columns4x4,
+                         start_x, start_y, subsampling_x, subsampling_y,
+                         primary_strength, secondary_strength, damping,
+                         direction, cdef_buffer, cdef_stride);
+      }
+    }
+  }
+}
+
+template <typename Pixel>
+void PostFilter::ApplyCdefForOneRowInWindow(const int row4x4,
+                                            const int column4x4_start) {
+  const int step_64x64 = 16;  // = 64/4.
+  uint16_t cdef_block[kRestorationProcessingUnitSizeWithBorders *
+                      kRestorationProcessingUnitSizeWithBorders * 3];
+
+  for (int column4x4_64x64 = 0;
+       column4x4_64x64 < std::min(DivideBy4(window_buffer_width_),
+                                  frame_header_.columns4x4 - column4x4_start);
+       column4x4_64x64 += step_64x64) {
+    const int column4x4 = column4x4_start + column4x4_64x64;
+    const int index = cdef_index_[DivideBy16(row4x4)][DivideBy16(column4x4)];
+    const int block_width4x4 =
+        std::min(step_64x64, frame_header_.columns4x4 - column4x4);
+    const int block_height4x4 =
+        std::min(step_64x64, frame_header_.rows4x4 - row4x4);
+
+    ApplyCdefForOneUnit<Pixel>(cdef_block, index, block_width4x4,
+                               block_height4x4, row4x4, column4x4);
+  }
+}
+
+// Each thread processes one row inside the window.
+// Y, U, V planes are processed together inside one thread.
+template <typename Pixel>
+bool PostFilter::ApplyCdefThreaded() {
+  assert((window_buffer_height_ & 63) == 0);
+  const int num_workers = thread_pool_->num_threads();
+  const int horizontal_shift = -source_buffer_->alignment() / pixel_size_;
+  const int vertical_shift = -kCdefBorder;
+  const int window_buffer_plane_size =
+      window_buffer_width_ * window_buffer_height_ * pixel_size_;
+  const int window_buffer_height4x4 = DivideBy4(window_buffer_height_);
+  const int step_64x64 = 16;  // = 64/4.
+  for (int row4x4 = 0; row4x4 < frame_header_.rows4x4;
+       row4x4 += window_buffer_height4x4) {
+    const int actual_window_height4x4 =
+        std::min(window_buffer_height4x4, frame_header_.rows4x4 - row4x4);
+    const int vertical_units_per_window =
+        DivideBy16(actual_window_height4x4 + 15);
+    for (int column4x4 = 0; column4x4 < frame_header_.columns4x4;
+         column4x4 += DivideBy4(window_buffer_width_)) {
+      const int jobs_for_threadpool =
+          vertical_units_per_window * num_workers / (num_workers + 1);
+      BlockingCounter pending_jobs(jobs_for_threadpool);
+      int job_count = 0;
+      for (int row64x64 = 0; row64x64 < actual_window_height4x4;
+           row64x64 += step_64x64) {
+        if (job_count < jobs_for_threadpool) {
+          thread_pool_->Schedule(
+              [this, row4x4, column4x4, row64x64, &pending_jobs]() {
+                ApplyCdefForOneRowInWindow<Pixel>(row4x4 + row64x64, column4x4);
+                pending_jobs.Decrement();
+              });
+        } else {
+          ApplyCdefForOneRowInWindow<Pixel>(row4x4 + row64x64, column4x4);
+        }
+        ++job_count;
+      }
+      pending_jobs.Wait();
+      if (DoRestoration()) continue;
+
+      // Copy |threaded_window_buffer_| to cdef_buffer_ (== source_buffer_).
+      assert(cdef_buffer_ == source_buffer_);
+      for (int plane = kPlaneY; plane < planes_; ++plane) {
+        const int cdef_stride = cdef_buffer_->stride(plane);
+        const ptrdiff_t buffer_offset =
+            vertical_shift * cdef_stride + horizontal_shift * pixel_size_;
+        const int8_t subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x_;
+        const int8_t subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y_;
+        const int plane_row = MultiplyBy4(row4x4) >> subsampling_y;
+        const int plane_column = MultiplyBy4(column4x4) >> subsampling_x;
+        int copy_width = std::min(frame_header_.columns4x4 - column4x4,
+                                  DivideBy4(window_buffer_width_));
+        copy_width = MultiplyBy4(copy_width) >> subsampling_x;
+        int copy_height =
+            std::min(frame_header_.rows4x4 - row4x4, window_buffer_height4x4);
+        copy_height = MultiplyBy4(copy_height) >> subsampling_y;
+        CopyPlane<Pixel>(
+            threaded_window_buffer_ + plane * window_buffer_plane_size,
+            window_buffer_width_ * pixel_size_, copy_width, copy_height,
+            cdef_buffer_->data(plane) + plane_row * cdef_stride +
+                plane_column * pixel_size_ + buffer_offset,
+            cdef_stride);
+      }
+    }
+  }
+  if (!DoRestoration()) {
+    for (int plane = kPlaneY; plane < planes_; ++plane) {
+      if (!cdef_buffer_->ShiftBuffer(plane, horizontal_shift, vertical_shift)) {
+        LIBGAV1_DLOG(ERROR,
+                     "Error shifting frame buffer head pointer at plane: %d",
+                     plane);
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+bool PostFilter::ApplyCdef() {
+  if (!DoRestoration()) {
+    cdef_buffer_ = source_buffer_;
+  } else {
+    if (!cdef_filtered_buffer_.Realloc(
+            bitdepth_, planes_ == kMaxPlanesMonochrome, upscaled_width_,
+            height_, subsampling_x_, subsampling_y_, kBorderPixels,
+            /*byte_alignment=*/0, nullptr, nullptr, nullptr)) {
+      return false;
+    }
+    cdef_buffer_ = &cdef_filtered_buffer_;
+  }
+
+  if (thread_pool_ != nullptr) {
+#if LIBGAV1_MAX_BITDEPTH >= 10
+    if (bitdepth_ >= 10) {
+      return ApplyCdefThreaded<uint16_t>();
+    }
+#endif
+    return ApplyCdefThreaded<uint8_t>();
+  }
+
+  const int step_64x64 = 16;  // = 64/4.
+  // Apply cdef on each 8x8 Y block and
+  // (8 >> subsampling_x)x(8 >> subsampling_y) UV block.
+  for (int row4x4 = 0; row4x4 < frame_header_.rows4x4; row4x4 += step_64x64) {
+    for (int column4x4 = 0; column4x4 < frame_header_.columns4x4;
+         column4x4 += step_64x64) {
+      const int index = cdef_index_[DivideBy16(row4x4)][DivideBy16(column4x4)];
+      const int block_width4x4 =
+          std::min(step_64x64, frame_header_.columns4x4 - column4x4);
+      const int block_height4x4 =
+          std::min(step_64x64, frame_header_.rows4x4 - row4x4);
+
+#if LIBGAV1_MAX_BITDEPTH >= 10
+      if (bitdepth_ >= 10) {
+        ApplyCdefForOneUnit<uint16_t>(cdef_block_, index, block_width4x4,
+                                      block_height4x4, row4x4, column4x4);
         continue;
       }
-
-      for (int row4x4 = row; row4x4 < row + block_height4x4; row4x4 += step) {
-        for (int column4x4 = column; column4x4 < column + block_width4x4;
-             column4x4 += step) {
-          const bool skip =
-              block_parameters_->Find(row4x4, column4x4) != nullptr &&
-              block_parameters_->Find(row4x4 + 1, column4x4) != nullptr &&
-              block_parameters_->Find(row4x4, column4x4 + 1) != nullptr &&
-              block_parameters_->Find(row4x4 + 1, column4x4 + 1) != nullptr &&
-              block_parameters_->Find(row4x4, column4x4)->skip &&
-              block_parameters_->Find(row4x4 + 1, column4x4)->skip &&
-              block_parameters_->Find(row4x4, column4x4 + 1)->skip &&
-              block_parameters_->Find(row4x4 + 1, column4x4 + 1)->skip;
-          int damping = frame_header_.cdef.damping + coeff_shift;
-          int direction_y;
-          int direction;
-          int variance;
-          uint8_t primary_strength;
-          uint8_t secondary_strength;
-
-          for (int plane = kPlaneY; plane < planes_; ++plane) {
-            const int subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x_;
-            const int subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y_;
-            const int start_x = MultiplyBy4(column4x4) >> subsampling_x;
-            const int start_y = MultiplyBy4(row4x4) >> subsampling_y;
-            const int block_width = 8 >> subsampling_x;
-            const int block_height = 8 >> subsampling_y;
-            const ptrdiff_t cdef_stride = cdef_buffer_->stride(plane);
-            uint8_t* const cdef_buffer = cdef_buffer_->data(plane) +
-                                         start_y * cdef_stride +
-                                         start_x * pixel_size;
-            const int src_stride = source_buffer_->stride(plane);
-            uint8_t* const src_buffer = source_buffer_->data(plane) +
-                                        start_y * src_stride +
-                                        start_x * pixel_size;
-            for (int y = 0; y < block_height; ++y) {
-              memcpy(cdef_buffer + y * cdef_stride, src_buffer + y * src_stride,
-                     block_width * pixel_size);
-            }
-            if (skip) continue;  // No cdef filtering.
-
-            if (plane == kPlaneY) {
-              dsp_.cdef_direction(cdef_buffer, cdef_stride, &direction_y,
-                                  &variance);
-              primary_strength = frame_header_.cdef.y_primary_strength[index]
-                                 << coeff_shift;
-              secondary_strength =
-                  frame_header_.cdef.y_secondary_strength[index] << coeff_shift;
-              direction = (primary_strength == 0) ? 0 : direction_y;
-              const int variance_strength =
-                  ((variance >> 6) != 0)
-                      ? std::min(FloorLog2(variance >> 6), 12)
-                      : 0;
-              primary_strength =
-                  (variance != 0)
-                      ? (primary_strength * (4 + variance_strength) + 8) >> 4
-                      : 0;
-            } else {
-              primary_strength = frame_header_.cdef.uv_primary_strength[index]
-                                 << coeff_shift;
-              secondary_strength =
-                  frame_header_.cdef.uv_secondary_strength[index]
-                  << coeff_shift;
-              direction = (primary_strength == 0)
-                              ? 0
-                              : kCdefUvDirection[subsampling_x_][subsampling_y_]
-                                                [direction_y];
-              damping = frame_header_.cdef.damping + coeff_shift - 1;
-            }
-            // TODO(chengchen): Possible early termination if all parameters are
-            // 0.
-            dsp_.cdef_filter(src_buffer, src_stride, frame_header_.rows4x4,
-                             frame_header_.columns4x4, start_x, start_y,
-                             subsampling_x, subsampling_y, primary_strength,
-                             secondary_strength, damping, direction,
-                             cdef_buffer, cdef_stride);
-          }
-        }
+#endif  // LIBGAV1_MAX_BITDEPTH >= 10
+      ApplyCdefForOneUnit<uint8_t>(cdef_block_, index, block_width4x4,
+                                   block_height4x4, row4x4, column4x4);
+    }
+  }
+  if (!DoRestoration()) {
+    const int horizontal_shift = -source_buffer_->alignment() / pixel_size_;
+    const int vertical_shift = -kCdefBorder;
+    for (int plane = kPlaneY; plane < planes_; ++plane) {
+      if (!source_buffer_->ShiftBuffer(plane, horizontal_shift,
+                                       vertical_shift)) {
+        LIBGAV1_DLOG(ERROR,
+                     "Error shifting frame buffer head pointer at plane: %d",
+                     plane);
+        return false;
       }
     }
   }
@@ -492,16 +679,14 @@ void PostFilter::FrameSuperRes(YuvBuffer* const input_buffer) {
   // Extend original frame, copy to borders.
   for (int plane = kPlaneY; plane < planes_; ++plane) {
     const int8_t subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x_;
-    const int8_t subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y_;
     uint8_t* const frame_start = input_buffer->data(plane);
     const int plane_width =
         RightShiftWithRounding(upscaled_width_, subsampling_x);
-    const int border_height = kBorderPixels >> subsampling_y;
-    const int border_width = kBorderPixels >> subsampling_x;
-    ExtendFrameBoundary(frame_start, plane_width,
-                        input_buffer->displayed_height(plane),
-                        input_buffer->stride(plane), border_width, border_width,
-                        border_height, border_height);
+    ExtendFrameBoundary(
+        frame_start, plane_width, input_buffer->displayed_height(plane),
+        input_buffer->stride(plane), input_buffer->left_border(plane),
+        input_buffer->right_border(plane), input_buffer->top_border(plane),
+        input_buffer->bottom_border(plane));
   }
 }
 
@@ -536,9 +721,7 @@ void PostFilter::ApplyLoopRestorationForOneRowInWindow(
     const int x, const int y, const int row, const int unit_row,
     const int current_process_unit_height, const int process_unit_width,
     const int window_width, const int plane_unit_size,
-    const int num_horizontal_units, std::mutex* const mutex,
-    int* const pending_jobs,
-    std::condition_variable* const pending_jobs_zero_condvar) {
+    const int num_horizontal_units) {
   for (int column = 0; column < window_width; column += process_unit_width) {
     const int unit_x = x + column;
     const int unit_column =
@@ -555,17 +738,7 @@ void PostFilter::ApplyLoopRestorationForOneRowInWindow(
         cdef_buffer, cdef_buffer_stride, deblock_buffer, deblock_buffer_stride,
         plane, plane_height, unit_id, type, x, y, row, column,
         current_process_unit_width, current_process_unit_height,
-        process_unit_width, kRestorationWindowWidth);
-  }
-  if (mutex != nullptr) {
-    assert(pending_jobs != nullptr);
-    assert(pending_jobs_zero_condvar != nullptr);
-    std::lock_guard<std::mutex> lock(*mutex);
-    if (--*pending_jobs == 0) {
-      // TODO(jzern): the mutex doesn't need to be locked to signal the
-      // condition.
-      pending_jobs_zero_condvar->notify_one();
-    }
+        process_unit_width, window_buffer_width_);
   }
 }
 
@@ -581,15 +754,14 @@ void PostFilter::ApplyLoopRestorationForOneUnit(
   const int unit_x = x + column;
   const int unit_y = y + row;
   uint8_t* cdef_unit_buffer =
-      cdef_buffer + unit_y * cdef_buffer_stride + unit_x * sizeof(Pixel);
+      cdef_buffer + unit_y * cdef_buffer_stride + unit_x * pixel_size_;
   Array2DView<Pixel> loop_restored_window(
-      restoration_window_height_, kRestorationWindowWidth,
-      reinterpret_cast<Pixel*>(threaded_loop_restoration_buffer_));
+      window_buffer_height_, window_buffer_width_,
+      reinterpret_cast<Pixel*>(threaded_window_buffer_));
   if (type == kLoopRestorationTypeNone) {
     Pixel* dest = &loop_restored_window[row][column];
     for (int k = 0; k < current_process_unit_height; ++k) {
-      memcpy(dest, cdef_unit_buffer,
-             current_process_unit_width * sizeof(Pixel));
+      memcpy(dest, cdef_unit_buffer, current_process_unit_width * pixel_size_);
       dest += window_width;
       cdef_unit_buffer += cdef_buffer_stride;
     }
@@ -605,7 +777,7 @@ void PostFilter::ApplyLoopRestorationForOneUnit(
                                sizeof(Pixel) +
                            ((sizeof(Pixel) == 1) ? 6 : 0)];
   const ptrdiff_t block_buffer_stride =
-      kRestorationProcessingUnitSizeWithBorders * sizeof(Pixel);
+      kRestorationProcessingUnitSizeWithBorders * pixel_size_;
   IntermediateBuffers intermediate_buffers;
 
   RestorationBuffer restoration_buffer = {
@@ -616,10 +788,9 @@ void PostFilter::ApplyLoopRestorationForOneUnit(
        intermediate_buffers.box_filter.intermediate_b},
       kRestorationProcessingUnitSizeWithBorders + kRestorationPadding,
       intermediate_buffers.wiener,
-      kMaxSuperBlockSizeInPixels,
-      {(bitdepth_ == 12) ? 5 : 3, (bitdepth_ == 12) ? 9 : 11}};
+      kMaxSuperBlockSizeInPixels};
   uint8_t* deblock_unit_buffer =
-      deblock_buffer + unit_y * deblock_buffer_stride + unit_x * sizeof(Pixel);
+      deblock_buffer + unit_y * deblock_buffer_stride + unit_x * pixel_size_;
   assert(type == kLoopRestorationTypeSgrProj ||
          type == kLoopRestorationTypeWiener);
   const dsp::LoopRestorationFunc restoration_func =
@@ -631,23 +802,23 @@ void PostFilter::ApplyLoopRestorationForOneUnit(
       unit_y + current_process_unit_height >= plane_height);
   restoration_func(reinterpret_cast<const uint8_t*>(
                        block_buffer + kRestorationBorder * block_buffer_stride +
-                       kRestorationBorder * sizeof(Pixel)),
+                       kRestorationBorder * pixel_size_),
                    &loop_restored_window[row][column],
                    restoration_info_->loop_restoration_info(
                        static_cast<Plane>(plane), unit_id),
-                   block_buffer_stride, window_width * sizeof(Pixel),
+                   block_buffer_stride, window_width * pixel_size_,
                    current_process_unit_width, current_process_unit_height,
                    &restoration_buffer);
 }
 
 // Multi-thread version of loop restoration, based on a moving window of size
-// |kRestorationWindowWidth|x|restoration_window_height_|. Inside the moving
-// window, we create a filtering job for each row and each filtering job is
-// submitted to the thread pool. Each free thread takes one job from the thread
-// pool and completes filtering until all jobs are finished. This approach
-// requires an extra buffer (|threaded_loop_restoration_buffer_|) to hold the
-// filtering output, whose size is the size of the window. It also needs block
-// buffers (i.e., |block_buffer| and |intermediate_buffers| in
+// |window_buffer_width_|x|window_buffer_height_|. Inside the moving window, we
+// create a filtering job for each row and each filtering job is submitted to
+// the thread pool. Each free thread takes one job from the thread pool and
+// completes filtering until all jobs are finished. This approach requires an
+// extra buffer (|threaded_window_buffer_|) to hold the filtering output, whose
+// size is the size of the window. It also needs block buffers (i.e.,
+// |block_buffer| and |intermediate_buffers| in
 // ApplyLoopRestorationForOneUnit()) to store intermediate results in loop
 // restoration for each thread. After all units inside the window are filtered,
 // the output is written to the frame buffer.
@@ -663,9 +834,7 @@ bool PostFilter::ApplyLoopRestorationThreaded() {
       kRestorationProcessingUnitSize >> subsampling_y_,
       kRestorationProcessingUnitSize >> subsampling_y_};
 
-  std::mutex mutex;
-  std::condition_variable pending_jobs_zero_condvar;
-  const int horizontal_shift = -source_buffer_->alignment() / sizeof(Pixel);
+  const int horizontal_shift = -source_buffer_->alignment() / pixel_size_;
   const int vertical_shift = -kRestorationBorder;
   for (int plane = kPlaneY; plane < planes_; ++plane) {
     if (loop_restoration_.type[plane] == kLoopRestorationTypeNone) {
@@ -696,7 +865,7 @@ bool PostFilter::ApplyLoopRestorationThreaded() {
         RightShiftWithRounding(upscaled_width_, subsampling_x);
     const int plane_height = RightShiftWithRounding(height_, subsampling_y);
     const ptrdiff_t src_unit_buffer_offset =
-        vertical_shift * src_stride + horizontal_shift * sizeof(Pixel);
+        vertical_shift * src_stride + horizontal_shift * pixel_size_;
     ExtendFrameBoundary(cdef_buffer, plane_width, plane_height,
                         cdef_buffer_stride, kRestorationBorder,
                         kRestorationBorder, kRestorationBorder,
@@ -709,10 +878,10 @@ bool PostFilter::ApplyLoopRestorationThreaded() {
     }
 
     const int num_workers = thread_pool_->num_threads();
-    for (int y = 0; y < plane_height; y += restoration_window_height_) {
-      const int actual_window_height = std::min(
-          restoration_window_height_ - ((y == 0) ? unit_height_offset : 0),
-          plane_height - y);
+    for (int y = 0; y < plane_height; y += window_buffer_height_) {
+      const int actual_window_height =
+          std::min(window_buffer_height_ - ((y == 0) ? unit_height_offset : 0),
+                   plane_height - y);
       int vertical_units_per_window =
           (actual_window_height + plane_process_unit_height[plane] - 1) /
           plane_process_unit_height[plane];
@@ -731,14 +900,13 @@ bool PostFilter::ApplyLoopRestorationThreaded() {
                 plane_process_unit_height[plane] +
             1;
       }
-      for (int x = 0; x < plane_width; x += kRestorationWindowWidth) {
+      for (int x = 0; x < plane_width; x += window_buffer_width_) {
         const int actual_window_width =
-            std::min(kRestorationWindowWidth, plane_width - x);
-        int pending_jobs = vertical_units_per_window;  // Guarded by |mutex|.
+            std::min(window_buffer_width_, plane_width - x);
         const int jobs_for_threadpool =
-            pending_jobs * num_workers / (num_workers + 1);
-        assert(jobs_for_threadpool < pending_jobs);
-        pending_jobs = jobs_for_threadpool;
+            vertical_units_per_window * num_workers / (num_workers + 1);
+        assert(jobs_for_threadpool < vertical_units_per_window);
+        BlockingCounter pending_jobs(jobs_for_threadpool);
         int job_count = 0;
         int current_process_unit_height;
         for (int row = 0; row < actual_window_height;
@@ -757,20 +925,19 @@ bool PostFilter::ApplyLoopRestorationThreaded() {
 
           if (job_count < jobs_for_threadpool) {
             thread_pool_->Schedule(
-                [this, &mutex, cdef_buffer, cdef_buffer_stride, deblock_buffer,
+                [this, cdef_buffer, cdef_buffer_stride, deblock_buffer,
                  deblock_buffer_stride, process_unit_width,
                  current_process_unit_height, actual_window_width,
                  plane_unit_size, num_horizontal_units, x, y, row, unit_row,
-                 plane_height, plane_width, plane, &pending_jobs,
-                 &pending_jobs_zero_condvar]() {
+                 plane_height, plane_width, plane, &pending_jobs]() {
                   ApplyLoopRestorationForOneRowInWindow<Pixel>(
                       cdef_buffer, cdef_buffer_stride, deblock_buffer,
                       deblock_buffer_stride, static_cast<Plane>(plane),
                       plane_height, plane_width, x, y, row, unit_row,
                       current_process_unit_height, process_unit_width,
                       actual_window_width, plane_unit_size,
-                      num_horizontal_units, &mutex, &pending_jobs,
-                      &pending_jobs_zero_condvar);
+                      num_horizontal_units);
+                  pending_jobs.Decrement();
                 });
           } else {
             ApplyLoopRestorationForOneRowInWindow<Pixel>(
@@ -778,22 +945,17 @@ bool PostFilter::ApplyLoopRestorationThreaded() {
                 deblock_buffer_stride, static_cast<Plane>(plane), plane_height,
                 plane_width, x, y, row, unit_row, current_process_unit_height,
                 process_unit_width, actual_window_width, plane_unit_size,
-                num_horizontal_units, nullptr, nullptr, nullptr);
+                num_horizontal_units);
           }
           ++job_count;
         }
-        {
-          // Wait for all jobs of current window to finish.
-          std::unique_lock<std::mutex> lock(mutex);
-          while (pending_jobs > 0) {
-            pending_jobs_zero_condvar.wait(lock);
-          }
-        }
-        // Copy |threaded_loop_restoration_buffer_| to output frame.
-        CopyPlane<Pixel>(threaded_loop_restoration_buffer_,
-                         kRestorationWindowWidth * sizeof(Pixel),
+        // Wait for all jobs of current window to finish.
+        pending_jobs.Wait();
+        // Copy |threaded_window_buffer_| to output frame.
+        CopyPlane<Pixel>(threaded_window_buffer_,
+                         window_buffer_width_ * pixel_size_,
                          actual_window_width, actual_window_height,
-                         src_buffer + y * src_stride + x * sizeof(Pixel) +
+                         src_buffer + y * src_stride + x * pixel_size_ +
                              src_unit_buffer_offset,
                          src_stride);
       }
@@ -811,7 +973,7 @@ bool PostFilter::ApplyLoopRestorationThreaded() {
 
 bool PostFilter::ApplyLoopRestoration() {
   if (thread_pool_ != nullptr) {
-    assert(threaded_loop_restoration_buffer_ != nullptr);
+    assert(threaded_window_buffer_ != nullptr);
 #if LIBGAV1_MAX_BITDEPTH >= 10
     if (bitdepth_ >= 10) {
       return ApplyLoopRestorationThreaded<uint16_t>();
@@ -821,10 +983,8 @@ bool PostFilter::ApplyLoopRestoration() {
   }
 
   if (!DoCdef()) cdef_buffer_ = source_buffer_;
-  const size_t pixel_size =
-      (bitdepth_ == 8) ? sizeof(uint8_t) : sizeof(uint16_t);
   const ptrdiff_t block_buffer_stride =
-      kRestorationProcessingUnitSizeWithBorders * pixel_size;
+      kRestorationProcessingUnitSizeWithBorders * pixel_size_;
   const int plane_process_unit_width[kMaxPlanes] = {
       kRestorationProcessingUnitSize,
       kRestorationProcessingUnitSize >> subsampling_x_,
@@ -833,8 +993,16 @@ bool PostFilter::ApplyLoopRestoration() {
       kRestorationProcessingUnitSize,
       kRestorationProcessingUnitSize >> subsampling_y_,
       kRestorationProcessingUnitSize >> subsampling_y_};
-  RestorationBuffer restoration_buffer;
-  PrepareRestorationBuffer(&restoration_buffer);
+  IntermediateBuffers intermediate_buffers;
+  RestorationBuffer restoration_buffer = {
+      {intermediate_buffers.box_filter.output[0],
+       intermediate_buffers.box_filter.output[1]},
+      plane_process_unit_width[kPlaneY],
+      {intermediate_buffers.box_filter.intermediate_a,
+       intermediate_buffers.box_filter.intermediate_b},
+      kRestorationProcessingUnitSizeWithBorders + kRestorationPadding,
+      intermediate_buffers.wiener,
+      kMaxSuperBlockSizeInPixels};
 
   for (int plane = kPlaneY; plane < planes_; ++plane) {
     if (loop_restoration_.type[plane] == kLoopRestorationTypeNone) {
@@ -887,10 +1055,10 @@ bool PostFilter::ApplyLoopRestoration() {
     }
 
     int loop_restored_rows = 0;
-    const int horizontal_shift = -source_buffer_->alignment() / pixel_size;
+    const int horizontal_shift = -source_buffer_->alignment() / pixel_size_;
     const int vertical_shift = -kRestorationBorder;
     const ptrdiff_t src_unit_buffer_offset =
-        vertical_shift * src_stride + horizontal_shift * pixel_size;
+        vertical_shift * src_stride + horizontal_shift * pixel_size_;
     for (int unit_row = 0; unit_row < num_vertical_units; ++unit_row) {
       int current_unit_height = plane_unit_size;
       // Note [1]: we need to identify the entire restoration area. So the
@@ -914,11 +1082,11 @@ bool PostFilter::ApplyLoopRestoration() {
                 ->loop_restoration_info(static_cast<Plane>(plane), unit_id)
                 .type;
         uint8_t* src_unit_buffer =
-            src_buffer + unit_column * plane_unit_size * pixel_size;
+            src_buffer + unit_column * plane_unit_size * pixel_size_;
         uint8_t* cdef_unit_buffer =
-            cdef_buffer + unit_column * plane_unit_size * pixel_size;
+            cdef_buffer + unit_column * plane_unit_size * pixel_size_;
         uint8_t* deblock_unit_buffer =
-            deblock_buffer + unit_column * plane_unit_size * pixel_size;
+            deblock_buffer + unit_column * plane_unit_size * pixel_size_;
 
         // Take care of the last column. The max width of last column unit
         // could be 3/2 unit_size.
@@ -930,7 +1098,7 @@ bool PostFilter::ApplyLoopRestoration() {
         if (type == kLoopRestorationTypeNone) {
           for (int y = 0; y < current_unit_height; ++y) {
             memcpy(src_unit_buffer + src_unit_buffer_offset, cdef_unit_buffer,
-                   current_unit_width * pixel_size);
+                   current_unit_width * pixel_size_);
             src_unit_buffer += src_stride;
             cdef_unit_buffer += cdef_buffer_stride;
           }
@@ -971,14 +1139,14 @@ bool PostFilter::ApplyLoopRestoration() {
             // To address this, we store the restored pixels not onto the start
             // of current block on the source frame buffer, say point A,
             // but to its top by three pixels and to the left by
-            // alignment/pixel_size pixels, say point B, such that
+            // alignment/pixel_size_ pixels, say point B, such that
             // next processing unit can fetch 3 pixel border of unrestored
             // values. And we need to adjust the input frame buffer pointer to
             // its left and top corner, point B.
             uint8_t* const cdef_process_unit_buffer =
-                cdef_unit_buffer + column * pixel_size;
+                cdef_unit_buffer + column * pixel_size_;
             uint8_t* const deblock_process_unit_buffer =
-                deblock_unit_buffer + column * pixel_size;
+                deblock_unit_buffer + column * pixel_size_;
             const bool frame_top_border = unit_row + row == 0;
             const bool frame_bottom_border =
                 (unit_row == num_vertical_units - 1) &&
@@ -1001,8 +1169,8 @@ bool PostFilter::ApplyLoopRestoration() {
             restoration_func(
                 reinterpret_cast<const uint8_t*>(
                     block_buffer_ + kRestorationBorder * block_buffer_stride +
-                    kRestorationBorder * pixel_size),
-                src_unit_buffer + column * pixel_size + src_unit_buffer_offset,
+                    kRestorationBorder * pixel_size_),
+                src_unit_buffer + column * pixel_size_ + src_unit_buffer_offset,
                 restoration_info_->loop_restoration_info(
                     static_cast<Plane>(plane), unit_id),
                 block_buffer_stride, src_stride, processing_unit_width,
@@ -1043,9 +1211,7 @@ void PostFilter::HorizontalDeblockFilter(Plane plane, int row4x4_start,
   const int8_t subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y_;
   const int row_step = 1 << subsampling_y;
   const int column_step = 1 << subsampling_x;
-  const size_t pixel_size =
-      (bitdepth_ == 8) ? sizeof(uint8_t) : sizeof(uint16_t);
-  const size_t src_step = 4 * pixel_size;
+  const size_t src_step = 4 * pixel_size_;
   const ptrdiff_t row_stride = MultiplyBy4(source_buffer_->stride(plane));
   const ptrdiff_t src_stride = source_buffer_->stride(plane);
   uint8_t* src = SetBufferOffset(source_buffer_, plane, row4x4_start,
@@ -1083,18 +1249,21 @@ void PostFilter::HorizontalDeblockFilter(Plane plane, int row4x4_start,
     const int index = GetIndex(row);
     const int shift = GetShift(row, column);
     const int level_offset = LoopFilterMask::GetLevelOffset(row, column);
-    // TODO(chengchen): replace 0, 1, 2 to meaningful enum names.
-    // mask of current row. mask4x4 represents the vertical filter length for
+    // Mask of current row. mask4x4 represents the vertical filter length for
     // the current horizontal edge is 4, and we needs to apply 3-tap filtering.
     // Similarly, mask8x8 and mask16x16 represent filter lengths are 8 and 16.
     uint64_t mask4x4 =
-        (masks_->GetTop(unit_id, plane, 0 /*Tx4x4*/, index) >> shift) &
+        (masks_->GetTop(unit_id, plane, kLoopFilterTransformSizeId4x4, index) >>
+         shift) &
         single_row_mask;
     uint64_t mask8x8 =
-        (masks_->GetTop(unit_id, plane, 1 /*Tx8x8*/, index) >> shift) &
+        (masks_->GetTop(unit_id, plane, kLoopFilterTransformSizeId8x8, index) >>
+         shift) &
         single_row_mask;
     uint64_t mask16x16 =
-        (masks_->GetTop(unit_id, plane, 2 /*Tx16x16*/, index) >> shift) &
+        (masks_->GetTop(unit_id, plane, kLoopFilterTransformSizeId16x16,
+                        index) >>
+         shift) &
         single_row_mask;
     // mask4x4, mask8x8, mask16x16 are mutually exclusive.
     assert((mask4x4 & mask8x8) == 0 && (mask4x4 & mask16x16) == 0 &&
@@ -1133,7 +1302,6 @@ void PostFilter::HorizontalDeblockFilter(Plane plane, int row4x4_start,
           if ((mask16x16 & two_block_mask) == two_block_mask) {
             edge_count = 2;
             // Apply filtering for two edges.
-            // TODO(chengchen): actual implementation to come.
             filter_func(src_row, src_stride, outer_thresh_0, inner_thresh_0,
                         hev_thresh_0);
             filter_func(src_row + src_step, src_stride, outer_thresh_1,
@@ -1152,7 +1320,6 @@ void PostFilter::HorizontalDeblockFilter(Plane plane, int row4x4_start,
           if ((mask8x8 & two_block_mask) == two_block_mask) {
             edge_count = 2;
             // Apply filtering for two edges.
-            // TODO(chengchen): actual implementation to come.
             filter_func(src_row, src_stride, outer_thresh_0, inner_thresh_0,
                         hev_thresh_0);
             filter_func(src_row + src_step, src_stride, outer_thresh_1,
@@ -1170,7 +1337,6 @@ void PostFilter::HorizontalDeblockFilter(Plane plane, int row4x4_start,
           if ((mask4x4 & two_block_mask) == two_block_mask) {
             edge_count = 2;
             // Apply filtering for two edges.
-            // TODO(chengchen): actual implementation to come.
             filter_func(src_row, src_stride, outer_thresh_0, inner_thresh_0,
                         hev_thresh_0);
             filter_func(src_row + src_step, src_stride, outer_thresh_1,
@@ -1189,7 +1355,7 @@ void PostFilter::HorizontalDeblockFilter(Plane plane, int row4x4_start,
       mask16x16 >>= step;
       mask >>= step;
       column_offset += step;
-      src_row += MultiplyBy4(edge_count) * pixel_size;
+      src_row += MultiplyBy4(edge_count) * pixel_size_;
     }
     src += row_stride;
   }
@@ -1245,13 +1411,19 @@ void PostFilter::VerticalDeblockFilter(Plane plane, int row4x4_start,
     // the current vertical edge is 4, and we needs to apply 3-tap filtering.
     // Similarly, mask8x8 and mask16x16 represent filter lengths are 8 and 16.
     uint64_t mask4x4_0 =
-        (masks_->GetLeft(unit_id, plane, 0 /*Tx4x4*/, index) >> shift) &
+        (masks_->GetLeft(unit_id, plane, kLoopFilterTransformSizeId4x4,
+                         index) >>
+         shift) &
         single_row_mask;
     uint64_t mask8x8_0 =
-        (masks_->GetLeft(unit_id, plane, 1 /*Tx8x8*/, index) >> shift) &
+        (masks_->GetLeft(unit_id, plane, kLoopFilterTransformSizeId8x8,
+                         index) >>
+         shift) &
         single_row_mask;
     uint64_t mask16x16_0 =
-        (masks_->GetLeft(unit_id, plane, 2 /*Tx16x16*/, index) >> shift) &
+        (masks_->GetLeft(unit_id, plane, kLoopFilterTransformSizeId16x16,
+                         index) >>
+         shift) &
         single_row_mask;
     // mask4x4, mask8x8, mask16x16 are mutually exclusive.
     assert((mask4x4_0 & mask8x8_0) == 0 && (mask4x4_0 & mask16x16_0) == 0 &&
@@ -1260,15 +1432,18 @@ void PostFilter::VerticalDeblockFilter(Plane plane, int row4x4_start,
     // the corresponding SIMD function to apply filtering for two vertical
     // edges together.
     uint64_t mask4x4_1 =
-        (masks_->GetLeft(unit_id, plane, 0 /*Tx4x4*/, index_next) >>
+        (masks_->GetLeft(unit_id, plane, kLoopFilterTransformSizeId4x4,
+                         index_next) >>
          shift_next_row) &
         single_row_mask;
     uint64_t mask8x8_1 =
-        (masks_->GetLeft(unit_id, plane, 1 /*Tx8x8*/, index_next) >>
+        (masks_->GetLeft(unit_id, plane, kLoopFilterTransformSizeId8x8,
+                         index_next) >>
          shift_next_row) &
         single_row_mask;
     uint64_t mask16x16_1 =
-        (masks_->GetLeft(unit_id, plane, 2 /*Tx16x16*/, index_next) >>
+        (masks_->GetLeft(unit_id, plane, kLoopFilterTransformSizeId16x16,
+                         index_next) >>
          shift_next_row) &
         single_row_mask;
     // mask4x4, mask8x8, mask16x16 are mutually exclusive.
@@ -1309,8 +1484,6 @@ void PostFilter::VerticalDeblockFilter(Plane plane, int row4x4_start,
           const dsp::LoopFilterFunc filter_func = dsp_.loop_filters[size][type];
           if ((mask16x16_0 & mask16x16_1 & 1) != 0) {
             // Apply dual vertical edge filtering.
-            // TODO(chengchen): actual implementation to come, probably with
-            // functions to support filtering 4 edges.
             filter_func(src_row, src_stride, outer_thresh_0, inner_thresh_0,
                         hev_thresh_0);
             filter_func(src_row_next, src_stride, outer_thresh_1,
@@ -1330,8 +1503,6 @@ void PostFilter::VerticalDeblockFilter(Plane plane, int row4x4_start,
                                                : dsp::kLoopFilterSize6;
           const dsp::LoopFilterFunc filter_func = dsp_.loop_filters[size][type];
           if ((mask8x8_0 & mask8x8_1 & 1) != 0) {
-            // TODO(chengchen): actual implementation to come, probably with
-            // functions to support filtering 4 edges.
             filter_func(src_row, src_stride, outer_thresh_0, inner_thresh_0,
                         hev_thresh_0);
             filter_func(src_row_next, src_stride, outer_thresh_1,
@@ -1349,8 +1520,6 @@ void PostFilter::VerticalDeblockFilter(Plane plane, int row4x4_start,
           const dsp::LoopFilterSize size = dsp::kLoopFilterSize4;
           const dsp::LoopFilterFunc filter_func = dsp_.loop_filters[size][type];
           if ((mask4x4_0 & mask4x4_1 & 1) != 0) {
-            // TODO(chengchen): actual implementation to come, probably with
-            // functions to support filtering 4 edges.
             filter_func(src_row, src_stride, outer_thresh_0, inner_thresh_0,
                         hev_thresh_0);
             filter_func(src_row_next, src_stride, outer_thresh_1,
@@ -1402,24 +1571,6 @@ void PostFilter::GetDeblockFilterParams(uint8_t level, int* outer_thresh,
   *outer_thresh = outer_thresh_[level];
   *inner_thresh = inner_thresh_[level];
   *hev_thresh = hev_thresh_[level];
-}
-
-void PostFilter::PrepareRestorationBuffer(
-    RestorationBuffer* restoration_buffer) {
-  restoration_buffer->box_filter_process_output[0] =
-      intermediate_buffers_.box_filter.output[0];
-  restoration_buffer->box_filter_process_output[1] =
-      intermediate_buffers_.box_filter.output[1];
-  restoration_buffer->box_filter_process_intermediate[0] =
-      intermediate_buffers_.box_filter.intermediate_a;
-  restoration_buffer->box_filter_process_intermediate[1] =
-      intermediate_buffers_.box_filter.intermediate_b;
-  restoration_buffer->box_filter_process_intermediate_stride =
-      kRestorationProcessingUnitSizeWithBorders + kRestorationPadding;
-  restoration_buffer->wiener_buffer = intermediate_buffers_.wiener;
-  restoration_buffer->wiener_buffer_stride = kMaxSuperBlockSizeInPixels;
-  restoration_buffer->inter_round_bits[0] = bitdepth_ == 12 ? 5 : 3;
-  restoration_buffer->inter_round_bits[1] = bitdepth_ == 12 ? 9 : 11;
 }
 
 }  // namespace libgav1

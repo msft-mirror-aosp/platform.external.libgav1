@@ -10,6 +10,7 @@
 #include "src/buffer_pool.h"
 #include "src/decoder_impl.h"
 #include "src/motion_vector.h"
+#include "src/utils/common.h"
 #include "src/utils/logging.h"
 
 namespace libgav1 {
@@ -22,15 +23,20 @@ constexpr int kOperatingPoint = 0;
 // 5.9.16.
 // Find the smallest value of k such that block_size << k is greater than or
 // equal to target.
-inline int TileLog2(int block_size, int target) {
+//
+// NOTE: TileLog2(block_size, target) is equal to
+//   CeilLog2(ceil((double)target / block_size))
+// where the division is a floating-point number division. (This equality holds
+// even when |target| is equal to 0.) In the special case of block_size == 1,
+// TileLog2(1, target) is equal to CeilLog2(target).
+int TileLog2(int block_size, int target) {
   int k = 0;
   for (; (block_size << k) < target; ++k) {
   }
   return k;
 }
 
-inline void ParseBitStreamLevel(BitStreamLevel* const level,
-                                uint8_t level_bits) {
+void ParseBitStreamLevel(BitStreamLevel* const level, uint8_t level_bits) {
   level->major = kMinimumMajorBitstreamLevel + (level_bits >> 2);
   level->minor = level_bits & 3;
 }
@@ -396,6 +402,7 @@ bool ObuParser::ParseSequenceHeader() {
   sequence_header.film_grain_params_present = static_cast<bool>(scratch);
   // TODO(wtc): Compare new sequence header with old sequence header.
   sequence_header_ = sequence_header;
+  has_sequence_header_ = true;
   // Section 6.4.1: It is a requirement of bitstream conformance that if
   // OperatingPointIdc is equal to 0, then obu_extension_flag is equal to 0 for
   // all OBUs that follow this sequence header until the next sequence header.
@@ -488,6 +495,15 @@ bool ObuParser::ParseSuperResParametersAndComputeImageSize() {
         frame_header_.superres_scale_denominator;
   } else {
     frame_header_.superres_scale_denominator = kSuperResScaleNumerator;
+  }
+  assert(frame_header_.width != 0);
+  assert(frame_header_.height != 0);
+  // Check if multiplying upscaled_width by height would overflow.
+  assert(frame_header_.upscaled_width >= frame_header_.width);
+  if (frame_header_.upscaled_width > INT32_MAX / frame_header_.height) {
+    LIBGAV1_DLOG(ERROR, "Frame dimensions too big: width=%d height=%d.",
+                 frame_header_.width, frame_header_.height);
+    return false;
   }
   frame_header_.columns4x4 = ((frame_header_.width + 7) >> 3) << 1;
   frame_header_.rows4x4 = ((frame_header_.height + 7) >> 3) << 1;
@@ -1510,9 +1526,9 @@ bool ObuParser::ParseTileInfoSyntax() {
   const int sb_max_tile_area = kMaxTileArea >> MultiplyBy2(sb_size);
   const int minlog2_tile_columns = TileLog2(sb_max_tile_width, sb_columns);
   const int maxlog2_tile_columns =
-      TileLog2(1, std::min(sb_columns, static_cast<int>(kMaxTileColumns)));
+      CeilLog2(std::min(sb_columns, static_cast<int>(kMaxTileColumns)));
   const int maxlog2_tile_rows =
-      TileLog2(1, std::min(sb_rows, static_cast<int>(kMaxTileRows)));
+      CeilLog2(std::min(sb_rows, static_cast<int>(kMaxTileRows)));
   const int min_log2_tiles = std::max(
       minlog2_tile_columns, TileLog2(sb_max_tile_area, sb_rows * sb_columns));
   int64_t scratch;
@@ -1534,7 +1550,11 @@ bool ObuParser::ParseTileInfoSyntax() {
     if (sb_tile_width <= 0) return false;
     int i = 0;
     for (int sb_start = 0; sb_start < sb_columns; sb_start += sb_tile_width) {
-      if (i > kMaxTileColumns) return false;
+      if (i >= kMaxTileColumns) {
+        LIBGAV1_DLOG(ERROR,
+                     "tile_columns would be greater than kMaxTileColumns.");
+        return false;
+      }
       tile_info->tile_column_start[i++] = sb_start << sb_shift;
     }
     tile_info->tile_column_start[i] = frame_header_.columns4x4;
@@ -1557,7 +1577,10 @@ bool ObuParser::ParseTileInfoSyntax() {
     if (sb_tile_height <= 0) return false;
     i = 0;
     for (int sb_start = 0; sb_start < sb_rows; sb_start += sb_tile_height) {
-      if (i > kMaxTileRows) return false;
+      if (i >= kMaxTileRows) {
+        LIBGAV1_DLOG(ERROR, "tile_rows would be greater than kMaxTileRows.");
+        return false;
+      }
       tile_info->tile_row_start[i++] = sb_start << sb_shift;
     }
     tile_info->tile_row_start[i] = frame_header_.rows4x4;
@@ -1565,13 +1588,19 @@ bool ObuParser::ParseTileInfoSyntax() {
   } else {
     int widest_tile_sb = 1;
     int i = 0;
-    for (int sb_start = 0; sb_start < sb_columns && i < kMaxTileColumns; ++i) {
+    for (int sb_start = 0; sb_start < sb_columns; ++i) {
+      if (i >= kMaxTileColumns) {
+        LIBGAV1_DLOG(ERROR,
+                     "tile_columns would be greater than kMaxTileColumns.");
+        return false;
+      }
       tile_info->tile_column_start[i] = sb_start << sb_shift;
       const int max_width =
           std::min(sb_columns - sb_start, static_cast<int>(sb_max_tile_width));
       int sb_size;
       if (!bit_reader_->DecodeUniform(max_width, &sb_size)) {
         LIBGAV1_DLOG(ERROR, "Not enough bits.");
+        return false;
       }
       ++sb_size;
       widest_tile_sb = std::max(sb_size, widest_tile_sb);
@@ -1579,7 +1608,7 @@ bool ObuParser::ParseTileInfoSyntax() {
     }
     tile_info->tile_column_start[i] = frame_header_.columns4x4;
     tile_info->tile_columns = i;
-    tile_info->tile_columns_log2 = TileLog2(1, tile_info->tile_columns);
+    tile_info->tile_columns_log2 = CeilLog2(tile_info->tile_columns);
 
     int max_tile_area_sb = sb_rows * sb_columns;
     if (min_log2_tiles > 0) max_tile_area_sb >>= min_log2_tiles + 1;
@@ -1587,26 +1616,32 @@ bool ObuParser::ParseTileInfoSyntax() {
         std::max(max_tile_area_sb / widest_tile_sb, 1);
 
     i = 0;
-    for (int sb_start = 0; sb_start < sb_rows && i < kMaxTileRows; ++i) {
+    for (int sb_start = 0; sb_start < sb_rows; ++i) {
+      if (i >= kMaxTileRows) {
+        LIBGAV1_DLOG(ERROR, "tile_rows would be greater than kMaxTileRows.");
+        return false;
+      }
       tile_info->tile_row_start[i] = sb_start << sb_shift;
       const int max_height = std::min(sb_rows - sb_start, max_tile_height_sb);
       int sb_size;
       if (!bit_reader_->DecodeUniform(max_height, &sb_size)) {
         LIBGAV1_DLOG(ERROR, "Not enough bits.");
+        return false;
       }
       ++sb_size;
       sb_start += sb_size;
     }
     tile_info->tile_row_start[i] = frame_header_.rows4x4;
     tile_info->tile_rows = i;
-    tile_info->tile_rows_log2 = TileLog2(1, tile_info->tile_rows);
+    tile_info->tile_rows_log2 = CeilLog2(tile_info->tile_rows);
   }
   tile_info->tile_count = tile_info->tile_rows * tile_info->tile_columns;
   tile_info->context_update_id = 0;
-  if ((tile_info->tile_columns | tile_info->tile_rows) > 1) {
-    OBU_READ_LITERAL_OR_FAIL(tile_info->tile_columns_log2 +
-                             tile_info->tile_rows_log2);
-    tile_info->context_update_id = scratch;
+  const int tile_bits =
+      tile_info->tile_columns_log2 + tile_info->tile_rows_log2;
+  if (tile_bits != 0) {
+    OBU_READ_LITERAL_OR_FAIL(tile_bits);
+    tile_info->context_update_id = static_cast<int16_t>(scratch);
     if (tile_info->context_update_id >= tile_info->tile_count) {
       LIBGAV1_DLOG(ERROR, "Invalid context_update_tile_id (%d) >= %d.",
                    tile_info->context_update_id, tile_info->tile_count);
@@ -1814,8 +1849,9 @@ bool ObuParser::ParseFrameParameters() {
           continue;
         }
         const int index = sequence_header_.operating_point_idc[i];
-        if (index == 0 || (InTemporalLayer(index, temporal_ids_.back()) &&
-                           InSpatialLayer(index, spatial_ids_.back()))) {
+        if (index == 0 ||
+            (InTemporalLayer(index, obu_headers_.back().temporal_id) &&
+             InSpatialLayer(index, obu_headers_.back().spatial_id))) {
           OBU_READ_LITERAL_OR_FAIL(
               sequence_header_.decoder_model_info.buffer_removal_time_length);
           frame_header_.buffer_removal_time[i] = static_cast<uint32_t>(scratch);
@@ -1991,6 +2027,9 @@ bool ObuParser::ParseFrameParameters() {
 }
 
 bool ObuParser::ParseFrameHeader() {
+  // Section 6.8.1: It is a requirement of bitstream conformance that a
+  // sequence header OBU has been received before a frame header OBU.
+  if (!has_sequence_header_) return false;
   if (!ParseFrameParameters()) return false;
   if (frame_header_.show_existing_frame) return true;
   bool status = ParseTileInfoSyntax() && ParseQuantizerParameters() &&
@@ -2000,6 +2039,7 @@ bool ObuParser::ParseFrameHeader() {
       frame_header_.segmentation);
   status =
       ParseQuantizerIndexDeltaParameters() && ParseLoopFilterDeltaParameters();
+  if (!status) return false;
   ComputeSegmentLosslessAndQIndex();
   status = ParseLoopFilterParameters();
   if (!status) return false;
@@ -2029,12 +2069,6 @@ bool ObuParser::ParseMetadata(size_t size) {
   size -= 2;
   const auto type = static_cast<MetadataType>(scratch);
   switch (type) {
-    case kMetadataTypePrivateData:
-      for (size_t i = 0; i < size; ++i) {
-        OBU_READ_LITERAL_OR_FAIL(8);
-        metadata_.private_data.push_back(scratch);
-      }
-      break;
     case kMetadataTypeHdrContentLightLevel:
       OBU_READ_LITERAL_OR_FAIL(16);
       metadata_.max_cll = scratch;
@@ -2069,11 +2103,11 @@ bool ObuParser::ValidateTileGroup() {
   if (tile_group.start != next_tile_group_start_ ||
       tile_group.start > tile_group.end ||
       tile_group.end >= frame_header_.tile_info.tile_count) {
-    LIBGAV1_DLOG(
-        ERROR,
-        "Invalid tile group start %d (expected %d), end %d, tile_count %d.",
-        tile_group.start, next_tile_group_start_, tile_group.end,
-        frame_header_.tile_info.tile_count);
+    LIBGAV1_DLOG(ERROR,
+                 "Invalid tile group start %d or end %d: expected tile group "
+                 "start %d, tile_count %d.",
+                 tile_group.start, tile_group.end, next_tile_group_start_,
+                 frame_header_.tile_info.tile_count);
     return false;
   }
   next_tile_group_start_ = tile_group.end + 1;
@@ -2093,7 +2127,10 @@ bool ObuParser::ParseTileGroup(size_t size, size_t bytes_consumed_so_far) {
   const size_t start_offset = bit_reader_->byte_offset();
   const int tile_bits =
       tile_info->tile_columns_log2 + tile_info->tile_rows_log2;
-  tile_groups_.emplace_back();
+  if (!tile_groups_.emplace_back()) {
+    LIBGAV1_DLOG(ERROR, "Could not add an element to tile_groups_.");
+    return false;
+  }
   auto& tile_group = tile_groups_.back();
   if (tile_bits == 0) {
     tile_group.start = 0;
@@ -2116,7 +2153,7 @@ bool ObuParser::ParseTileGroup(size_t size, size_t bytes_consumed_so_far) {
     SetTileDataOffset(size, 1, bytes_consumed_so_far);
     return true;
   }
-  if (types_.back() == kObuFrame) {
+  if (obu_headers_.back().type == kObuFrame) {
     // 6.10.1: If obu_type is equal to OBU_FRAME, it is a requirement of
     // bitstream conformance that the value of tile_start_and_end_present_flag
     // is equal to 0.
@@ -2139,13 +2176,14 @@ bool ObuParser::ParseTileGroup(size_t size, size_t bytes_consumed_so_far) {
 }
 
 bool ObuParser::ParseHeader() {
+  ObuHeader obu_header;
   int64_t scratch = bit_reader_->ReadBit();
   if (scratch != 0) {
     LIBGAV1_DLOG(ERROR, "forbidden_bit is not zero.");
     return false;
   }
   OBU_READ_LITERAL_OR_FAIL(4);
-  types_.push_back(static_cast<libgav1::ObuType>(scratch));
+  obu_header.type = static_cast<libgav1::ObuType>(scratch);
   OBU_READ_BIT_OR_FAIL;
   const auto extension_flag = static_cast<bool>(scratch);
   OBU_READ_BIT_OR_FAIL;
@@ -2161,7 +2199,7 @@ bool ObuParser::ParseHeader() {
     LIBGAV1_DLOG(ERROR, "obu_reserved_1bit is not zero.");
     return false;
   }
-  has_extension_.push_back(extension_flag);
+  obu_header.has_extension = extension_flag;
   if (extension_flag) {
     if (extension_disallowed_) {
       LIBGAV1_DLOG(ERROR,
@@ -2169,19 +2207,19 @@ bool ObuParser::ParseHeader() {
       return false;
     }
     OBU_READ_LITERAL_OR_FAIL(3);
-    temporal_ids_.push_back(scratch);
+    obu_header.temporal_id = scratch;
     OBU_READ_LITERAL_OR_FAIL(2);
-    spatial_ids_.push_back(scratch);
+    obu_header.spatial_id = scratch;
     OBU_READ_LITERAL_OR_FAIL(3);  // reserved.
     if (scratch != 0) {
       LIBGAV1_DLOG(ERROR, "extension_header_reserved_3bits is not zero.");
       return false;
     }
   } else {
-    temporal_ids_.push_back(0);
-    spatial_ids_.push_back(0);
+    obu_header.temporal_id = 0;
+    obu_header.spatial_id = 0;
   }
-  return true;
+  return obu_headers_.push_back(obu_header);
 }
 
 #undef OBU_READ_UVLC_OR_FAIL
@@ -2203,10 +2241,7 @@ bool ObuParser::ParseOneFrame() {
   size_t size = size_;
 
   // Clear everything except the sequence header.
-  types_.clear();
-  has_extension_.clear();
-  temporal_ids_.clear();
-  spatial_ids_.clear();
+  obu_headers_.clear();
   frame_header_ = {};
   tile_groups_.clear();
   next_tile_group_start_ = 0;
@@ -2238,18 +2273,17 @@ bool ObuParser::ParseOneFrame() {
       return false;
     }
 
-    if (types_.back() != kObuSequenceHeader &&
-        types_.back() != kObuTemporalDelimiter &&
+    const ObuHeader& obu_header = obu_headers_.back();
+    const ObuType obu_type = obu_header.type;
+    if (obu_type != kObuSequenceHeader && obu_type != kObuTemporalDelimiter &&
+        has_sequence_header_ &&
         sequence_header_.operating_point_idc[kOperatingPoint] != 0 &&
-        has_extension_.back() &&
+        obu_header.has_extension &&
         (!InTemporalLayer(sequence_header_.operating_point_idc[kOperatingPoint],
-                          temporal_ids_.back()) ||
+                          obu_header.temporal_id) ||
          !InSpatialLayer(sequence_header_.operating_point_idc[kOperatingPoint],
-                         spatial_ids_.back()))) {
-      types_.pop_back();
-      spatial_ids_.pop_back();
-      temporal_ids_.pop_back();
-      has_extension_.pop_back();
+                         obu_header.spatial_id))) {
+      obu_headers_.pop_back();
       bit_reader_->SkipBytes(obu_size);
       data += bit_reader_->byte_offset();
       size -= bit_reader_->byte_offset();
@@ -2258,7 +2292,7 @@ bool ObuParser::ParseOneFrame() {
 
     const size_t obu_start_position = bit_reader_->bit_offset();
     bool obu_skipped = false;
-    switch (types_.back()) {
+    switch (obu_type) {
       case kObuTemporalDelimiter:
         break;
       case kObuSequenceHeader:
@@ -2348,6 +2382,9 @@ bool ObuParser::ParseOneFrame() {
         parsed_one_full_frame =
             (tile_groups_.back().end == frame_header_.tile_info.tile_count - 1);
         break;
+      case kObuTileList:
+        LIBGAV1_DLOG(ERROR, "Decoding of tile list OBUs is not supported.");
+        return false;
       case kObuPadding:
       // TODO(b/120903866): Fix ParseMetadata() and then invoke that for the
       // kObuMetadata case.
@@ -2356,11 +2393,14 @@ bool ObuParser::ParseOneFrame() {
         obu_skipped = true;
         break;
       default:
-        LIBGAV1_DLOG(ERROR, "Unknown OBU type: %d.", types_.back());
-        return false;
+        // Skip reserved OBUs. Section 6.2.2: Reserved units are for future use
+        // and shall be ignored by AV1 decoder.
+        bit_reader_->SkipBytes(obu_size);
+        obu_skipped = true;
+        break;
     }
-    if (obu_size > 0 && !obu_skipped && types_.back() != kObuFrame &&
-        types_.back() != kObuTileGroup) {
+    if (obu_size > 0 && !obu_skipped && obu_type != kObuFrame &&
+        obu_type != kObuTileGroup) {
       const size_t parsed_obu_size_in_bits =
           bit_reader_->bit_offset() - obu_start_position;
       if (obu_size * 8 < parsed_obu_size_in_bits) {
@@ -2368,14 +2408,14 @@ bool ObuParser::ParseOneFrame() {
             ERROR,
             "Parsed OBU size (%zu bits) is greater than expected OBU size "
             "(%zu bytes) obu_type: %d.",
-            parsed_obu_size_in_bits, obu_size, types_.back());
+            parsed_obu_size_in_bits, obu_size, obu_type);
         return false;
       }
       if (!bit_reader_->VerifyAndSkipTrailingBits(obu_size * 8 -
                                                   parsed_obu_size_in_bits)) {
         LIBGAV1_DLOG(ERROR,
                      "Error when verifying trailing bits for obu type: %d",
-                     types_.back());
+                     obu_type);
         return false;
       }
     }
@@ -2386,11 +2426,15 @@ bool ObuParser::ParseOneFrame() {
       LIBGAV1_DLOG(ERROR,
                    "OBU size (%zu) and consumed size (%zu) does not match for "
                    "obu_type: %d.",
-                   obu_size, consumed_obu_size, types_.back());
+                   obu_size, consumed_obu_size, obu_type);
       return false;
     }
     data += bytes_consumed;
     size -= bytes_consumed;
+  }
+  if (!parsed_one_full_frame && seen_frame_header) {
+    LIBGAV1_DLOG(ERROR, "The last tile group in the frame was not received.");
+    return false;
   }
   data_ = data;
   size_ = size;

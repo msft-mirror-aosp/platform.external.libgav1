@@ -1,4 +1,5 @@
-#include "src/dsp/arm/loop_restoration_neon.h"
+#include "src/dsp/dsp.h"
+#include "src/dsp/loop_restoration.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -46,14 +47,13 @@ inline int16x8_t HorizontalSum(const uint8x8_t a[7], int16_t filter[7]) {
   sum = vaddq_s16(
       sum, vmulq_n_s16(vreinterpretq_s16_u16(vmovl_u8(a[6])), filter[6]));
 
-  // |inter_round_bits[0]| == 3 for 8 bit inputs.
-  sum = vrshrq_n_s16(sum, 3);
+  sum = vrshrq_n_s16(sum, kInterRoundBitsHorizontal);
 
   // Delaying |horizontal_rounding| until after dowshifting allows the sum to
   // stay in 16 bits.
   // |horizontal_rounding| = 1 << (bitdepth + kWienerFilterBits - 1)
   //                         1 << (       8 +                 7 - 1)
-  // Plus |inter_round_bits[0]| and it works out to 1 << 11.
+  // Plus |kInterRoundBitsHorizontal| and it works out to 1 << 11.
   sum = vaddq_s16(sum, vdupq_n_s16(1 << 11));
 
   // Just like |horizontal_rounding|, adding |filter[3]| at this point allows
@@ -64,11 +64,122 @@ inline int16x8_t HorizontalSum(const uint8x8_t a[7], int16_t filter[7]) {
   sum = vaddq_s16(sum, vreinterpretq_s16_u16(vshll_n_u8(a[3], 4)));
 
   // Saturate to
-  // [0, (1 << (bitdepth + 1 + kWienerFilterBits - inter_round_bits[0])) - 1)]
+  // [0, (1 << (bitdepth + 1 + kWienerFilterBits - kInterRoundBitsHorizontal)) -
+  //  1)]
   //     (1 << (       8 + 1 +                 7 -                   3)) - 1)
   sum = vminq_s16(sum, vdupq_n_s16((1 << 13) - 1));
   sum = vmaxq_s16(sum, vdupq_n_s16(0));
   return sum;
+}
+
+template <int min_width>
+inline void VerticalSum(const int16_t* src_base, const int src_stride,
+                        uint8_t* dst_base, const int dst_stride,
+                        const int16x4_t filter[7], const int width,
+                        const int height) {
+  static_assert(min_width == 4 || min_width == 8, "");
+  // -(1 << (bitdepth + kInterRoundBitsVertical - 1))
+  // -(1 << (       8 +                      11 - 1))
+  constexpr int vertical_rounding = -(1 << 18);
+  if (min_width == 8) {
+    int x = 0;
+    do {
+      const int16_t* src = src_base + x;
+      uint8_t* dst = dst_base + x;
+      int16x8_t a[7];
+      a[0] = vld1q_s16(src);
+      src += src_stride;
+      a[1] = vld1q_s16(src);
+      src += src_stride;
+      a[2] = vld1q_s16(src);
+      src += src_stride;
+      a[3] = vld1q_s16(src);
+      src += src_stride;
+      a[4] = vld1q_s16(src);
+      src += src_stride;
+      a[5] = vld1q_s16(src);
+      src += src_stride;
+
+      int y = 0;
+      do {
+        a[6] = vld1q_s16(src);
+        src += src_stride;
+
+        int32x4_t sum_lo = vdupq_n_s32(vertical_rounding);
+        sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[0]), filter[0]);
+        sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[1]), filter[1]);
+        sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[2]), filter[2]);
+        sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[3]), filter[3]);
+        sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[4]), filter[4]);
+        sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[5]), filter[5]);
+        sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[6]), filter[6]);
+        uint16x4_t sum_lo_16 = vqrshrun_n_s32(sum_lo, 11);
+
+        int32x4_t sum_hi = vdupq_n_s32(vertical_rounding);
+        sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[0]), filter[0]);
+        sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[1]), filter[1]);
+        sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[2]), filter[2]);
+        sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[3]), filter[3]);
+        sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[4]), filter[4]);
+        sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[5]), filter[5]);
+        sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[6]), filter[6]);
+        uint16x4_t sum_hi_16 = vqrshrun_n_s32(sum_hi, 11);
+
+        vst1_u8(dst, vqmovn_u16(vcombine_u16(sum_lo_16, sum_hi_16)));
+        dst += dst_stride;
+
+        a[0] = a[1];
+        a[1] = a[2];
+        a[2] = a[3];
+        a[3] = a[4];
+        a[4] = a[5];
+        a[5] = a[6];
+      } while (++y < height);
+      x += 8;
+    } while (x < width);
+  } else if (min_width == 4) {
+    const int16_t* src = src_base;
+    uint8_t* dst = dst_base;
+    int16x4_t a[7];
+    a[0] = vld1_s16(src);
+    src += src_stride;
+    a[1] = vld1_s16(src);
+    src += src_stride;
+    a[2] = vld1_s16(src);
+    src += src_stride;
+    a[3] = vld1_s16(src);
+    src += src_stride;
+    a[4] = vld1_s16(src);
+    src += src_stride;
+    a[5] = vld1_s16(src);
+    src += src_stride;
+
+    int y = 0;
+    do {
+      a[6] = vld1_s16(src);
+      src += src_stride;
+
+      int32x4_t sum = vdupq_n_s32(vertical_rounding);
+      sum = vmlal_s16(sum, a[0], filter[0]);
+      sum = vmlal_s16(sum, a[1], filter[1]);
+      sum = vmlal_s16(sum, a[2], filter[2]);
+      sum = vmlal_s16(sum, a[3], filter[3]);
+      sum = vmlal_s16(sum, a[4], filter[4]);
+      sum = vmlal_s16(sum, a[5], filter[5]);
+      sum = vmlal_s16(sum, a[6], filter[6]);
+      uint16x4_t sum_16 = vqrshrun_n_s32(sum, 11);
+
+      StoreLo4(dst, vqmovn_u16(vcombine_u16(sum_16, sum_16)));
+      dst += dst_stride;
+
+      a[0] = a[1];
+      a[1] = a[2];
+      a[2] = a[3];
+      a[3] = a[4];
+      a[4] = a[5];
+      a[5] = a[6];
+    } while (++y < height);
+  }
 }
 
 void WienerFilter_NEON(const void* const source, void* const dest,
@@ -91,9 +202,14 @@ void WienerFilter_NEON(const void* const source, void* const dest,
   // left value.
   const int center_tap = 3;
   src -= center_tap * source_stride + center_tap;
-  // This writes out 2 more rows than we need.
-  for (int y = 0; y < height + kSubPixelTaps - 2; y += 8) {
-    for (int x = 0; x < width; x += 8) {
+  // This writes out 2 more rows than we need. It always writes out at least
+  // width 8 for the intermediate buffer.
+  // TODO(johannkoenig): Investigate a 4x specific first pass. May be possible
+  // to do it in half the passes.
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       const uint8_t* src_v = src + x;
       const uint8x16_t a0 = vld1q_u8(src_v);
       src_v += source_stride;
@@ -116,6 +232,7 @@ void WienerFilter_NEON(const void* const source, void* const dest,
       // This could load and transpose one 8x8 block to prime the loop, then
       // load and transpose a second block in the loop. The second block could
       // be passed to subsequent iterations.
+      // TODO(johannkoenig): convert these to arrays.
       Transpose16x8(a0, a1, a2, a3, a4, a5, a6, a7, b, b + 1, b + 2, b + 3,
                     b + 4, b + 5, b + 6, b + 7, b + 8, b + 9, b + 10, b + 11,
                     b + 12, b + 13, b + 14, b + 15);
@@ -129,6 +246,7 @@ void WienerFilter_NEON(const void* const source, void* const dest,
       int16x8_t sum_6 = HorizontalSum(b + 6, filter);
       int16x8_t sum_7 = HorizontalSum(b + 7, filter);
 
+      // TODO(johannkoenig): convert this to an array.
       Transpose8x8(&sum_0, &sum_1, &sum_2, &sum_3, &sum_4, &sum_5, &sum_6,
                    &sum_7);
 
@@ -148,10 +266,12 @@ void WienerFilter_NEON(const void* const source, void* const dest,
       vst1q_s16(wiener_buffer_v, sum_6);
       wiener_buffer_v += buffer_stride;
       vst1q_s16(wiener_buffer_v, sum_7);
-    }
+      x += 8;
+    } while (x < width);
     src += 8 * source_stride;
     wiener_buffer += 8 * buffer_stride;
-  }
+    y += 8;
+  } while (y < height + kSubPixelTaps - 2);
 
   // Vertical filtering.
   wiener_buffer = reinterpret_cast<int16_t*>(buffer->wiener_buffer);
@@ -162,61 +282,13 @@ void WienerFilter_NEON(const void* const source, void* const dest,
       vdup_n_s16(filter[0]),       vdup_n_s16(filter[1]), vdup_n_s16(filter[2]),
       vdup_n_s16(filter[3] + 128), vdup_n_s16(filter[4]), vdup_n_s16(filter[5]),
       vdup_n_s16(filter[6])};
-  // |inter_round_bits[1]| == 11 for 8 bit inputs.
-  // -(1 << (bitdepth + inter_round_bits[1] - 1))
-  // -(1 << (       8 +                  11 - 1))
-  const int vertical_rounding = -(1 << 18);
-  for (int x = 0; x < width; x += 8) {
-    int16_t* wiener_v = wiener_buffer + x;
-    uint8_t* dst_v = dst + x;
-    int16x8_t a[7];
-    a[0] = vld1q_s16(wiener_v);
-    wiener_v += buffer_stride;
-    a[1] = vld1q_s16(wiener_v);
-    wiener_v += buffer_stride;
-    a[2] = vld1q_s16(wiener_v);
-    wiener_v += buffer_stride;
-    a[3] = vld1q_s16(wiener_v);
-    wiener_v += buffer_stride;
-    a[4] = vld1q_s16(wiener_v);
-    wiener_v += buffer_stride;
-    a[5] = vld1q_s16(wiener_v);
-    wiener_v += buffer_stride;
 
-    for (int y = 0; y < height; ++y) {
-      a[6] = vld1q_s16(wiener_v);
-      wiener_v += buffer_stride;
-
-      int32x4_t sum_lo = vdupq_n_s32(vertical_rounding);
-      sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[0]), filter_v[0]);
-      sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[1]), filter_v[1]);
-      sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[2]), filter_v[2]);
-      sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[3]), filter_v[3]);
-      sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[4]), filter_v[4]);
-      sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[5]), filter_v[5]);
-      sum_lo = vmlal_s16(sum_lo, vget_low_s16(a[6]), filter_v[6]);
-      uint16x4_t sum_lo_16 = vqrshrun_n_s32(sum_lo, 11);
-
-      int32x4_t sum_hi = vdupq_n_s32(vertical_rounding);
-      sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[0]), filter_v[0]);
-      sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[1]), filter_v[1]);
-      sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[2]), filter_v[2]);
-      sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[3]), filter_v[3]);
-      sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[4]), filter_v[4]);
-      sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[5]), filter_v[5]);
-      sum_hi = vmlal_s16(sum_hi, vget_high_s16(a[6]), filter_v[6]);
-      uint16x4_t sum_hi_16 = vqrshrun_n_s32(sum_hi, 11);
-
-      vst1_u8(dst_v, vqmovn_u16(vcombine_u16(sum_lo_16, sum_hi_16)));
-      dst_v += dest_stride;
-
-      a[0] = a[1];
-      a[1] = a[2];
-      a[2] = a[3];
-      a[3] = a[4];
-      a[4] = a[5];
-      a[5] = a[6];
-    }
+  if (width == 4) {
+    VerticalSum<4>(wiener_buffer, buffer_stride, dst, dest_stride, filter_v,
+                   width, height);
+  } else {
+    VerticalSum<8>(wiener_buffer, buffer_stride, dst, dest_stride, filter_v,
+                   width, height);
   }
 }
 
@@ -463,7 +535,8 @@ inline void BoxFilterProcess_FirstPass(const uint8_t* const src,
     row_sq[1] = vmull_u8(row[1], row[1]);
     row_sq[2] = vmull_u8(row[2], row[2]);
 
-    for (int y = -1; y < height + 1; y += 2) {
+    int y = -1;
+    do {
       row[3] = vld1_u8(column);
       column += stride;
       row[4] = vld1_u8(column);
@@ -488,10 +561,12 @@ inline void BoxFilterProcess_FirstPass(const uint8_t* const src,
       row_sq[0] = row_sq[2];
       row_sq[1] = row_sq[3];
       row_sq[2] = row_sq[4];
-    }
+      y += 2;
+    } while (y < height + 1);
   }
 
-  for (int x = 0; x < width; x += 4) {
+  int x = 0;
+  do {
     // |src_pre_process| is X but we already processed the first column of 4
     // values so we want to start at Y and increment from there.
     // X s s s Y s s
@@ -564,7 +639,8 @@ inline void BoxFilterProcess_FirstPass(const uint8_t* const src,
     // Calculate one output line. Add in the line from the previous pass and
     // output one even row. Sum the new line and output the odd row. Carry the
     // new row into the next pass.
-    for (int y = 0; y < height; y += 2) {
+    int y = 0;
+    do {
       row[3] = vld1_u8(column);
       column += stride;
       row[4] = vld1_u8(column);
@@ -616,8 +692,10 @@ inline void BoxFilterProcess_FirstPass(const uint8_t* const src,
 
       sum565_a0 = sum565_a1;
       sum565_b0 = sum565_b1;
-    }
-  }
+      y += 2;
+    } while (y < height);
+    x += 4;
+  } while (x < width);
 }
 
 inline void BoxFilterPreProcess_SecondPass(const uint8_t* const src,
@@ -637,7 +715,8 @@ inline void BoxFilterPreProcess_SecondPass(const uint8_t* const src,
   // get 68 values. This doesn't appear to be causing problems yet but it
   // might.
   const uint8_t* const src_top_left_corner = src - 1 - 2 * stride;
-  for (int x = -1; x < width + 1; x += 4) {
+  int x = -1;
+  do {
     const uint8_t* column = src_top_left_corner + x;
     uint16_t* a2_column = a2 + (x + 1);
     uint8x8_t row[3];
@@ -650,7 +729,8 @@ inline void BoxFilterPreProcess_SecondPass(const uint8_t* const src,
     row_sq[0] = vmull_u8(row[0], row[0]);
     row_sq[1] = vmull_u8(row[1], row[1]);
 
-    for (int y = -1; y < height + 1; ++y) {
+    int y = -1;
+    do {
       row[2] = vld1_u8(column);
       column += stride;
 
@@ -672,8 +752,9 @@ inline void BoxFilterPreProcess_SecondPass(const uint8_t* const src,
 
       row_sq[0] = row_sq[1];
       row_sq[1] = row_sq[2];
-    }
-  }
+    } while (++y < height + 1);
+    x += 4;
+  } while (x < width + 1);
 }
 
 inline uint16x4_t Sum444(const uint16x8_t a) {
@@ -707,7 +788,8 @@ inline void BoxFilterProcess_SecondPass(const uint8_t* src,
 
   BoxFilterPreProcess_SecondPass(src, stride, width, height, s, a2);
 
-  for (int x = 0; x < width; x += 4) {
+  int x = 0;
+  do {
     uint16_t* a2_ptr = a2 + x;
     const uint8_t* src_ptr = src + x;
     // |filtered_output| must match how |a2| values are read since they are
@@ -733,7 +815,8 @@ inline void BoxFilterProcess_SecondPass(const uint8_t* src,
     sum343_b[1] = Sum343W(b_1);
     sum444_b = Sum444W(b_1);
 
-    for (int y = 0; y < height; ++y) {
+    int y = 0;
+    do {
       const uint16x8_t a_2 = vld1q_u16(a2_ptr);
       a2_ptr += kIntermediateStride;
 
@@ -762,8 +845,137 @@ inline void BoxFilterProcess_SecondPass(const uint8_t* src,
 
       src_ptr += stride;
       filtered_output += kIntermediateStride;
+    } while (++y < height);
+    x += 4;
+  } while (x < width);
+}
+
+template <int min_width>
+inline void SelfGuidedSingleMultiplier(const uint8_t* src,
+                                       const ptrdiff_t src_stride,
+                                       uint16_t* box_filter_process_output,
+                                       uint8_t* dst, const ptrdiff_t dst_stride,
+                                       const int width, const int height,
+                                       const int16_t w_combo,
+                                       const int16x4_t w_single) {
+  static_assert(min_width == 4 || min_width == 8, "");
+
+  int y = 0;
+  do {
+    if (min_width == 8) {
+      int x = 0;
+      do {
+        const int16x8_t u = vreinterpretq_s16_u16(
+            vshll_n_u8(vld1_u8(src + x), kSgrProjRestoreBits));
+        const int16x8_t p =
+            vreinterpretq_s16_u16(vld1q_u16(box_filter_process_output + x));
+
+        // u * w1 + u * wN == u * (w1 + wN)
+        int32x4_t v_lo = vmull_n_s16(vget_low_s16(u), w_combo);
+        v_lo = vmlal_s16(v_lo, vget_low_s16(p), w_single);
+
+        int32x4_t v_hi = vmull_n_s16(vget_high_s16(u), w_combo);
+        v_hi = vmlal_s16(v_hi, vget_high_s16(p), w_single);
+
+        const int16x4_t s_lo =
+            vrshrn_n_s32(v_lo, kSgrProjRestoreBits + kSgrProjPrecisionBits);
+        const int16x4_t s_hi =
+            vrshrn_n_s32(v_hi, kSgrProjRestoreBits + kSgrProjPrecisionBits);
+        vst1_u8(dst + x, vqmovun_s16(vcombine_s16(s_lo, s_hi)));
+        x += 8;
+      } while (x < width);
+    } else if (min_width == 4) {
+      const int16x8_t u =
+          vreinterpretq_s16_u16(vshll_n_u8(vld1_u8(src), kSgrProjRestoreBits));
+      const int16x8_t p =
+          vreinterpretq_s16_u16(vld1q_u16(box_filter_process_output));
+
+      // u * w1 + u * wN == u * (w1 + wN)
+      int32x4_t v_lo = vmull_n_s16(vget_low_s16(u), w_combo);
+      v_lo = vmlal_s16(v_lo, vget_low_s16(p), w_single);
+
+      int32x4_t v_hi = vmull_n_s16(vget_high_s16(u), w_combo);
+      v_hi = vmlal_s16(v_hi, vget_high_s16(p), w_single);
+
+      const int16x4_t s_lo =
+          vrshrn_n_s32(v_lo, kSgrProjRestoreBits + kSgrProjPrecisionBits);
+      const int16x4_t s_hi =
+          vrshrn_n_s32(v_hi, kSgrProjRestoreBits + kSgrProjPrecisionBits);
+      StoreLo4(dst, vqmovun_s16(vcombine_s16(s_lo, s_hi)));
     }
-  }
+    src += src_stride;
+    dst += dst_stride;
+    box_filter_process_output += kIntermediateStride;
+  } while (++y < height);
+}
+
+template <int min_width>
+inline void SelfGuidedDoubleMultiplier(const uint8_t* src,
+                                       const ptrdiff_t src_stride,
+                                       uint16_t* box_filter_process_output[2],
+                                       uint8_t* dst, const ptrdiff_t dst_stride,
+                                       const int width, const int height,
+                                       const int16x4_t w0, const int w1,
+                                       const int16x4_t w2) {
+  static_assert(min_width == 4 || min_width == 8, "");
+
+  int y = 0;
+  do {
+    if (min_width == 8) {
+      int x = 0;
+      do {
+        // |wN| values are signed. |src| values can be treated as int16_t.
+        const int16x8_t u = vreinterpretq_s16_u16(
+            vshll_n_u8(vld1_u8(src + x), kSgrProjRestoreBits));
+        // |box_filter_process_output| is 14 bits, also safe to treat as
+        // int16_t.
+        const int16x8_t p0 =
+            vreinterpretq_s16_u16(vld1q_u16(box_filter_process_output[0] + x));
+        const int16x8_t p1 =
+            vreinterpretq_s16_u16(vld1q_u16(box_filter_process_output[1] + x));
+
+        int32x4_t v_lo = vmull_n_s16(vget_low_s16(u), w1);
+        v_lo = vmlal_s16(v_lo, vget_low_s16(p0), w0);
+        v_lo = vmlal_s16(v_lo, vget_low_s16(p1), w2);
+
+        int32x4_t v_hi = vmull_n_s16(vget_high_s16(u), w1);
+        v_hi = vmlal_s16(v_hi, vget_high_s16(p0), w0);
+        v_hi = vmlal_s16(v_hi, vget_high_s16(p1), w2);
+
+        // |s| is saturated to uint8_t.
+        const int16x4_t s_lo =
+            vrshrn_n_s32(v_lo, kSgrProjRestoreBits + kSgrProjPrecisionBits);
+        const int16x4_t s_hi =
+            vrshrn_n_s32(v_hi, kSgrProjRestoreBits + kSgrProjPrecisionBits);
+        vst1_u8(dst + x, vqmovun_s16(vcombine_s16(s_lo, s_hi)));
+        x += 8;
+      } while (x < width);
+    } else if (min_width == 4) {
+      // |wN| values are signed. |src| values can be treated as int16_t.
+      // Load 8 values but ignore 4.
+      const int16x4_t u = vget_low_s16(
+          vreinterpretq_s16_u16(vshll_n_u8(vld1_u8(src), kSgrProjRestoreBits)));
+      // |box_filter_process_output| is 14 bits, also safe to treat as
+      // int16_t.
+      const int16x4_t p0 =
+          vreinterpret_s16_u16(vld1_u16(box_filter_process_output[0]));
+      const int16x4_t p1 =
+          vreinterpret_s16_u16(vld1_u16(box_filter_process_output[1]));
+
+      int32x4_t v = vmull_n_s16(u, w1);
+      v = vmlal_s16(v, p0, w0);
+      v = vmlal_s16(v, p1, w2);
+
+      // |s| is saturated to uint8_t.
+      const int16x4_t s =
+          vrshrn_n_s32(v, kSgrProjRestoreBits + kSgrProjPrecisionBits);
+      StoreLo4(dst, vqmovun_s16(vcombine_s16(s, s)));
+    }
+    src += src_stride;
+    dst += dst_stride;
+    box_filter_process_output[0] += kIntermediateStride;
+    box_filter_process_output[1] += kIntermediateStride;
+  } while (++y < height);
 }
 
 // Assume box_filter_process_output[2] are allocated before calling
@@ -771,8 +983,17 @@ inline void BoxFilterProcess_SecondPass(const uint8_t* src,
 void SelfGuidedFilter_NEON(const void* const source, void* const dest,
                            const RestorationUnitInfo& restoration_info,
                            ptrdiff_t source_stride, ptrdiff_t dest_stride,
-                           int width, int height,
+                           const int width, const int height,
                            RestorationBuffer* const /*buffer*/) {
+  // The output frame is broken into blocks of 64x64 (32x32 if U/V are
+  // subsampled). If either dimension is less than 32/64 it indicates it is at
+  // the right or bottom edge of the frame. It is safe to overwrite the output
+  // as it will not be part of the visible frame. This saves us from having to
+  // handle non-multiple-of-8 widths.
+  // We could round here, but the for loop with += 8 does the same thing.
+
+  // width = (width + 7) & ~0x7;
+
   // -96 to 96 (Sgrproj_Xqd_Min/Max)
   const int8_t w0 = restoration_info.sgr_proj_info.multiplier[0];
   const int8_t w1 = restoration_info.sgr_proj_info.multiplier[1];
@@ -815,38 +1036,15 @@ void SelfGuidedFilter_NEON(const void* const source, void* const dest,
   // is no vmlal_n_s16().
   const int16x4_t w0_v = vdup_n_s16(w0);
   const int16x4_t w2_v = vdup_n_s16(w2);
-  assert(width % 8 == 0);
   if (radius_pass_0 != 0 && radius_pass_1 != 0) {
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < width; x += 8) {
-        // |wN| values are signed. |src| values can be treated as int16_t.
-        const int16x8_t u_v = vreinterpretq_s16_u16(
-            vshll_n_u8(vld1_u8(src + x), kSgrProjRestoreBits));
-        // |filtered_output| is 14 bits, also safe to treat as int16_t.
-        const int16x8_t p0_v =
-            vreinterpretq_s16_u16(vld1q_u16(box_filter_process_output[0] + x));
-        const int16x8_t p1_v =
-            vreinterpretq_s16_u16(vld1q_u16(box_filter_process_output[1] + x));
-
-        int32x4_t v_lo = vmull_n_s16(vget_low_s16(u_v), w1);
-        v_lo = vmlal_s16(v_lo, vget_low_s16(p0_v), w0_v);
-        v_lo = vmlal_s16(v_lo, vget_low_s16(p1_v), w2_v);
-
-        int32x4_t v_hi = vmull_n_s16(vget_high_s16(u_v), w1);
-        v_hi = vmlal_s16(v_hi, vget_high_s16(p0_v), w0_v);
-        v_hi = vmlal_s16(v_hi, vget_high_s16(p1_v), w2_v);
-
-        // |s| is saturated to uint8_t.
-        const int16x4_t s_lo =
-            vrshrn_n_s32(v_lo, kSgrProjRestoreBits + kSgrProjPrecisionBits);
-        const int16x4_t s_hi =
-            vrshrn_n_s32(v_hi, kSgrProjRestoreBits + kSgrProjPrecisionBits);
-        vst1_u8(dst + x, vqmovun_s16(vcombine_s16(s_lo, s_hi)));
-      }
-      src += source_stride;
-      dst += dest_stride;
-      box_filter_process_output[0] += kIntermediateStride;
-      box_filter_process_output[1] += kIntermediateStride;
+    if (width > 4) {
+      SelfGuidedDoubleMultiplier<8>(src, source_stride,
+                                    box_filter_process_output, dst, dest_stride,
+                                    width, height, w0_v, w1, w2_v);
+    } else /* if (width == 4) */ {
+      SelfGuidedDoubleMultiplier<4>(src, source_stride,
+                                    box_filter_process_output, dst, dest_stride,
+                                    width, height, w0_v, w1, w2_v);
     }
   } else {
     int16_t w_combo;
@@ -862,29 +1060,14 @@ void SelfGuidedFilter_NEON(const void* const source, void* const dest,
       box_filter_process_output_n = box_filter_process_output[1];
     }
 
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < width; x += 8) {
-        const int16x8_t u_v = vreinterpretq_s16_u16(
-            vshll_n_u8(vld1_u8(src + x), kSgrProjRestoreBits));
-        const int16x8_t pN_v =
-            vreinterpretq_s16_u16(vld1q_u16(box_filter_process_output_n + x));
-
-        // u_v * w1 + u_v * wN == u_v * (w1 + wN)
-        int32x4_t v_lo = vmull_n_s16(vget_low_s16(u_v), w_combo);
-        v_lo = vmlal_s16(v_lo, vget_low_s16(pN_v), w_single);
-
-        int32x4_t v_hi = vmull_n_s16(vget_high_s16(u_v), w_combo);
-        v_hi = vmlal_s16(v_hi, vget_high_s16(pN_v), w_single);
-
-        const int16x4_t s_lo =
-            vrshrn_n_s32(v_lo, kSgrProjRestoreBits + kSgrProjPrecisionBits);
-        const int16x4_t s_hi =
-            vrshrn_n_s32(v_hi, kSgrProjRestoreBits + kSgrProjPrecisionBits);
-        vst1_u8(dst + x, vqmovun_s16(vcombine_s16(s_lo, s_hi)));
-      }
-      src += source_stride;
-      dst += dest_stride;
-      box_filter_process_output_n += kIntermediateStride;
+    if (width > 4) {
+      SelfGuidedSingleMultiplier<8>(
+          src, source_stride, box_filter_process_output_n, dst, dest_stride,
+          width, height, w_combo, w_single);
+    } else /* if (width == 4) */ {
+      SelfGuidedSingleMultiplier<4>(
+          src, source_stride, box_filter_process_output_n, dst, dest_stride,
+          width, height, w_combo, w_single);
     }
   }
 }

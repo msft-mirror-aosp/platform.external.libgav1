@@ -1,7 +1,5 @@
-#include "src/dsp/x86/intrapred_smooth_sse4.h"
-
 #include "src/dsp/dsp.h"
-#include "src/dsp/x86/intrapred_sse4.h"
+#include "src/dsp/intrapred.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -146,7 +144,7 @@ inline void WriteSmoothPredSum4(uint8_t* const dest, const __m128i& top,
 // pixels[1]: left vector
 // pixels[2]: right_pred vector
 inline void LoadSmoothPixels4(const uint8_t* above, const uint8_t* left,
-                              int height, __m128i* pixels) {
+                              const int height, __m128i* pixels) {
   if (height == 4) {
     pixels[1] = Load4(left);
   } else if (height == 8) {
@@ -542,7 +540,7 @@ void SmoothWxH(void* const dest, const ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal4x4_SSE4_1(void* dest, ptrdiff_t stride,
+void SmoothHorizontal4x4_SSE4_1(void* dest, const ptrdiff_t stride,
                                 const void* top_row, const void* left_column) {
   const auto* const top_ptr = static_cast<const uint8_t*>(top_row);
   const __m128i top_right = _mm_set1_epi32(top_ptr[3]);
@@ -563,7 +561,7 @@ void SmoothHorizontal4x4_SSE4_1(void* dest, ptrdiff_t stride,
   WriteSmoothHorizontalSum4<0xFF>(dst, left, weights, scaled_top_right, scale);
 }
 
-void SmoothHorizontal4x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal4x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -595,7 +593,7 @@ void SmoothHorizontal4x8_SSE4_1(void* const dest, ptrdiff_t stride,
   WriteSmoothHorizontalSum4<0xFF>(dst, left, weights, scaled_top_right, scale);
 }
 
-void SmoothHorizontal4x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal4x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                  const void* const top_row,
                                  const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -647,7 +645,7 @@ void SmoothHorizontal4x16_SSE4_1(void* const dest, ptrdiff_t stride,
   WriteSmoothHorizontalSum4<0xFF>(dst, left, weights, scaled_top_right, scale);
 }
 
-void SmoothHorizontal8x4_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal8x4_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -676,7 +674,7 @@ void SmoothHorizontal8x4_SSE4_1(void* const dest, ptrdiff_t stride,
   WriteSmoothDirectionalSum8(dst, left_y, weights, scaled_top_right, scale);
 }
 
-void SmoothHorizontal8x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal8x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -696,7 +694,7 @@ void SmoothHorizontal8x8_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal8x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal8x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                  const void* const top_row,
                                  const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -724,7 +722,7 @@ void SmoothHorizontal8x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal8x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal8x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                  const void* const top_row,
                                  const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -766,7 +764,7 @@ void SmoothHorizontal8x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal16x4_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal16x4_SSE4_1(void* const dest, const ptrdiff_t stride,
                                  const void* const top_row,
                                  const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -805,7 +803,7 @@ void SmoothHorizontal16x4_SSE4_1(void* const dest, ptrdiff_t stride,
                               scaled_top_right1, scaled_top_right2, scale);
 }
 
-void SmoothHorizontal16x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal16x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                                  const void* const top_row,
                                  const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -832,7 +830,7 @@ void SmoothHorizontal16x8_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal16x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal16x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -868,7 +866,7 @@ void SmoothHorizontal16x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal16x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal16x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -920,7 +918,7 @@ void SmoothHorizontal16x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal16x64_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal16x64_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -950,7 +948,7 @@ void SmoothHorizontal16x64_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal32x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal32x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                                  const void* const top_row,
                                  const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -988,7 +986,7 @@ void SmoothHorizontal32x8_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal32x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal32x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -1037,7 +1035,7 @@ void SmoothHorizontal32x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal32x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal32x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -1106,7 +1104,7 @@ void SmoothHorizontal32x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal32x64_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal32x64_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -1147,7 +1145,7 @@ void SmoothHorizontal32x64_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal64x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal64x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -1222,7 +1220,7 @@ void SmoothHorizontal64x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal64x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal64x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -1325,7 +1323,7 @@ void SmoothHorizontal64x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothHorizontal64x64_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothHorizontal64x64_SSE4_1(void* const dest, const ptrdiff_t stride,
                                   const void* const top_row,
                                   const void* const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
@@ -1389,7 +1387,7 @@ void SmoothHorizontal64x64_SSE4_1(void* const dest, ptrdiff_t stride,
 }
 
 inline void LoadSmoothVerticalPixels4(const uint8_t* above, const uint8_t* left,
-                                      int height, __m128i* pixels) {
+                                      const int height, __m128i* pixels) {
   __m128i top = Load4(above);
   const __m128i bottom_left = _mm_set1_epi16(left[height - 1]);
   top = _mm_cvtepu8_epi16(top);
@@ -1400,8 +1398,8 @@ inline void LoadSmoothVerticalPixels4(const uint8_t* above, const uint8_t* left,
 // (256-w) counterparts. This is precomputed by the compiler when the weights
 // table is visible to this module. Removing this visibility can cut speed by up
 // to half in both 4xH and 8xH transforms.
-inline void LoadSmoothVerticalWeights4(const uint8_t* weight_array, int height,
-                                       __m128i* weights) {
+inline void LoadSmoothVerticalWeights4(const uint8_t* weight_array,
+                                       const int height, __m128i* weights) {
   const __m128i inverter = _mm_set1_epi16(256);
 
   if (height == 4) {
@@ -1423,7 +1421,8 @@ inline void LoadSmoothVerticalWeights4(const uint8_t* weight_array, int height,
 }
 
 inline void WriteSmoothVertical4xH(const __m128i* pixel, const __m128i* weight,
-                                   int height, uint8_t* dst, ptrdiff_t stride) {
+                                   const int height, uint8_t* dst,
+                                   const ptrdiff_t stride) {
   const __m128i pred_round = _mm_set1_epi32(128);
   const __m128i mask_increment = _mm_set1_epi16(0x0202);
   const __m128i cvtepu8_epi32 = _mm_set1_epi32(0xC080400);
@@ -1447,7 +1446,7 @@ inline void WriteSmoothVertical4xH(const __m128i* pixel, const __m128i* weight,
   }
 }
 
-void SmoothVertical4x4_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical4x4_SSE4_1(void* const dest, const ptrdiff_t stride,
                               const void* const top_row,
                               const void* const left_column) {
   const auto* const left = static_cast<const uint8_t*>(left_column);
@@ -1462,7 +1461,7 @@ void SmoothVertical4x4_SSE4_1(void* const dest, ptrdiff_t stride,
   WriteSmoothVertical4xH(&pixels, weights, 4, dst, stride);
 }
 
-void SmoothVertical4x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical4x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                               const void* const top_row,
                               const void* const left_column) {
   const auto* const left = static_cast<const uint8_t*>(left_column);
@@ -1477,7 +1476,7 @@ void SmoothVertical4x8_SSE4_1(void* const dest, ptrdiff_t stride,
   WriteSmoothVertical4xH(&pixels, weights, 8, dst, stride);
 }
 
-void SmoothVertical4x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical4x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                const void* const top_row,
                                const void* const left_column) {
   const auto* const left = static_cast<const uint8_t*>(left_column);
@@ -1494,7 +1493,7 @@ void SmoothVertical4x16_SSE4_1(void* const dest, ptrdiff_t stride,
   WriteSmoothVertical4xH(&pixels, &weights[2], 8, dst, stride);
 }
 
-void SmoothVertical8x4_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical8x4_SSE4_1(void* const dest, const ptrdiff_t stride,
                               const void* const top_row,
                               const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1529,7 +1528,7 @@ void SmoothVertical8x4_SSE4_1(void* const dest, ptrdiff_t stride,
   WriteSmoothDirectionalSum8(dst, top, weights_y, scaled_bottom_left_y, scale);
 }
 
-void SmoothVertical8x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical8x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                               const void* const top_row,
                               const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1553,7 +1552,7 @@ void SmoothVertical8x8_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical8x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical8x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                const void* const top_row,
                                const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1592,7 +1591,7 @@ void SmoothVertical8x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical8x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical8x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                const void* const top_row,
                                const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1658,7 +1657,7 @@ void SmoothVertical8x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical16x4_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical16x4_SSE4_1(void* const dest, const ptrdiff_t stride,
                                const void* const top_row,
                                const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1703,7 +1702,7 @@ void SmoothVertical16x4_SSE4_1(void* const dest, ptrdiff_t stride,
                               scale);
 }
 
-void SmoothVertical16x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical16x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                                const void* const top_row,
                                const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1731,7 +1730,7 @@ void SmoothVertical16x8_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical16x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical16x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1775,7 +1774,7 @@ void SmoothVertical16x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical16x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical16x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1848,7 +1847,7 @@ void SmoothVertical16x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical16x64_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical16x64_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1896,7 +1895,7 @@ void SmoothVertical16x64_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical32x8_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical32x8_SSE4_1(void* const dest, const ptrdiff_t stride,
                                const void* const top_row,
                                const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1931,7 +1930,7 @@ void SmoothVertical32x8_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical32x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical32x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -1984,7 +1983,7 @@ void SmoothVertical32x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical32x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical32x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -2072,7 +2071,7 @@ void SmoothVertical32x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical32x64_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical32x64_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -2129,7 +2128,7 @@ void SmoothVertical32x64_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical64x16_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical64x16_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -2201,7 +2200,7 @@ void SmoothVertical64x16_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical64x32_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical64x32_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
@@ -2320,7 +2319,7 @@ void SmoothVertical64x32_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 }
 
-void SmoothVertical64x64_SSE4_1(void* const dest, ptrdiff_t stride,
+void SmoothVertical64x64_SSE4_1(void* const dest, const ptrdiff_t stride,
                                 const void* const top_row,
                                 const void* const left_column) {
   const auto* const left_ptr = static_cast<const uint8_t*>(left_column);
