@@ -1,4 +1,5 @@
-#include "src/dsp/x86/loop_filter_sse4.h"
+#include "src/dsp/dsp.h"
+#include "src/dsp/loop_filter.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 

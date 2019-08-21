@@ -306,7 +306,7 @@ using IntraEdgeUpsamplerFunc = void (*)(void* buffer, int size);
 // signals the direction of the transform loop. |non_zero_coeff_count| is the
 // number of non zero coefficients in the block.
 using InverseTransformAddFunc = void (*)(TransformType tx_type,
-                                         TransformSize tx_size, int8_t bitdepth,
+                                         TransformSize tx_size,
                                          void* src_buffer, int start_x,
                                          int start_y, void* dst_frame,
                                          bool is_row, int non_zero_coeff_count);
@@ -339,7 +339,7 @@ using CdefDirectionFunc = void (*)(const void* src, ptrdiff_t stride,
 // plane.
 // |primary_strength|, |secondary_strength|, and |damping| are Cdef filtering
 // parameters.
-// |direction| is the filtering diretion.
+// |direction| is the filtering direction.
 // |dest| is the output buffer. |dest_stride| is given in bytes.
 using CdefFilteringFunc = void (*)(const void* source, ptrdiff_t source_stride,
                                    int rows4x4, int columns4x4, int curr_x,
@@ -362,7 +362,7 @@ using LoopRestorationFunc = void (*)(
     RestorationBuffer* buffer);
 
 // Index 0 is Wiener Filter.
-// Index 1 is Self Guilded Restoration Filter.
+// Index 1 is Self Guided Restoration Filter.
 // This can be accessed as LoopRestorationType - 2.
 using LoopRestorationFuncs = LoopRestorationFunc[2];
 
@@ -373,8 +373,9 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 // |vertical_filter_index|/|horizontal_filter_index| is the index to
 // retrieve the type of filter to be applied for vertical/horizontal direction
 // from the filter lookup table 'kSubPixelFilters'.
-// |inter_round_bits| is rounding prediction used in horizontal
-// (inter_round_bits[0]) and vertical (inter_round_bits[1]) filtering.
+// |inter_round_bits_vertical| is the rounding precision used after vertical
+// filtering (7 or 11). kInterRoundBitsHorizontal &
+// kInterRoundBitsHorizontal12bpp can be used after the horizontal pass.
 // |subpixel_x| and |subpixel_y| are starting positions in units of 1/1024.
 // |step_x| and |step_y| are step sizes in units of 1/1024 of a pixel.
 // |width| and |height| are width and height of the block to be filtered.
@@ -384,15 +385,22 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 using ConvolveFunc = void (*)(const void* reference, ptrdiff_t reference_stride,
                               int vertical_filter_index,
                               int horizontal_filter_index,
-                              const uint8_t inter_round_bits[2], int subpixel_x,
-                              int subpixel_y, int step_x, int step_y, int width,
-                              int height, void* prediction,
-                              ptrdiff_t pred_stride);
+                              const uint8_t inter_round_bits_vertical,
+                              int subpixel_x, int subpixel_y, int step_x,
+                              int step_y, int width, int height,
+                              void* prediction, ptrdiff_t pred_stride);
 
 // Convolve functions signature. Each points to one convolve function with
 // a specific setting:
 // ConvolveFunc[is_intra_block_copy][is_compound][has_vertical_filter]
 // [has_horizontal_filter].
+// If is_compound is false, the prediction is clipped to pixel.
+// If is_compound is true, the range of prediction is:
+//   8bpp: [0, 15471]
+//   10bpp: [0, 61983]
+//   12bpp: [0, 62007]
+// See:
+// https://docs.google.com/document/d/1f5YlLk02ETNxpilvsmjBtWgDXjtZYO33hjl6bAdvmxc
 using ConvolveFuncs = ConvolveFunc[2][2][2][2];
 
 // Convolve functions signature for scaling version.
@@ -407,18 +415,15 @@ using ConvolveScaleFuncs = ConvolveFunc[2];
 // |prediction_0| is the first input block.
 // |prediction_1| is the second input block.
 // |prediction_stride_0| and |prediction_stride_1| are corresponding strides.
-// |inter_post_round_bit| is a rounding bit. It is required since the value
-// range of inputs is scaled in the inter frame prediction process.
 // |width| and |height| are the same for the first and second input blocks.
 // The valid range of block size is [8x8, 128x128] for the luma plane.
 // |dest| is the output buffer. |dest_stride| is the output buffer stride.
-using AverageBlendingFunc = void (*)(const uint16_t* prediction_0,
-                                     ptrdiff_t prediction_stride_0,
-                                     const uint16_t* prediction_1,
-                                     ptrdiff_t prediction_stride_1,
-                                     int inter_post_round_bit, int width,
-                                     int height, void* dest,
-                                     ptrdiff_t dest_stride);
+using AverageBlendFunc = void (*)(const uint16_t* prediction_0,
+                                  ptrdiff_t prediction_stride_0,
+                                  const uint16_t* prediction_1,
+                                  ptrdiff_t prediction_stride_1, int width,
+                                  int height, void* dest,
+                                  ptrdiff_t dest_stride);
 
 // Distance weighted blending function signature.
 // Weights are generated in Section 7.11.3.15.
@@ -432,25 +437,25 @@ using AverageBlendingFunc = void (*)(const uint16_t* prediction_0,
 // distance of the first reference frame and the current frame.
 // |weight_1| is the weight for the second block. It is derived from the
 // relative distance of the second reference frame and the current frame.
-// |inter_post_round_bit| is a rounding bit. It is required since the value
-// range of inputs is scaled in the inter frame prediction process.
 // |width| and |height| are the same for the first and second input blocks.
 // The valid range of block size is [8x8, 128x128] for the luma plane.
 // |dest| is the output buffer. |dest_stride| is the output buffer stride.
-using DistanceWeightedBlendFunc =
-    void (*)(const uint16_t* prediction_0, ptrdiff_t prediction_stride_0,
-             const uint16_t* prediction_1, ptrdiff_t prediction_stride_1,
-             uint8_t weight_0, uint8_t weight_1, int inter_post_round_bit,
-             int width, int height, void* dest, ptrdiff_t dest_stride);
+using DistanceWeightedBlendFunc = void (*)(const uint16_t* prediction_0,
+                                           ptrdiff_t prediction_stride_0,
+                                           const uint16_t* prediction_1,
+                                           ptrdiff_t prediction_stride_1,
+                                           uint8_t weight_0, uint8_t weight_1,
+                                           int width, int height, void* dest,
+                                           ptrdiff_t dest_stride);
 
 // Mask blending function signature. Section 7.11.3.14.
-// This function takes two blocks and produces a blended output stored onto the
-// dest. The blending is a weighted average process, controlled by
-// values of the mask.
+// This function takes two blocks and produces a blended output stored into the
+// output block |dest|. The blending is a weighted average process, controlled
+// by values of the mask.
 // |prediction_0| is the first input block. When prediction mode is inter_intra
 // (or wedge_inter_intra), this refers to the inter frame prediction.
 // |prediction_stride_0| is the stride, given in units of uint16_t.
-// |prediction_1| is the second input block. When prediciton mode is inter_intra
+// |prediction_1| is the second input block. When prediction mode is inter_intra
 // (or wedge_inter_intra), this refers to the intra frame prediction.
 // |prediction_stride_1| is the stride, given in units of uint16_t.
 // |mask| is an integer array, whose value indicates the weight of the blending.
@@ -466,19 +471,24 @@ using DistanceWeightedBlendFunc =
 // prediction blocks is from intra prediction of current frame. Otherwise, two
 // prediction blocks are both inter frame predictions.
 // |is_wedge_inter_intra| indicates if the mask is for the wedge prediction.
-// |inter_post_round_bits| is the rounding bits.
 // |dest| is the output block.
 // |dest_stride| is the corresponding stride for dest.
-using MaskBlendFunc =
-    void (*)(const uint16_t* prediction_0, ptrdiff_t prediction_stride_0,
-             const uint16_t* prediction_1, ptrdiff_t prediction_stride_1,
-             const uint8_t* mask, ptrdiff_t mask_stride, int width, int height,
-             int subsampling_x, int subsampling_y, bool is_inter_intra,
-             bool is_wedge_inter_intra, int inter_post_round_bits, void* dest,
-             ptrdiff_t dest_stride);
+using MaskBlendFunc = void (*)(const uint16_t* prediction_0,
+                               ptrdiff_t prediction_stride_0,
+                               const uint16_t* prediction_1,
+                               ptrdiff_t prediction_stride_1,
+                               const uint8_t* mask, ptrdiff_t mask_stride,
+                               int width, int height, void* dest,
+                               ptrdiff_t dest_stride);
 
-// Blending function signature. Section 7.11.3.10.
-// This function takes two blocks and produces a blended output stored onto the
+// Mask blending functions signature. Each points to one function with
+// a specific setting:
+// MaskBlendFunc[subsampling_x + subsampling_y][is_inter_intra].
+using MaskBlendFuncs = MaskBlendFunc[3][2];
+
+// Obmc (overlapped block motion compensation) blending function signature.
+// Section 7.11.3.10.
+// This function takes two blocks and produces a blended output stored into the
 // first input block. The blending is a weighted average process, controlled by
 // values of the mask.
 // Obmc is not a compound mode. It is different from other compound blending,
@@ -488,15 +498,13 @@ using MaskBlendFunc =
 // |prediction| is the first input block, which will be overwritten.
 // |prediction_stride| is the stride, given in bytes.
 // |width|, |height| are the same for both input blocks.
-// |blending_direction|, 0 stands for the second block is above the
-// first block; 1 stands for the second block is to the left of the first block.
-// |mask| is an integer array, whose value indicates the weight of the blending.
 // |obmc_prediction| is the second input block.
 // |obmc_prediction_stride| is its stride, given in bytes.
 using ObmcBlendFunc = void (*)(void* prediction, ptrdiff_t prediction_stride,
-                               int width, int height, int blending_direction,
-                               const uint8_t* mask, const void* obmc_prediction,
+                               int width, int height,
+                               const void* obmc_prediction,
                                ptrdiff_t obmc_prediction_stride);
+using ObmcBlendFuncs = ObmcBlendFunc[kNumObmcDirections];
 
 // Warp function signature. Section 7.11.3.5.
 // This function applies warp filtering for each 8x8 block inside the current
@@ -512,19 +520,27 @@ using ObmcBlendFunc = void (*)(void* prediction, ptrdiff_t prediction_stride,
 //     z .  y'  =   m4 m5 m1 *  y
 //          1]      m6 m7 1)    1]
 // |subsampling_x/y| is the current frame's plane subsampling factor.
-// |inter_round_bits| is rounding prediction used in horizontal
-// (inter_round_bits[0]) and vertical (inter_round_bits[1]) filtering.
+// |inter_round_bits_vertical| is the rounding precision used after vertical
+// filtering (7 or 11). kInterRoundBitsHorizontal &
+// kInterRoundBitsHorizontal12bpp can be used for the horizontal pass.
 // |block_start_x| and |block_start_y| are the starting position the current
 // coding block.
 // |block_width| and |block_height| are width and height of the current coding
-// block.
-// |alpha|, |beta|, |gamma|, |delta| are warp parameters.
+// block. |block_width| and |block_height| are at least 8.
+// |alpha|, |beta|, |gamma|, |delta| are valid warp parameters. See the
+// comments in the definition of struct GlobalMotion for the range of their
+// values.
 // |dest| is the output buffer. It is a predictor, whose type is int16_t.
 // |dest_stride| is the stride, in units of int16_t.
+//
+// NOTE: The ARM NEON implementation of WarpFunc may read up to 13 bytes before
+// the |source| buffer or up to 14 bytes after the |source| buffer. Therefore,
+// there must be enough padding before and after the |source| buffer.
 using WarpFunc = void (*)(const void* source, ptrdiff_t source_stride,
                           int source_width, int source_height,
                           const int* warp_params, int subsampling_x,
-                          int subsampling_y, const uint8_t inter_round_bits[2],
+                          int subsampling_y,
+                          const uint8_t inter_round_bits_vertical,
                           int block_start_x, int block_start_y, int block_width,
                           int block_height, int16_t alpha, int16_t beta,
                           int16_t gamma, int16_t delta, uint16_t* dest,
@@ -576,10 +592,10 @@ struct Dsp {
   LoopRestorationFuncs loop_restorations;
   ConvolveFuncs convolve;
   ConvolveScaleFuncs convolve_scale;
-  AverageBlendingFunc average_blend;
+  AverageBlendFunc average_blend;
   DistanceWeightedBlendFunc distance_weighted_blend;
-  MaskBlendFunc mask_blend;
-  ObmcBlendFunc obmc_blend;
+  MaskBlendFuncs mask_blend;
+  ObmcBlendFuncs obmc_blend;
   WarpFunc warp;
   FilmGrainSynthesisFunc film_grain_synthesis;
 };

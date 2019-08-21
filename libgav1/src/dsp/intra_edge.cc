@@ -59,6 +59,7 @@ void Init8bpp() {
   dsp->intra_edge_filter = IntraEdgeFilter_C<uint8_t>;
   dsp->intra_edge_upsampler = IntraEdgeUpsampler_C<8, uint8_t>;
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
 #ifndef LIBGAV1_Dsp8bpp_IntraEdgeFilter
   dsp->intra_edge_filter = IntraEdgeFilter_C<uint8_t>;
 #endif
@@ -76,6 +77,7 @@ void Init10bpp() {
   dsp->intra_edge_filter = IntraEdgeFilter_C<uint16_t>;
   dsp->intra_edge_upsampler = IntraEdgeUpsampler_C<10, uint16_t>;
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
 #ifndef LIBGAV1_Dsp10bpp_IntraEdgeFilter
   dsp->intra_edge_filter = IntraEdgeFilter_C<uint16_t>;
 #endif

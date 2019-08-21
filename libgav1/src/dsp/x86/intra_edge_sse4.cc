@@ -1,6 +1,5 @@
-#include "src/dsp/x86/intra_edge_sse4.h"
-
 #include "src/dsp/dsp.h"
+#include "src/dsp/intra_edge.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -142,6 +141,9 @@ void IntraEdgeFilter_SSE4_1(void* buffer, int size, int strength) {
   uint8_t edge[kMaxEdgeBufferSize + 4];
   memcpy(edge, buffer, size);
   auto* dst_buffer = static_cast<uint8_t*>(buffer);
+
+  // Only process |size| - 1 elements. Nothing to do in this case.
+  if (size == 1) return;
 
   int i = 0;
   switch (strength) {

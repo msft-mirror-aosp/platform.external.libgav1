@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "src/utils/bit_mask_set.h"
 #include "src/utils/constants.h"
 
 namespace libgav1 {
@@ -114,7 +115,11 @@ inline int FloorLog2(uint64_t n) {
 }
 
 inline int CeilLog2(unsigned int n) {
-  return (n < 2) ? 0 : FloorLog2(n) + static_cast<int>((n & (n - 1)) != 0);
+  // The expression FloorLog2(n - 1) + 1 is undefined not only for n == 0 but
+  // also for n == 1, so this expression must be guarded by the n < 2 test. An
+  // alternative implementation is:
+  // return (n == 0) ? 0 : FloorLog2(n) + static_cast<int>((n & (n - 1)) != 0);
+  return (n < 2) ? 0 : FloorLog2(n - 1) + 1;
 }
 
 inline int32_t RightShiftWithRounding(int32_t value, int bits) {
@@ -146,13 +151,13 @@ inline int32_t RightShiftWithRoundingSigned(int64_t value, int bits) {
                       : -RightShiftWithRounding(-value, bits);
 }
 
-inline int DivideBy2(int n) { return n >> 1; }
-inline int DivideBy4(int n) { return n >> 2; }
-inline int DivideBy8(int n) { return n >> 3; }
-inline int DivideBy16(int n) { return n >> 4; }
-inline int DivideBy32(int n) { return n >> 5; }
-inline int DivideBy64(int n) { return n >> 6; }
-inline int DivideBy128(int n) { return n >> 7; }
+constexpr int DivideBy2(int n) { return n >> 1; }
+constexpr int DivideBy4(int n) { return n >> 2; }
+constexpr int DivideBy8(int n) { return n >> 3; }
+constexpr int DivideBy16(int n) { return n >> 4; }
+constexpr int DivideBy32(int n) { return n >> 5; }
+constexpr int DivideBy64(int n) { return n >> 6; }
+constexpr int DivideBy128(int n) { return n >> 7; }
 
 // Convert |value| to unsigned before shifting to avoid undefined behavior with
 // negative values.
@@ -169,25 +174,27 @@ inline int MultiplyBy16(int n) { return LeftShift(n, 4); }
 inline int MultiplyBy32(int n) { return LeftShift(n, 5); }
 inline int MultiplyBy64(int n) { return LeftShift(n, 6); }
 
-inline int Mod32(int n) { return n & 0x1f; }
-inline int Mod64(int n) { return n & 0x3f; }
+constexpr int Mod32(int n) { return n & 0x1f; }
+constexpr int Mod64(int n) { return n & 0x3f; }
 
 //------------------------------------------------------------------------------
 // Bitstream functions
 
-inline bool IsIntraFrame(FrameType type) {
+constexpr bool IsIntraFrame(FrameType type) {
   return type == kFrameKey || type == kFrameIntraOnly;
 }
 
 inline TransformClass GetTransformClass(TransformType tx_type) {
-  if (tx_type == kTransformTypeIdentityDct ||
-      tx_type == kTransformTypeIdentityAdst ||
-      tx_type == kTransformTypeIdentityFlipadst) {
+  constexpr BitMaskSet kTransformClassVerticalMask(
+      kTransformTypeIdentityDct, kTransformTypeIdentityAdst,
+      kTransformTypeIdentityFlipadst);
+  if (kTransformClassVerticalMask.Contains(tx_type)) {
     return kTransformClassVertical;
   }
-  if (tx_type == kTransformTypeDctIdentity ||
-      tx_type == kTransformTypeAdstIdentity ||
-      tx_type == kTransformTypeFlipadstIdentity) {
+  constexpr BitMaskSet kTransformClassHorizontalMask(
+      kTransformTypeDctIdentity, kTransformTypeAdstIdentity,
+      kTransformTypeFlipadstIdentity);
+  if (kTransformClassHorizontalMask.Contains(tx_type)) {
     return kTransformClassHorizontal;
   }
   return kTransformClass2D;
@@ -198,12 +205,12 @@ inline int RowOrColumn4x4ToPixel(int row_or_column4x4, Plane plane,
   return MultiplyBy4(row_or_column4x4) >> (plane == kPlaneY ? 0 : subsampling);
 }
 
-inline PlaneType GetPlaneType(Plane plane) {
-  return (plane == kPlaneY) ? kPlaneTypeY : kPlaneTypeUV;
+constexpr PlaneType GetPlaneType(Plane plane) {
+  return static_cast<PlaneType>(plane != kPlaneY);
 }
 
 // 5.11.44.
-inline bool IsDirectionalMode(PredictionMode mode) {
+constexpr bool IsDirectionalMode(PredictionMode mode) {
   return mode >= kPredictionModeVertical && mode <= kPredictionModeD67;
 }
 
@@ -254,14 +261,8 @@ inline int GetRelativeDistance(int a, int b, bool enable_order_hint,
   return (diff & (m - 1)) - (diff & m);
 }
 
-// part of 5.11.23.
-inline bool HasNearMv(PredictionMode mode) {
-  return mode == kPredictionModeNearMv || mode == kPredictionModeNearNearMv ||
-         mode == kPredictionModeNearNewMv || mode == kPredictionModeNewNearMv;
-}
-
 inline bool IsBlockSmallerThan8x8(BlockSize size) {
-  return size == kBlock4x4 || size == kBlock4x8 || size == kBlock8x4;
+  return size < kBlock8x8 && size != kBlock4x16;
 }
 
 // Maps a square transform to an index between [0, 4]. kTransformSize4x4 maps
@@ -279,33 +280,12 @@ inline int TransformSizeToSquareTransformIndex(TransformSize tx_size) {
   return DivideBy4(tx_size);
 }
 
-// 5.11.37.
-inline TransformSize GetTransformSize(const bool lossless,
-                                      const BlockSize block_size,
-                                      const Plane plane,
-                                      const TransformSize tx_size,
-                                      const int subsampling_x,
-                                      const int subsampling_y) {
-  if (lossless) return kTransformSize4x4;
-  if (plane == kPlaneY) return tx_size;
-  const BlockSize plane_size =
-      kPlaneResidualSize[block_size][subsampling_x][subsampling_y];
-  assert(plane_size != kBlockInvalid);
-  const TransformSize uv_tx_size = kMaxTransformSizeRectangle[plane_size];
-  const uint32_t mask = 1U << uv_tx_size;
-  if ((mask & kTransformSize64Mask) == 0) {
-    return uv_tx_size;
-  }
-  if ((mask & kTransformWidth16Mask) != 0) return kTransformSize16x32;
-  if ((mask & kTransformHeight16Mask) != 0) return kTransformSize32x16;
-  return kTransformSize32x32;
-}
-
 // Gets the corresponding Y/U/V position, to set and get filter masks
 // in deblock filtering.
 // Returns luma_position if it's Y plane, whose subsampling must be 0.
 // Returns the odd position for U/V plane, if there is subsampling.
-inline int GetDeblockPosition(const int luma_position, const int subsampling) {
+constexpr int GetDeblockPosition(const int luma_position,
+                                 const int subsampling) {
   return luma_position | subsampling;
 }
 
@@ -326,6 +306,19 @@ inline size_t GetResidualBufferSize(const int rows, const int columns,
   const int subsampling_multiplier_num =
       2 + (4 >> subsampling_x >> subsampling_y);
   return (residual_size * rows * columns * subsampling_multiplier_num) >> 1;
+}
+
+// This function is equivalent to:
+// std::min({kTransformWidthLog2[tx_size] - 2,
+//           kTransformWidthLog2[left_tx_size] - 2,
+//           2});
+constexpr LoopFilterTransformSizeId GetTransformSizeIdWidth(
+    TransformSize tx_size, TransformSize left_tx_size) {
+  return static_cast<LoopFilterTransformSizeId>(
+      static_cast<int>(tx_size > kTransformSize4x16 &&
+                       left_tx_size > kTransformSize4x16) +
+      static_cast<int>(tx_size > kTransformSize8x32 &&
+                       left_tx_size > kTransformSize8x32));
 }
 
 }  // namespace libgav1

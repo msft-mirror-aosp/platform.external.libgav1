@@ -3,12 +3,12 @@
 
 #include "src/dsp/cpu.h"
 #include "src/dsp/dsp.h"
-#include "src/dsp/inverse_transform.h"
 
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::inverse_transforms. This function is not thread-safe.
+// Initializes Dsp::inverse_transforms, see the defines below for specifics.
+// This function is not thread-safe.
 void InverseTransformInit_SSE4_1();
 
 }  // namespace dsp
@@ -64,6 +64,10 @@ void InverseTransformInit_SSE4_1();
 
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize32_1DTransformIdentity
 #define LIBGAV1_Dsp8bpp_1DTransformSize32_1DTransformIdentity LIBGAV1_DSP_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_1DTransformSize4_1DTransformWht
+#define LIBGAV1_Dsp8bpp_1DTransformSize4_1DTransformWht LIBGAV1_DSP_SSE4_1
 #endif
 #endif  // LIBGAV1_ENABLE_SSE4_1
 #endif  // LIBGAV1_SRC_DSP_X86_INVERSE_TRANSFORM_SSE4_H_

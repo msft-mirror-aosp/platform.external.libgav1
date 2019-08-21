@@ -8,13 +8,13 @@
 namespace libgav1 {
 namespace {
 
-inline bool Assign(int* const value, int assignment, bool return_value) {
+bool Assign(int* const value, int assignment, bool return_value) {
   *value = assignment;
   return return_value;
 }
 
 // 5.9.29.
-inline int InverseRecenter(int r, int v) {
+int InverseRecenter(int r, int v) {
   if (v > (r << 1)) {
     return v;
   }

@@ -1,9 +1,6 @@
 #include "src/decoder.h"
 
-#include <new>
-
 #include "src/decoder_impl.h"
-#include "src/utils/logging.h"
 
 namespace libgav1 {
 
@@ -13,15 +10,9 @@ Decoder::~Decoder() = default;
 
 StatusCode Decoder::Init(const DecoderSettings* const settings) {
   if (initialized_) return kLibgav1StatusAlready;
-  if (settings != nullptr) {
-    if (settings->threads < 0) return kLibgav1StatusInvalidArgument;
-    settings_ = *settings;
-  }
-  impl_.reset(new (std::nothrow) DecoderImpl(&settings_));
-  if (impl_ == nullptr) {
-    LIBGAV1_DLOG(ERROR, "Failed to allocate DecoderImpl.");
-    return kLibgav1StatusOutOfMemory;
-  }
+  if (settings != nullptr) settings_ = *settings;
+  const StatusCode status = DecoderImpl::Create(&settings_, &impl_);
+  if (status != kLibgav1StatusOk) return status;
   initialized_ = true;
   return kLibgav1StatusOk;
 }
@@ -40,5 +31,8 @@ StatusCode Decoder::DequeueFrame(const DecoderBuffer** out_ptr) {
 int Decoder::GetMaxAllowedFrames() const {
   return settings_.frame_parallel ? settings_.threads : 1;
 }
+
+// static.
+int Decoder::GetMaxBitdepth() { return DecoderImpl::GetMaxBitdepth(); }
 
 }  // namespace libgav1

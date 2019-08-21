@@ -17,7 +17,7 @@
 namespace libgav1 {
 namespace {
 
-const int kWedgeDirectionTypes = 16;
+constexpr int kWedgeDirectionTypes = 16;
 
 enum kWedgeDirection : uint8_t {
   kWedgeHorizontal,
@@ -77,7 +77,7 @@ constexpr uint8_t kWedgeCodebook[3][16][3] = {{{kWedgeOblique27, 4, 4},
                                                {kWedgeOblique117, 2, 4},
                                                {kWedgeOblique117, 6, 4}}};
 
-const uint8_t kWedgeFlipSignLookup[9][16] = {
+constexpr uint8_t kWedgeFlipSignLookup[9][16] = {
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1},  // kBlock8x8
     {1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1},  // kBlock8x16
     {1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1},  // kBlock8x32
@@ -89,19 +89,19 @@ const uint8_t kWedgeFlipSignLookup[9][16] = {
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1},  // kBlock32x32
 };
 
-const uint8_t kWedgeMasterObliqueOdd[kWedgeMaskMasterSize] = {
+constexpr uint8_t kWedgeMasterObliqueOdd[kWedgeMaskMasterSize] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  2,  6,  18,
     37, 53, 60, 63, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
     64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64};
 
-const uint8_t kWedgeMasterObliqueEven[kWedgeMaskMasterSize] = {
+constexpr uint8_t kWedgeMasterObliqueEven[kWedgeMaskMasterSize] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  4,  11, 27,
     46, 58, 62, 63, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
     64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64};
 
-const uint8_t kWedgeMasterVertical[kWedgeMaskMasterSize] = {
+constexpr uint8_t kWedgeMasterVertical[kWedgeMaskMasterSize] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  2,  7,  21,
     43, 57, 62, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
@@ -140,10 +140,14 @@ void DifferenceWeightMask(const uint16_t* prediction_1,
                           const ptrdiff_t stride_1,
                           const uint16_t* prediction_2,
                           const ptrdiff_t stride_2, const int bitdepth,
-                          const bool mask_is_inverse,
-                          const int inter_post_round_bits, const int width,
+                          const bool mask_is_inverse, const int width,
                           const int height, uint8_t* mask,
                           const ptrdiff_t mask_stride) {
+#if LIBGAV1_MAX_BITDEPTH == 12
+  const int inter_post_round_bits = (bitdepth == 12) ? 2 : 4;
+#else
+  constexpr int inter_post_round_bits = 4;
+#endif
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
       const int rounding_bits = bitdepth - 8 + inter_post_round_bits;
@@ -232,10 +236,14 @@ void GenerateWedgeMask(uint8_t* const wedge_master_mask_data,
   int block_size_index = 0;
   int wedge_masks_offset = 0;
   for (int size = kBlock8x8; size <= kBlock32x32; ++size) {
+    if (!kIsWedgeCompoundModeAllowed.Contains(size)) continue;
+
     const int width = kBlockWidthPixels[size];
     const int height = kBlockHeightPixels[size];
-    assert(width >= 8 && width <= 32);
-    if (height < 8 || height > 32) continue;
+    assert(width >= 8);
+    assert(width <= 32);
+    assert(height >= 8);
+    assert(height <= 32);
 
     const auto block_size = static_cast<BlockSize>(size);
     for (int index = 0; index < kWedgeDirectionTypes; ++index) {
@@ -280,12 +288,10 @@ void GenerateWeightMask(const uint16_t* const prediction_1,
                         const ptrdiff_t stride_1,
                         const uint16_t* const prediction_2,
                         const ptrdiff_t stride_2, const bool mask_is_inverse,
-                        const int inter_post_round_bits, const int width,
-                        const int height, const int bitdepth,
+                        const int width, const int height, const int bitdepth,
                         uint8_t* const mask, const ptrdiff_t mask_stride) {
   DifferenceWeightMask(prediction_1, stride_1, prediction_2, stride_2, bitdepth,
-                       mask_is_inverse, inter_post_round_bits, width, height,
-                       mask, mask_stride);
+                       mask_is_inverse, width, height, mask, mask_stride);
 }
 
 void GenerateInterIntraMask(const int mode, const int width, const int height,

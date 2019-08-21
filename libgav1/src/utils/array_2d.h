@@ -63,8 +63,11 @@ class Array2D {
     const size_t size = rows * columns;
     if (size_ < size) {
       // Note: This invokes the global operator new if T is a non-class type,
-      // such as integer or enum types, or a class that we don't own, such as
-      // std::unique_ptr.
+      // such as integer or enum types, or a class type that is not derived
+      // from libgav1::Allocable, such as std::unique_ptr. If we enforce a
+      // maximum allocation size or keep track of our own heap memory
+      // consumption, we will need to handle the allocations here that use the
+      // global operator new.
       if (zero_initialize) {
         data_.reset(new (std::nothrow) T[size]());
       } else {
