@@ -4,53 +4,69 @@
 #include <cstddef>
 #include <cstdint>
 
-#if defined(LIBGAV1_USE_LIBAOM_BIT_READER)
-#include "third_party/libaom/git_root/aom_dsp/daalaboolreader.h"
-#endif
-
 #include "src/utils/bit_reader.h"
 
 namespace libgav1 {
 
-#if defined(LIBGAV1_USE_LIBAOM_BIT_READER)
-class DaalaBitReaderAom : public BitReader {
+class DaalaBitReader : public BitReader {
  public:
-  DaalaBitReaderAom(const uint8_t* data, size_t size, bool allow_update_cdf);
-  ~DaalaBitReaderAom() override = default;
-
-  int ReadBit() override;
-  int64_t ReadLiteral(int num_bits) override;
-  int ReadSymbol(uint16_t* cdf, int symbol_count);
-  bool ReadSymbol(uint16_t* cdf);
-  bool ReadSymbolWithoutCdfUpdate(uint16_t* cdf);
-
- private:
-  bool allow_update_cdf_;
-  daala_reader reader_;
-};
-#endif  // defined(LIBGAV1_USE_LIBAOM_BIT_READER)
-
-class DaalaBitReaderNative : public BitReader {
- public:
-  DaalaBitReaderNative(const uint8_t* data, size_t size, bool allow_update_cdf);
-  ~DaalaBitReaderNative() override = default;
+  DaalaBitReader(const uint8_t* data, size_t size, bool allow_update_cdf);
+  ~DaalaBitReader() override = default;
 
   // Move only.
-  DaalaBitReaderNative(DaalaBitReaderNative&& rhs) noexcept;
-  DaalaBitReaderNative& operator=(DaalaBitReaderNative&& rhs) noexcept;
+  DaalaBitReader(DaalaBitReader&& rhs) noexcept;
+  DaalaBitReader& operator=(DaalaBitReader&& rhs) noexcept;
 
   int ReadBit() override;
   int64_t ReadLiteral(int num_bits) override;
+  // ReadSymbol() calls for which the |symbol_count| is only known at runtime
+  // will use this variant.
   int ReadSymbol(uint16_t* cdf, int symbol_count);
+  // ReadSymbol() calls for which the |symbol_count| is equal to 2 (boolean
+  // symbols) will use this variant.
   bool ReadSymbol(uint16_t* cdf);
   bool ReadSymbolWithoutCdfUpdate(uint16_t* cdf);
+  // Use either linear search or binary search for decoding the symbol depending
+  // on |symbol_count|. ReadSymbol calls for which the |symbol_count| is known
+  // at compile time will use this variant.
+  template <int symbol_count>
+  int ReadSymbol(uint16_t* const cdf) {
+    static_assert(symbol_count >= 3 && symbol_count <= 16, "");
+    const int symbol = (symbol_count <= 13)
+                           ? ReadSymbolImpl(cdf, symbol_count)
+                           : ReadSymbolImplBinarySearch(cdf, symbol_count);
+    if (allow_update_cdf_) {
+      UpdateCdf(cdf, symbol_count, symbol);
+    }
+    return symbol;
+  }
 
  private:
+  using WindowSize = uint32_t;
+  static constexpr uint32_t kWindowSize =
+      static_cast<uint32_t>(sizeof(WindowSize)) * 8;
+
+  // Reads a symbol using the |cdf| table which contains the probabilities of
+  // each symbol. On a high level, this function does the following:
+  //   1) Scale the |cdf| values.
+  //   2) Find the index in the |cdf| array where the scaled CDF value crosses
+  //   the modified |window_diff_| threshold.
+  //   3) That index is the symbol that has been decoded.
+  //   4) Update |window_diff_| and |values_in_range_| based on the symbol that
+  //   has been decoded.
   int ReadSymbolImpl(const uint16_t* cdf, int symbol_count);
+  // Similar to ReadSymbolImpl but it uses binary search to perform step 2 in
+  // the comment above. As of now, this function is called when |symbol_count|
+  // is greater than or equal to 8.
+  int ReadSymbolImplBinarySearch(const uint16_t* cdf, int symbol_count);
+  // Specialized implementation of ReadSymbolImpl based on the fact that
+  // symbol_count == 2.
+  int ReadSymbolImpl(const uint16_t* cdf);
   void PopulateBits();
   // Normalizes the range so that 32768 <= |values_in_range_| < 65536. Also
   // calls PopulateBits() if necessary.
   void NormalizeRange();
+  void UpdateCdf(uint16_t* cdf, int symbol_count, int symbol);
 
   const uint8_t* data_;
   const size_t size_;
@@ -63,14 +79,8 @@ class DaalaBitReaderNative : public BitReader {
   // The difference between the high end of the current range and the coded
   // value minus 1. The 16 least significant bits of this variable is used to
   // decode the next symbol. It is filled in whenever |bits_| is less than 0.
-  uint32_t window_diff_;
+  WindowSize window_diff_;
 };
-
-#if defined(LIBGAV1_USE_LIBAOM_BIT_READER)
-using DaalaBitReader = DaalaBitReaderAom;
-#else
-using DaalaBitReader = DaalaBitReaderNative;
-#endif
 
 }  // namespace libgav1
 

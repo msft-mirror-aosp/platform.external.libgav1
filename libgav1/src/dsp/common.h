@@ -6,6 +6,7 @@
 
 #include "src/dsp/constants.h"
 #include "src/utils/constants.h"
+#include "src/utils/memory.h"
 
 namespace libgav1 {
 
@@ -24,10 +25,10 @@ struct WienerInfo {
   static const int kVertical = 0;
   static const int kHorizontal = 1;
 
-  alignas(16) int16_t filter[2][kSubPixelTaps];
+  alignas(kMaxAlignment) int16_t filter[2][kSubPixelTaps];
 };
 
-struct RestorationUnitInfo {
+struct RestorationUnitInfo : public Allocable {
   LoopRestorationType type;
   SgrProjInfo sgr_proj_info;
   WienerInfo wiener_info;
@@ -42,7 +43,6 @@ struct RestorationBuffer {
   // For wiener filter.
   uint16_t* wiener_buffer;
   ptrdiff_t wiener_buffer_stride;
-  int inter_round_bits[2];
 };
 
 // Section 6.8.20.

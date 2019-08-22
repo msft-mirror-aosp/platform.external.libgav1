@@ -1,6 +1,5 @@
-#include "src/dsp/x86/intrapred_sse4.h"
-
-#include "src/dsp/x86/intrapred_smooth_sse4.h"
+#include "src/dsp/dsp.h"
+#include "src/dsp/intrapred.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -1417,7 +1416,8 @@ inline void DirectionalZone1_Step64(uint8_t* dst, ptrdiff_t stride,
     memcpy(dst, top + offset + 3, width);
     return;
   }
-  for (int y = 0; y < height; y += 8, offset += 8) {
+  int y = 0;
+  do {
     memcpy(dst, top + offset, width);
     dst += stride;
     memcpy(dst, top + offset + 1, width);
@@ -1434,7 +1434,10 @@ inline void DirectionalZone1_Step64(uint8_t* dst, ptrdiff_t stride,
     dst += stride;
     memcpy(dst, top + offset + 7, width);
     dst += stride;
-  }
+
+    offset += 8;
+    y += 8;
+  } while (y < height);
 }
 
 inline void DirectionalZone1_4xH(uint8_t* dst, ptrdiff_t stride,
@@ -1454,8 +1457,17 @@ inline void DirectionalZone1_4xH(uint8_t* dst, ptrdiff_t stride,
   const __m128i offsets =
       _mm_set_epi32(0x00080007, 0x00060005, 0x00040003, 0x00020001);
 
-  for (int y = 0, top_x = xstep; y < height;
-       ++y, dst += stride, top_x += xstep) {
+  // All rows from |min_corner_only_y| down will simply use memcpy. |max_base_x|
+  // is always greater than |height|, so clipping to 1 is enough to make the
+  // logic work.
+  const int xstep_units = std::max(xstep >> scale_bits, 1);
+  const int min_corner_only_y = std::min(max_base_x / xstep_units, height);
+
+  // Rows up to this y-value can be computed without checking for bounds.
+  int y = 0;
+  int top_x = xstep;
+
+  for (; y < min_corner_only_y; ++y, dst += stride, top_x += xstep) {
     const int top_base_x = top_x >> scale_bits;
 
     // Permit negative values of |top_x|.
@@ -1475,8 +1487,113 @@ inline void DirectionalZone1_4xH(uint8_t* dst, ptrdiff_t stride,
     const __m128i past_max = _mm_cmpgt_epi16(top_index_vect, max_base_x_vect);
     __m128i prod = _mm_maddubs_epi16(sampled_values, shifts);
     prod = RightShiftWithRounding_U16(prod, rounding_bits);
+    // Replace pixels from invalid range with top-right corner.
     prod = _mm_blendv_epi8(prod, final_top_val, past_max);
     Store4(dst, _mm_packus_epi16(prod, prod));
+  }
+
+  // Fill in corner-only rows.
+  for (; y < height; ++y) {
+    memset(dst, top[max_base_x], /* width */ 4);
+    dst += stride;
+  }
+}
+
+// 7.11.2.4 (7) angle < 90
+inline void DirectionalZone1_Large(uint8_t* dest, ptrdiff_t stride,
+                                   const uint8_t* const top_row,
+                                   const int width, const int height,
+                                   const int xstep, const bool upsampled) {
+  const int upsample_shift = static_cast<int>(upsampled);
+  const __m128i sampler =
+      upsampled ? _mm_set_epi32(0x0F0E0D0C, 0x0B0A0908, 0x07060504, 0x03020100)
+                : _mm_set_epi32(0x08070706, 0x06050504, 0x04030302, 0x02010100);
+  const int scale_bits = 6 - upsample_shift;
+  const int max_base_x = ((width + height) - 1) << upsample_shift;
+
+  const __m128i max_shift = _mm_set1_epi8(32);
+  const int rounding_bits = 5;
+  const int base_step = 1 << upsample_shift;
+  const int base_step8 = base_step << 3;
+
+  // All rows from |min_corner_only_y| down will simply use memcpy. |max_base_x|
+  // is always greater than |height|, so clipping to 1 is enough to make the
+  // logic work.
+  const int xstep_units = std::max(xstep >> scale_bits, 1);
+  const int min_corner_only_y = std::min(max_base_x / xstep_units, height);
+
+  // Rows up to this y-value can be computed without checking for bounds.
+  const int max_no_corner_y = std::min(
+      LeftShift((max_base_x - (base_step * width)), scale_bits) / xstep,
+      height);
+  // No need to check for exceeding |max_base_x| in the first loop.
+  int y = 0;
+  int top_x = xstep;
+  for (; y < max_no_corner_y; ++y, dest += stride, top_x += xstep) {
+    int top_base_x = top_x >> scale_bits;
+    // Permit negative values of |top_x|.
+    const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
+    const __m128i shift = _mm_set1_epi8(shift_val);
+    const __m128i opposite_shift = _mm_sub_epi8(max_shift, shift);
+    const __m128i shifts = _mm_unpacklo_epi8(opposite_shift, shift);
+    int x = 0;
+    do {
+      const __m128i top_vals = LoadUnaligned16(top_row + top_base_x);
+      __m128i vals = _mm_shuffle_epi8(top_vals, sampler);
+      vals = _mm_maddubs_epi16(vals, shifts);
+      vals = RightShiftWithRounding_U16(vals, rounding_bits);
+      StoreLo8(dest + x, _mm_packus_epi16(vals, vals));
+      top_base_x += base_step8;
+      x += 8;
+    } while (x < width);
+  }
+
+  // Each 16-bit value here corresponds to a position that may exceed
+  // |max_base_x|. When added to the top_base_x, it is used to mask values
+  // that pass the end of |top|. Starting from 1 to simulate "cmpge" which is
+  // not supported for packed integers.
+  const __m128i offsets =
+      _mm_set_epi32(0x00080007, 0x00060005, 0x00040003, 0x00020001);
+
+  const __m128i max_base_x_vect = _mm_set1_epi16(max_base_x);
+  const __m128i final_top_val = _mm_set1_epi16(top_row[max_base_x]);
+  const __m128i base_step8_vect = _mm_set1_epi16(base_step8);
+  for (; y < min_corner_only_y; ++y, dest += stride, top_x += xstep) {
+    int top_base_x = top_x >> scale_bits;
+
+    const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
+    const __m128i shift = _mm_set1_epi8(shift_val);
+    const __m128i opposite_shift = _mm_sub_epi8(max_shift, shift);
+    const __m128i shifts = _mm_unpacklo_epi8(opposite_shift, shift);
+    __m128i top_index_vect = _mm_set1_epi16(top_base_x);
+    top_index_vect = _mm_add_epi16(top_index_vect, offsets);
+
+    int x = 0;
+    const int min_corner_only_x =
+        std::min(width, ((max_base_x - top_base_x) >> upsample_shift) + 7) & ~7;
+    for (; x < min_corner_only_x;
+         x += 8, top_base_x += base_step8,
+         top_index_vect = _mm_add_epi16(top_index_vect, base_step8_vect)) {
+      const __m128i past_max = _mm_cmpgt_epi16(top_index_vect, max_base_x_vect);
+      // Assuming a buffer zone of 8 bytes at the end of top_row, this prevents
+      // reading out of bounds. If all indices are past max and we don't need to
+      // use the loaded bytes at all, |top_base_x| becomes 0. |top_base_x| will
+      // reset for the next |y|.
+      top_base_x &= ~_mm_cvtsi128_si32(past_max);
+      const __m128i top_vals = LoadUnaligned16(top_row + top_base_x);
+      __m128i vals = _mm_shuffle_epi8(top_vals, sampler);
+      vals = _mm_maddubs_epi16(vals, shifts);
+      vals = RightShiftWithRounding_U16(vals, rounding_bits);
+      vals = _mm_blendv_epi8(vals, final_top_val, past_max);
+      StoreLo8(dest + x, _mm_packus_epi16(vals, vals));
+    }
+    // Corner-only section of the row.
+    memset(dest + x, top_row[max_base_x], width - x);
+  }
+  // Fill in corner-only rows.
+  for (; y < height; ++y) {
+    memset(dest, top_row[max_base_x], width);
+    dest += stride;
   }
 }
 
@@ -1494,6 +1611,11 @@ inline void DirectionalZone1_SSE4_1(uint8_t* dest, ptrdiff_t stride,
     DirectionalZone1_4xH(dest, stride, top_row, height, xstep, upsampled);
     return;
   }
+  if (width >= 32) {
+    DirectionalZone1_Large(dest, stride, top_row, width, height, xstep,
+                           upsampled);
+    return;
+  }
   const __m128i sampler =
       upsampled ? _mm_set_epi32(0x0F0E0D0C, 0x0B0A0908, 0x07060504, 0x03020100)
                 : _mm_set_epi32(0x08070706, 0x06050504, 0x04030302, 0x02010100);
@@ -1507,22 +1629,28 @@ inline void DirectionalZone1_SSE4_1(uint8_t* dest, ptrdiff_t stride,
 
   // No need to check for exceeding |max_base_x| in the loops.
   if (((xstep * height) >> scale_bits) + base_step * width < max_base_x) {
-    for (int y = 0, top_x = xstep; y < height;
-         ++y, dest += stride, top_x += xstep) {
+    int top_x = xstep;
+    int y = 0;
+    do {
       int top_base_x = top_x >> scale_bits;
       // Permit negative values of |top_x|.
       const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
       const __m128i shift = _mm_set1_epi8(shift_val);
       const __m128i opposite_shift = _mm_sub_epi8(max_shift, shift);
       const __m128i shifts = _mm_unpacklo_epi8(opposite_shift, shift);
-      for (int x = 0; x < width; x += 8, top_base_x += base_step8) {
+      int x = 0;
+      do {
         const __m128i top_vals = LoadUnaligned16(top_row + top_base_x);
         __m128i vals = _mm_shuffle_epi8(top_vals, sampler);
         vals = _mm_maddubs_epi16(vals, shifts);
         vals = RightShiftWithRounding_U16(vals, rounding_bits);
         StoreLo8(dest + x, _mm_packus_epi16(vals, vals));
-      }
-    }
+        top_base_x += base_step8;
+        x += 8;
+      } while (x < width);
+      dest += stride;
+      top_x += xstep;
+    } while (++y < height);
     return;
   }
 
@@ -1536,8 +1664,9 @@ inline void DirectionalZone1_SSE4_1(uint8_t* dest, ptrdiff_t stride,
   const __m128i max_base_x_vect = _mm_set1_epi16(max_base_x);
   const __m128i final_top_val = _mm_set1_epi16(top_row[max_base_x]);
   const __m128i base_step8_vect = _mm_set1_epi16(base_step8);
-  for (int y = 0, top_x = xstep; y < height;
-       ++y, dest += stride, top_x += xstep) {
+  int top_x = xstep;
+  int y = 0;
+  do {
     int top_base_x = top_x >> scale_bits;
 
     if (top_base_x >= max_base_x) {
@@ -1585,7 +1714,9 @@ inline void DirectionalZone1_SSE4_1(uint8_t* dest, ptrdiff_t stride,
     vals = RightShiftWithRounding_U16(vals, rounding_bits);
     vals = _mm_blendv_epi8(vals, final_top_val, past_max);
     StoreLo8(dest + x, _mm_packus_epi16(vals, vals));
-  }
+    dest += stride;
+    top_x += xstep;
+  } while (++y < height);
 }
 
 void DirectionalIntraPredictorZone1_SSE4_1(void* const dest, ptrdiff_t stride,
@@ -1690,42 +1821,70 @@ void DirectionalIntraPredictorZone3_SSE4_1(void* dest, ptrdiff_t stride,
   if (width == 4 || height == 4) {
     const ptrdiff_t stride4 = stride << 2;
     if (upsampled) {
-      for (int x = 0, left_y = ystep; x < width; x += 4, left_y += ystep << 2) {
+      int left_y = ystep;
+      int x = 0;
+      do {
         uint8_t* dst_x = dst + x;
-        for (int y = 0; y < height; y += 4, dst_x += stride4) {
+        int y = 0;
+        do {
           DirectionalZone3_4x4<true>(
               dst_x, stride, left_ptr + (y << upsample_shift), left_y, ystep);
-        }
-      }
+          dst_x += stride4;
+          y += 4;
+        } while (y < height);
+        left_y += ystep << 2;
+        x += 4;
+      } while (x < width);
     } else {
-      for (int x = 0, left_y = ystep; x < width; x += 4, left_y += ystep << 2) {
+      int left_y = ystep;
+      int x = 0;
+      do {
         uint8_t* dst_x = dst + x;
-        for (int y = 0; y < height; y += 4, dst_x += stride4) {
+        int y = 0;
+        do {
           DirectionalZone3_4x4<false>(dst_x, stride, left_ptr + y, left_y,
                                       ystep);
-        }
-      }
+          dst_x += stride4;
+          y += 4;
+        } while (y < height);
+        left_y += ystep << 2;
+        x += 4;
+      } while (x < width);
     }
     return;
   }
 
   const ptrdiff_t stride8 = stride << 3;
   if (upsampled) {
-    for (int x = 0, left_y = ystep; x < width; x += 8, left_y += ystep << 3) {
+    int left_y = ystep;
+    int x = 0;
+    do {
       uint8_t* dst_x = dst + x;
-      for (int y = 0; y < height; y += 8, dst_x += stride8) {
+      int y = 0;
+      do {
         DirectionalZone3_8xH<true, 8>(
             dst_x, stride, left_ptr + (y << upsample_shift), left_y, ystep);
-      }
-    }
+        dst_x += stride8;
+        y += 8;
+      } while (y < height);
+      left_y += ystep << 3;
+      x += 8;
+    } while (x < width);
   } else {
-    for (int x = 0, left_y = ystep; x < width; x += 8, left_y += ystep << 3) {
+    int left_y = ystep;
+    int x = 0;
+    do {
       uint8_t* dst_x = dst + x;
-      for (int y = 0; y < height; y += 8, dst_x += stride8) {
+      int y = 0;
+      do {
         DirectionalZone3_8xH<false, 8>(
             dst_x, stride, left_ptr + (y << upsample_shift), left_y, ystep);
-      }
-    }
+        dst_x += stride8;
+        y += 8;
+      } while (y < height);
+      left_y += ystep << 3;
+      x += 8;
+    } while (x < width);
   }
 }
 
@@ -1988,7 +2147,7 @@ inline void DirectionalZone2_SSE4_1(void* dest, ptrdiff_t stride,
   // This loop treats each set of 4 columns in 3 stages with y-value boundaries.
   // The first stage, before the first y-loop, covers blocks that are only
   // computed from the top row. The second stage, comprising two y-loops, covers
-  // blocks that have a mixture of values computer from top or left. The final
+  // blocks that have a mixture of values computed from top or left. The final
   // stage covers blocks that are only computed from the left.
   for (int left_offset = -left_base_increment; x < min_top_only_x;
        x += 8,

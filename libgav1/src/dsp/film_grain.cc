@@ -240,14 +240,28 @@ bool FilmGrainSynthesis_C(const void* source_plane_y, ptrdiff_t source_stride_y,
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
   assert(dsp != nullptr);
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   dsp->film_grain_synthesis = FilmGrainSynthesis_C<8>;
+#else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
+#ifndef LIBGAV1_Dsp8bpp_FilmGrainSynthesis
+  dsp->film_grain_synthesis = FilmGrainSynthesis_C<8>;
+#endif
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(10);
   assert(dsp != nullptr);
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   dsp->film_grain_synthesis = FilmGrainSynthesis_C<10>;
+#else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
+#ifndef LIBGAV1_Dsp10bpp_FilmGrainSynthesis
+  dsp->film_grain_synthesis = FilmGrainSynthesis_C<10>;
+#endif
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
 #endif
 
@@ -297,34 +311,41 @@ FilmGrain<bitdepth>::FilmGrain(const FilmGrainParams& params,
   const int grain_center = 128 << (bitdepth - 8);
   grain_min_ = -grain_center;
   grain_max_ = grain_center - 1;
+}
 
+template <int bitdepth>
+bool FilmGrain<bitdepth>::Init() {
   // Section 7.18.3.3. Generate grain process.
-  GenerateLumaGrain(params, luma_grain_);
-  ApplyAutoRegressiveFilterToLumaGrain(params, grain_min_, grain_max_,
+  GenerateLumaGrain(params_, luma_grain_);
+  ApplyAutoRegressiveFilterToLumaGrain(params_, grain_min_, grain_max_,
                                        luma_grain_);
-  if (!is_monochrome) {
-    GenerateChromaGrains(params, chroma_width_, chroma_height_, u_grain_,
+  if (!is_monochrome_) {
+    GenerateChromaGrains(params_, chroma_width_, chroma_height_, u_grain_,
                          v_grain_);
     ApplyAutoRegressiveFilterToChromaGrains(
-        params, grain_min_, grain_max_, luma_grain_, subsampling_x,
-        subsampling_y, chroma_width_, chroma_height_, u_grain_, v_grain_);
+        params_, grain_min_, grain_max_, luma_grain_, subsampling_x_,
+        subsampling_y_, chroma_width_, chroma_height_, u_grain_, v_grain_);
   }
 
   // Section 7.18.3.4. Scaling lookup initialization process.
-  InitializeScalingLookupTable(params.num_y_points, params.point_y_value,
-                               params.point_y_scaling, scaling_lut_y_);
-  if (!is_monochrome) {
-    if (params.chroma_scaling_from_luma) {
-      static_assert(sizeof(scaling_lut_y_) == 256, "");
-      memcpy(scaling_lut_u_, scaling_lut_y_, sizeof(scaling_lut_y_));
-      memcpy(scaling_lut_v_, scaling_lut_y_, sizeof(scaling_lut_y_));
+  InitializeScalingLookupTable(params_.num_y_points, params_.point_y_value,
+                               params_.point_y_scaling, scaling_lut_y_);
+  if (!is_monochrome_) {
+    if (params_.chroma_scaling_from_luma) {
+      scaling_lut_u_ = scaling_lut_y_;
+      scaling_lut_v_ = scaling_lut_y_;
     } else {
-      InitializeScalingLookupTable(params.num_u_points, params.point_u_value,
-                                   params.point_u_scaling, scaling_lut_u_);
-      InitializeScalingLookupTable(params.num_v_points, params.point_v_value,
-                                   params.point_v_scaling, scaling_lut_v_);
+      scaling_lut_chroma_buffer_.reset(new (std::nothrow) uint8_t[256 * 2]);
+      if (scaling_lut_chroma_buffer_ == nullptr) return false;
+      scaling_lut_u_ = &scaling_lut_chroma_buffer_[0];
+      scaling_lut_v_ = &scaling_lut_chroma_buffer_[256];
+      InitializeScalingLookupTable(params_.num_u_points, params_.point_u_value,
+                                   params_.point_u_scaling, scaling_lut_u_);
+      InitializeScalingLookupTable(params_.num_v_points, params_.point_v_value,
+                                   params_.point_v_scaling, scaling_lut_v_);
     }
   }
+  return true;
 }
 
 // Section 7.18.3.2.
@@ -816,6 +837,10 @@ bool FilmGrain<bitdepth>::AddNoise(
     const void* source_plane_v, ptrdiff_t source_stride_v, void* dest_plane_y,
     ptrdiff_t dest_stride_y, void* dest_plane_u, ptrdiff_t dest_stride_u,
     void* dest_plane_v, ptrdiff_t dest_stride_v) {
+  if (!Init()) {
+    LIBGAV1_DLOG(ERROR, "Init() failed.");
+    return false;
+  }
   if (!AllocateNoiseStripes()) {
     LIBGAV1_DLOG(ERROR, "AllocateNoiseStripes() failed.");
     return false;

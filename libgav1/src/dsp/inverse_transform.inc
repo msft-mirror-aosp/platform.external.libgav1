@@ -35,3 +35,16 @@ inline int16_t Sin128(int angle) { return Cos128(angle - 64); }
 // The value for index i is derived as:
 // round(sqrt(2) * sin(i * pi / 9) * 2 / 3 * (1 << 12)).
 constexpr int16_t kAdst4Multiplier[4] = {1321, 2482, 3344, 3803};
+
+constexpr uint8_t kTransformRowShift[kNumTransformSizes] = {
+    0, 0, 1, 0, 1, 1, 2, 1, 1, 2, 1, 2, 2, 1, 2, 1, 2, 1, 2};
+
+constexpr bool kShouldRound[kNumTransformSizes] = {
+    false, true,  false, true, false, true, false, false, true, false,
+    true,  false, false, true, false, true, false, true,  false};
+
+constexpr int16_t kIdentity4Multiplier /* round(2^12 * sqrt(2)) */ = 0x16A1;
+constexpr int16_t kIdentity4MultiplierFraction /* round(2^12 * (sqrt(2) - 1))*/
+    = 0x6A1;
+constexpr int16_t kIdentity16Multiplier /* 2 * round(2^12 * sqrt(2)) */ = 11586;
+constexpr int16_t kTransformRowMultiplier /* round(2^12 / sqrt(2)) */ = 2896;

@@ -8,6 +8,7 @@
 #include "src/obu_parser.h"
 #include "src/symbol_decoder_context.h"
 #include "src/tile.h"
+#include "src/utils/bit_mask_set.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
 #include "src/utils/entropy_decoder.h"
@@ -16,14 +17,9 @@
 namespace libgav1 {
 namespace {
 
-const int kNumPaletteNeighbors = 3;
-const uint8_t kPaletteColorHashMultiplier[kNumPaletteNeighbors] = {1, 2, 2};
-const int kPaletteColorIndexContext[kPaletteColorIndexSymbolCount + 1] = {
-    -1, -1, 0, -1, -1, 4, 3, 2, 1};
-
 // Add |value| to the |cache| if it doesn't already exist.
-inline void MaybeAddToPaletteCache(uint16_t value, uint16_t* const cache,
-                                   int* const n) {
+void MaybeAddToPaletteCache(uint16_t value, uint16_t* const cache,
+                            int* const n) {
   assert(cache != nullptr);
   assert(n != nullptr);
   if (*n > 0 && value == cache[*n - 1]) return;
@@ -170,8 +166,7 @@ int Tile::GetHasPaletteYContext(const Block& block) const {
 
 void Tile::ReadPaletteModeInfo(const Block& block) {
   BlockParameters& bp = *block.bp;
-  if (IsBlockSmallerThan8x8(block.size) || kBlockWidthPixels[block.size] > 64 ||
-      kBlockHeightPixels[block.size] > 64 ||
+  if (IsBlockSmallerThan8x8(block.size) || block.size > kBlock64x64 ||
       !frame_header_.allow_screen_content_tools) {
     bp.palette_mode_info.size[kPlaneTypeY] = 0;
     bp.palette_mode_info.size[kPlaneTypeUV] = 0;
@@ -186,9 +181,8 @@ void Tile::ReadPaletteModeInfo(const Block& block) {
     if (has_palette_y) {
       bp.palette_mode_info.size[kPlaneTypeY] =
           kMinPaletteSize +
-          reader_.ReadSymbol(
-              symbol_decoder_context_.palette_y_size_cdf[block_size_context],
-              kPaletteSizeSymbolCount);
+          reader_.ReadSymbol<kPaletteSizeSymbolCount>(
+              symbol_decoder_context_.palette_y_size_cdf[block_size_context]);
       ReadPaletteColors(block, kPlaneY);
     }
   }
@@ -201,60 +195,86 @@ void Tile::ReadPaletteModeInfo(const Block& block) {
     if (has_palette_uv) {
       bp.palette_mode_info.size[kPlaneTypeUV] =
           kMinPaletteSize +
-          reader_.ReadSymbol(
-              symbol_decoder_context_.palette_uv_size_cdf[block_size_context],
-              kPaletteSizeSymbolCount);
+          reader_.ReadSymbol<kPaletteSizeSymbolCount>(
+              symbol_decoder_context_.palette_uv_size_cdf[block_size_context]);
       ReadPaletteColors(block, kPlaneU);
     }
   }
 }
 
-int Tile::GetPaletteColorContext(const Block& block, PlaneType plane_type,
-                                 int row, int column, int palette_size,
-                                 uint8_t color_order[kMaxPaletteSize]) {
-  for (int i = 0; i < kMaxPaletteSize; ++i) {
-    color_order[i] = i;
-  }
-  int scores[kMaxPaletteSize] = {};
+void Tile::PopulatePaletteColorContexts(
+    const Block& block, PlaneType plane_type, int i, int start, int end,
+    uint8_t color_order[kMaxPaletteSquare][kMaxPaletteSize],
+    uint8_t color_context[kMaxPaletteSquare]) {
   const PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
-  if (row > 0 && column > 0) {
-    ++scores[prediction_parameters
-                 .color_index_map[plane_type][row - 1][column - 1]];
-  }
-  if (row > 0) {
-    scores[prediction_parameters
-               .color_index_map[plane_type][row - 1][column]] += 2;
-  }
-  if (column > 0) {
-    scores[prediction_parameters
-               .color_index_map[plane_type][row][column - 1]] += 2;
-  }
-  // Move the top 3 scores (largest first) and the corresponding color_order
-  // entry to the front of the array.
-  for (int i = 0; i < kNumPaletteNeighbors; ++i) {
-    const auto max_element =
-        std::max_element(scores + i, scores + palette_size);
-    const auto max_score = *max_element;
-    const auto max_index = static_cast<int>(std::distance(scores, max_element));
-    if (max_index != i) {
-      const uint8_t max_color_order = color_order[max_index];
-      for (int j = max_index; j > i; --j) {
-        scores[j] = scores[j - 1];
-        color_order[j] = color_order[j - 1];
+  for (int column = start, counter = 0; column >= end; --column, ++counter) {
+    const int row = i - column;
+    assert(row > 0 || column > 0);
+    const uint8_t top =
+        (row > 0)
+            ? prediction_parameters.color_index_map[plane_type][row - 1][column]
+            : 0;
+    const uint8_t left =
+        (column > 0)
+            ? prediction_parameters.color_index_map[plane_type][row][column - 1]
+            : 0;
+    uint8_t index_mask;
+    static_assert(kMaxPaletteSize <= 8, "");
+    int index;
+    if (column <= 0) {
+      color_context[counter] = 0;
+      color_order[counter][0] = top;
+      index_mask = 1 << top;
+      index = 1;
+    } else if (row <= 0) {
+      color_context[counter] = 0;
+      color_order[counter][0] = left;
+      index_mask = 1 << left;
+      index = 1;
+    } else {
+      const uint8_t top_left =
+          prediction_parameters
+              .color_index_map[plane_type][row - 1][column - 1];
+      index_mask = (1 << top) | (1 << left) | (1 << top_left);
+      if (top == left && top == top_left) {
+        color_context[counter] = 4;
+        color_order[counter][0] = top;
+        index = 1;
+      } else if (top == left) {
+        color_context[counter] = 3;
+        color_order[counter][0] = top;
+        color_order[counter][1] = top_left;
+        index = 2;
+      } else if (top == top_left) {
+        color_context[counter] = 2;
+        color_order[counter][0] = top_left;
+        color_order[counter][1] = left;
+        index = 2;
+      } else if (left == top_left) {
+        color_context[counter] = 2;
+        color_order[counter][0] = top_left;
+        color_order[counter][1] = top;
+        index = 2;
+      } else {
+        color_context[counter] = 1;
+        color_order[counter][0] = std::min(top, left);
+        color_order[counter][1] = std::max(top, left);
+        color_order[counter][2] = top_left;
+        index = 3;
       }
-      scores[i] = max_score;
-      color_order[i] = max_color_order;
+    }
+    // Even though only the first |palette_size| entries of this array are ever
+    // used, it is faster to populate all 8 because of the vectorization of the
+    // constant sized loop.
+    for (uint8_t j = 0; j < kMaxPaletteSize; ++j) {
+      if (BitMaskSet::MaskContainsValue(index_mask, j)) continue;
+      color_order[counter][index++] = j;
     }
   }
-  int context = 0;
-  for (int i = 0; i < kNumPaletteNeighbors; ++i) {
-    context += scores[i] * kPaletteColorHashMultiplier[i];
-  }
-  return kPaletteColorIndexContext[context];
 }
 
-void Tile::ReadPaletteTokens(const Block& block) {
+bool Tile::ReadPaletteTokens(const Block& block) {
   const PaletteModeInfo& palette_mode_info = block.bp->palette_mode_info;
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
@@ -283,24 +303,29 @@ void Tile::ReadPaletteTokens(const Block& block) {
         screen_width += 2;
       }
     }
-    uint8_t color_order[kMaxPaletteSize];
+    if (!prediction_parameters.color_index_map[plane_type].Reset(
+            block_height, block_width, /*zero_initialize=*/false)) {
+      return false;
+    }
     int first_value = 0;
     reader_.DecodeUniform(palette_size, &first_value);
     prediction_parameters.color_index_map[plane_type][0][0] = first_value;
     for (int i = 1; i < screen_height + screen_width - 1; ++i) {
-      for (int j = std::min(i, screen_width - 1);
-           j >= std::max(0, i - screen_height + 1); --j) {
-        const int context =
-            GetPaletteColorContext(block, static_cast<PlaneType>(plane_type),
-                                   i - j, j, palette_size, color_order);
-        assert(context >= 0);
+      const int start = std::min(i, screen_width - 1);
+      const int end = std::max(0, i - screen_height + 1);
+      uint8_t color_order[kMaxPaletteSquare][kMaxPaletteSize];
+      uint8_t color_context[kMaxPaletteSquare];
+      PopulatePaletteColorContexts(block, static_cast<PlaneType>(plane_type), i,
+                                   start, end, color_order, color_context);
+      for (int j = start, counter = 0; j >= end; --j, ++counter) {
         uint16_t* const cdf =
             symbol_decoder_context_
-                .palette_color_index_cdf[plane_type][palette_size -
-                                                     kMinPaletteSize][context];
+                .palette_color_index_cdf[plane_type]
+                                        [palette_size - kMinPaletteSize]
+                                        [color_context[counter]];
         const int color_order_index = reader_.ReadSymbol(cdf, palette_size);
         prediction_parameters.color_index_map[plane_type][i - j][j] =
-            color_order[color_order_index];
+            color_order[counter][color_order_index];
       }
     }
     if (screen_width < block_width) {
@@ -319,6 +344,7 @@ void Tile::ReadPaletteTokens(const Block& block) {
           block_width);
     }
   }
+  return true;
 }
 
 }  // namespace libgav1

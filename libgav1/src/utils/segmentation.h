@@ -53,7 +53,9 @@ struct Segmentation {
   bool feature_enabled[kMaxSegments][kSegmentFeatureMax];
   int16_t feature_data[kMaxSegments][kSegmentFeatureMax];
   bool lossless[kMaxSegments];
-  int16_t qindex[kMaxSegments];
+  // Cached values of get_qindex(1, segmentId), to be consumed by
+  // Tile::ReadTransformType(). The values are in the range [0, 255].
+  uint8_t qindex[kMaxSegments];
 };
 
 }  // namespace libgav1

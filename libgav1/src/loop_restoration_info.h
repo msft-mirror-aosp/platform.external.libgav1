@@ -72,7 +72,11 @@ class LoopRestorationInfo {
   int num_units(Plane plane) const { return num_units_[plane]; }
 
  private:
-  std::vector<std::vector<RestorationUnitInfo>> loop_restoration_info_;
+  // If plane_needs_filtering_[plane] is true, loop_restoration_info_[plane]
+  // points to an array of num_units_[plane] elements.
+  RestorationUnitInfo* loop_restoration_info_[kMaxPlanes];
+  // Owns the memory that loop_restoration_info_[plane] points to.
+  std::unique_ptr<RestorationUnitInfo[]> loop_restoration_info_buffer_;
   bool plane_needs_filtering_[kMaxPlanes];
   const LoopRestoration& loop_restoration_;
   uint32_t width_;

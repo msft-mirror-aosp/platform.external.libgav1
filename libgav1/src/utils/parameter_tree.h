@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "src/utils/common.h"
+#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/memory.h"
 #include "src/utils/types.h"
@@ -20,13 +21,9 @@ class ParameterTree : public Allocable {
   // false, |block_size| must be a square block, i.e.,
   // kBlockWidthPixels[block_size] must be equal to
   // kBlockHeightPixels[block_size].
-  ParameterTree(int row4x4, int column4x4, BlockSize block_size,
-                bool is_leaf = false)
-      : row4x4_(row4x4), column4x4_(column4x4), block_size_(block_size) {
-    if (is_leaf) {
-      SetPartitionType(kPartitionNone);
-    }
-  }
+  static std::unique_ptr<ParameterTree> Create(int row4x4, int column4x4,
+                                               BlockSize block_size,
+                                               bool is_leaf = false);
 
   // Move only (not Copyable).
   ParameterTree(ParameterTree&& other) = default;
@@ -46,12 +43,7 @@ class ParameterTree : public Allocable {
   //   will have to set them or their descendants to a terminal type.
   // }
   // This function must be called only once per node.
-  void SetPartitionType(Partition partition);
-
-  // Traverses the tree and searches for the node that contains the
-  // BlockParameters for |row4x4| and |column4x4|. Returns nullptr, if the tree
-  // does not contain the BlockParameters for the given coordinates.
-  BlockParameters* Find(int row4x4, int column4x4) const;
+  LIBGAV1_MUST_USE_RESULT bool SetPartitionType(Partition partition);
 
   // Basic getters.
   int row4x4() const { return row4x4_; }
@@ -68,6 +60,9 @@ class ParameterTree : public Allocable {
   BlockParameters* parameters() const { return parameters_.get(); }
 
  private:
+  ParameterTree(int row4x4, int column4x4, BlockSize block_size)
+      : row4x4_(row4x4), column4x4_(column4x4), block_size_(block_size) {}
+
   Partition partition_ = kPartitionNone;
   std::unique_ptr<BlockParameters> parameters_ = nullptr;
   int row4x4_ = -1;
@@ -93,6 +88,8 @@ class ParameterTree : public Allocable {
   //  * Vertical4: 0 left partition; 1 second left partition; 2 third left
   //    partition; 3 right partition;
   std::unique_ptr<ParameterTree> children_[4] = {};
+
+  friend class ParameterTreeTest;
 };
 
 }  // namespace libgav1

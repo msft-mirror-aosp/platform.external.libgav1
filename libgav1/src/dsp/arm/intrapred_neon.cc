@@ -1,6 +1,5 @@
-#include "src/dsp/arm/intrapred_neon.h"
-
 #include "src/dsp/dsp.h"
+#include "src/dsp/intrapred.h"
 
 #if LIBGAV1_ENABLE_NEON
 
