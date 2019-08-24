@@ -77,6 +77,8 @@ class FilmGrain {
   using Pixel =
       typename std::conditional<bitdepth == 8, uint8_t, uint16_t>::type;
 
+  bool Init();
+
   // Allocates noise_stripe_, which points to memory owned by noise_buffer_.
   bool AllocateNoiseStripes();
 
@@ -127,8 +129,12 @@ class FilmGrain {
   GrainType v_grain_[kMaxChromaHeight * kMaxChromaWidth];
   // Scaling lookup tables.
   uint8_t scaling_lut_y_[256];
-  uint8_t scaling_lut_u_[256];
-  uint8_t scaling_lut_v_[256];
+  uint8_t* scaling_lut_u_ = nullptr;
+  uint8_t* scaling_lut_v_ = nullptr;
+  // If allocated, this buffer is 256 * 2 bytes long and scaling_lut_u_ and
+  // scaling_lut_v_ point into this buffer. Otherwise, scaling_lut_u_ and
+  // scaling_lut_v_ point to scaling_lut_y_.
+  std::unique_ptr<uint8_t[]> scaling_lut_chroma_buffer_;
 
   // A two-dimensional array of noise data. Generated for each 32 luma sample
   // high stripe of the image. The first dimension is called luma_num. The

@@ -83,10 +83,15 @@ ThreadPool::~ThreadPool() { Shutdown(); }
 
 void ThreadPool::Schedule(std::function<void()> closure) {
   LockMutex();
-  queue_.push_back(std::move(closure));
-  // TODO(jzern): the mutex doesn't need to be locked to signal the condition.
-  SignalOne();
+  if (!queue_.GrowIfNeeded()) {
+    // queue_ is full and we can't grow it. Run |closure| directly.
+    UnlockMutex();
+    closure();
+    return;
+  }
+  queue_.Push(std::move(closure));
   UnlockMutex();
+  SignalOne();
 }
 
 int ThreadPool::num_threads() const { return num_threads_; }
@@ -178,6 +183,7 @@ void ThreadPool::WorkerThread::SetupName() {
     assert(rv >= 0);
     rv = pthread_setname_np(name);
     assert(rv == 0);
+    static_cast<void>(rv);
 #elif defined(__ANDROID__) || defined(__GLIBC__)
     // If the |name| buffer is longer than 16 bytes, pthread_setname_np fails
     // with error 34 (ERANGE) on Android.
@@ -188,6 +194,7 @@ void ThreadPool::WorkerThread::SetupName() {
     assert(rv >= 0);
     rv = pthread_setname_np(pthread_self(), name);
     assert(rv == 0);
+    static_cast<void>(rv);
 #endif
   }
 }
@@ -195,13 +202,14 @@ void ThreadPool::WorkerThread::SetupName() {
 #endif  // defined(_MSC_VER)
 
 void* ThreadPool::WorkerThread::ThreadBody(void* arg) {
-  auto thread = static_cast<WorkerThread*>(arg);
+  auto* thread = static_cast<WorkerThread*>(arg);
   thread->SetupName();
   thread->pool_->WorkerFunction();
   return nullptr;
 }
 
 bool ThreadPool::StartWorkers() {
+  if (!queue_.Init()) return false;
   for (int i = 0; i < num_threads_; ++i) {
     threads_[i] = new (std::nothrow) WorkerThread(this);
     if (threads_[i] == nullptr) return false;
@@ -217,7 +225,7 @@ bool ThreadPool::StartWorkers() {
 void ThreadPool::WorkerFunction() {
   LockMutex();
   while (true) {
-    if (queue_.empty()) {
+    if (queue_.Empty()) {
       if (exit_threads_) {
         break;  // Queue is empty and exit was requested.
       }
@@ -233,7 +241,7 @@ void ThreadPool::WorkerFunction() {
       const auto wait_start = Clock::now();
       while (Clock::now() - wait_start < kBusyWaitDuration) {
         LockMutex();
-        if (!queue_.empty()) {
+        if (!queue_.Empty()) {
           found_job = true;
           break;
         }
@@ -246,7 +254,7 @@ void ThreadPool::WorkerFunction() {
       // point.
       LockMutex();
       // Ensure that the queue is still empty.
-      if (!queue_.empty()) continue;
+      if (!queue_.Empty()) continue;
       if (exit_threads_) {
         break;  // Queue is empty and exit was requested.
       }
@@ -255,8 +263,8 @@ void ThreadPool::WorkerFunction() {
       Wait();
     } else {
       // Take a job from the queue.
-      std::function<void()> job = std::move(queue_.front());
-      queue_.pop_front();
+      std::function<void()> job = std::move(queue_.Front());
+      queue_.Pop();
 
       UnlockMutex();
       // Note that it is good practice to surround this with a try/catch so
@@ -275,9 +283,8 @@ void ThreadPool::Shutdown() {
   // Tell worker threads how to exit.
   LockMutex();
   exit_threads_ = true;
-  // TODO(jzern): the mutex doesn't need to be locked to signal the condition.
-  SignalAll();
   UnlockMutex();
+  SignalAll();
 
   // Join all workers. This will block.
   for (int i = 0; i < num_threads_; ++i) {

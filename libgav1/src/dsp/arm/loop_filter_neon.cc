@@ -1,4 +1,5 @@
-#include "src/dsp/arm/loop_filter_neon.h"
+#include "src/dsp/dsp.h"
+#include "src/dsp/loop_filter.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -14,70 +15,6 @@ namespace libgav1 {
 namespace dsp {
 namespace low_bitdepth {
 namespace {
-
-// vzipN is exclusive to A64.
-inline uint8x8_t InterleaveLow32(const uint8x8_t a, const uint8x8_t b) {
-#if defined(__aarch64__)
-  return vreinterpret_u8_u32(
-      vzip1_u32(vreinterpret_u32_u8(a), vreinterpret_u32_u8(b)));
-#else
-  // Discard |.val[1]|
-  return vreinterpret_u8_u32(
-      vzip_u32(vreinterpret_u32_u8(a), vreinterpret_u32_u8(b)).val[0]);
-#endif
-}
-
-inline int8x8_t InterleaveLow32(const int8x8_t a, const int8x8_t b) {
-#if defined(__aarch64__)
-  return vreinterpret_s8_u32(
-      vzip1_u32(vreinterpret_u32_s8(a), vreinterpret_u32_s8(b)));
-#else
-  // Discard |.val[1]|
-  return vreinterpret_s8_u32(
-      vzip_u32(vreinterpret_u32_s8(a), vreinterpret_u32_s8(b)).val[0]);
-#endif
-}
-
-inline uint8x8_t InterleaveHigh32(const uint8x8_t a, const uint8x8_t b) {
-#if defined(__aarch64__)
-  return vreinterpret_u8_u32(
-      vzip2_u32(vreinterpret_u32_u8(a), vreinterpret_u32_u8(b)));
-#else
-  return vreinterpret_u8_u32(
-      vzip_u32(vreinterpret_u32_u8(a), vreinterpret_u32_u8(b)).val[1]);
-#endif
-}
-
-inline int8x8_t InterleaveHigh32(const int8x8_t a, const int8x8_t b) {
-#if defined(__aarch64__)
-  return vreinterpret_s8_u32(
-      vzip2_u32(vreinterpret_u32_s8(a), vreinterpret_u32_s8(b)));
-#else
-  return vreinterpret_s8_u32(
-      vzip_u32(vreinterpret_u32_s8(a), vreinterpret_u32_s8(b)).val[1]);
-#endif
-}
-
-// Transpose 32 bit elements such that:
-// a: 00 01
-// b: 02 03
-// returns
-// val[0]: 00 02
-// val[1]: 01 03
-inline uint8x8x2_t Interleave32(const uint8x8_t a, const uint8x8_t b) {
-  const uint32x2_t a_32 = vreinterpret_u32_u8(a);
-  const uint32x2_t b_32 = vreinterpret_u32_u8(b);
-  const uint32x2x2_t c = vtrn_u32(a_32, b_32);
-  const uint8x8x2_t d = {vreinterpret_u8_u32(c.val[0]),
-                         vreinterpret_u8_u32(c.val[1])};
-  return d;
-}
-
-// Swap high and low 32 bit elements.
-inline uint8x8_t Transpose32(const uint8x8_t a) {
-  const uint32x2_t b = vrev64_u32(vreinterpret_u32_u8(a));
-  return vreinterpret_u8_u32(b);
-}
 
 // (abs(p1 - p0) > thresh) || (abs(q1 - q0) > thresh)
 inline uint8x8_t Hev(const uint8x8_t abd_p0p1_q0q1, const uint8_t thresh) {

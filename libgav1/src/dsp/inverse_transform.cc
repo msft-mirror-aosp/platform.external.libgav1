@@ -17,8 +17,6 @@ namespace {
 // Include the constants and utility functions inside the anonymous namespace.
 #include "src/dsp/inverse_transform.inc"
 
-constexpr uint8_t kTransformRowShift[kNumTransformSizes] = {
-    0, 0, 1, 0, 1, 1, 2, 1, 1, 2, 1, 2, 2, 1, 2, 1, 2, 1, 2};
 constexpr uint8_t kTransformColumnShift = 4;
 
 int32_t RangeCheckValue(int32_t value, int8_t range) {
@@ -32,7 +30,7 @@ int32_t RangeCheckValue(int32_t value, int8_t range) {
                  value, range);
     assert(min <= value && value <= max);
   }
-#endif  // LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECKING
+#endif  // LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
   static_cast<void>(range);
   return value;
 }
@@ -599,9 +597,6 @@ void Adst16_C(void* dest, const void* source, int8_t range) {
 // because the multiplicative factor of inverse identity transforms is at most
 // 4 (2 bits) and |shift| is always 4.
 
-constexpr int32_t kIdentity4Multiplier /* round(2^12 * sqrt(2)) */ = 5793;
-constexpr int32_t kIdentity16Multiplier /* 2 * round(2^12 * sqrt(2)) */ = 11586;
-
 template <typename Residual>
 void Identity4Row_C(void* dest, const void* source, int8_t shift) {
   assert(shift == 0 || shift == 1);
@@ -732,32 +727,34 @@ void Wht4_C(void* dest, const void* source, int8_t shift) {
   temp[1] = src[3] >> shift;
   temp[0] += temp[2];
   temp[3] -= temp[1];
+  // This signed right shift must be an arithmetic shift.
   Residual e = (temp[0] - temp[3]) >> 1;
-  temp[1] = e - temp[1];
-  temp[2] = e - temp[2];
-  temp[0] -= temp[1];
-  temp[3] += temp[2];
-  memcpy(dst, temp, sizeof(temp));
+  dst[1] = e - temp[1];
+  dst[2] = e - temp[2];
+  dst[0] = temp[0] - dst[1];
+  dst[3] = temp[3] + dst[2];
 }
 
 //------------------------------------------------------------------------------
 // row/column transform loop
-constexpr int16_t kTransformRowMultiplier /* round(2^12 / sqrt(2)) */ = 2896;
 
 using InverseTransform1DFunc = void (*)(void* dst, const void* src,
                                         int8_t range);
 
-template <typename Residual, typename Pixel, Transform1D transform1d_type,
+template <int bitdepth, typename Residual, typename Pixel,
+          Transform1D transform1d_type,
           InverseTransform1DFunc row_transform1d_func,
           InverseTransform1DFunc column_transform1d_func = row_transform1d_func>
 void TransformLoop_C(TransformType tx_type, TransformSize tx_size,
-                     int8_t bitdepth, void* src_buffer, int start_x,
-                     int start_y, void* dst_frame, bool is_row,
-                     int non_zero_coeff_count) {
+                     void* src_buffer, int start_x, int start_y,
+                     void* dst_frame, bool is_row, int non_zero_coeff_count) {
   constexpr bool lossless = transform1d_type == k1DTransformWht;
   constexpr bool is_identity = transform1d_type == k1DTransformIdentity;
-  const int tx_width = kTransformWidth[tx_size];
-  const int tx_height = kTransformHeight[tx_size];
+  // The transform size of the WHT is always 4x4. Setting tx_width and
+  // tx_height to the constant 4 for the WHT speeds the code up.
+  assert(!lossless || tx_size == kTransformSize4x4);
+  const int tx_width = lossless ? 4 : kTransformWidth[tx_size];
+  const int tx_height = lossless ? 4 : kTransformHeight[tx_size];
   const int tx_width_log2 = kTransformWidthLog2[tx_size];
   const int tx_height_log2 = kTransformHeightLog2[tx_size];
   auto* frame = reinterpret_cast<Array2DView<Pixel>*>(dst_frame);
@@ -825,9 +822,9 @@ void TransformLoop_C(TransformType tx_type, TransformSize tx_size,
   // transforms, this will be equal to the clamping range.
   const int8_t column_clamp_range = lossless ? 0 : std::max(bitdepth + 6, 16);
   const bool flip_rows = transform1d_type == k1DTransformAdst &&
-                         ((1U << tx_type) & kTransformFlipRowsMask) != 0;
+                         kTransformFlipRowsMask.Contains(tx_type);
   const bool flip_columns =
-      !lossless && ((1U << tx_type) & kTransformFlipColumnsMask) != 0;
+      !lossless && kTransformFlipColumnsMask.Contains(tx_type);
   const int min_value = 0;
   const int max_value = (1 << bitdepth) - 1;
   // Note: 64 is the maximum size of a 1D transform buffer (the largest
@@ -858,45 +855,54 @@ void TransformLoop_C(TransformType tx_type, TransformSize tx_size,
 
 //------------------------------------------------------------------------------
 
-template <typename Residual, typename Pixel>
+template <int bitdepth, typename Residual, typename Pixel>
 void InitAll(Dsp* const dsp) {
   // Maximum transform size for Dct is 64.
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformDct] =
-      TransformLoop_C<Residual, Pixel, k1DTransformDct, Dct_C<Residual, 2>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformDct,
+                      Dct_C<Residual, 2>>;
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformDct] =
-      TransformLoop_C<Residual, Pixel, k1DTransformDct, Dct_C<Residual, 3>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformDct,
+                      Dct_C<Residual, 3>>;
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformDct] =
-      TransformLoop_C<Residual, Pixel, k1DTransformDct, Dct_C<Residual, 4>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformDct,
+                      Dct_C<Residual, 4>>;
   dsp->inverse_transforms[k1DTransformSize32][k1DTransformDct] =
-      TransformLoop_C<Residual, Pixel, k1DTransformDct, Dct_C<Residual, 5>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformDct,
+                      Dct_C<Residual, 5>>;
   dsp->inverse_transforms[k1DTransformSize64][k1DTransformDct] =
-      TransformLoop_C<Residual, Pixel, k1DTransformDct, Dct_C<Residual, 6>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformDct,
+                      Dct_C<Residual, 6>>;
 
   // Maximum transform size for Adst is 16.
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformAdst] =
-      TransformLoop_C<Residual, Pixel, k1DTransformAdst, Adst4_C<Residual>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformAdst,
+                      Adst4_C<Residual>>;
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformAdst] =
-      TransformLoop_C<Residual, Pixel, k1DTransformAdst, Adst8_C<Residual>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformAdst,
+                      Adst8_C<Residual>>;
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformAdst] =
-      TransformLoop_C<Residual, Pixel, k1DTransformAdst, Adst16_C<Residual>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformAdst,
+                      Adst16_C<Residual>>;
 
   // Maximum transform size for Identity transform is 32.
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformIdentity] =
-      TransformLoop_C<Residual, Pixel, k1DTransformIdentity,
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformIdentity,
                       Identity4Row_C<Residual>, Identity4Column_C<Residual>>;
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformIdentity] =
-      TransformLoop_C<Residual, Pixel, k1DTransformIdentity,
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformIdentity,
                       Identity8Row_C<Residual>, Identity8Column_C<Residual>>;
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformIdentity] =
-      TransformLoop_C<Residual, Pixel, k1DTransformIdentity,
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformIdentity,
                       Identity16Row_C<Residual>, Identity16Column_C<Residual>>;
   dsp->inverse_transforms[k1DTransformSize32][k1DTransformIdentity] =
-      TransformLoop_C<Residual, Pixel, k1DTransformIdentity,
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformIdentity,
                       Identity32Row_C<Residual>, Identity32Column_C<Residual>>;
 
   // Maximum transform size for Wht is 4.
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformWht] =
-      TransformLoop_C<Residual, Pixel, k1DTransformWht, Wht4_C<Residual>>;
+      TransformLoop_C<bitdepth, Residual, Pixel, k1DTransformWht,
+                      Wht4_C<Residual>>;
 }
 
 void Init8bpp() {
@@ -908,63 +914,63 @@ void Init8bpp() {
     }
   }
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
-  InitAll<int16_t, uint8_t>(dsp);
+  InitAll<8, int16_t, uint8_t>(dsp);
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize4_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformDct] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 2>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 2>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize8_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformDct] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 3>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 3>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize16_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformDct] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 4>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 4>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize32_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize32][k1DTransformDct] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 5>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 5>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize64_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize64][k1DTransformDct] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 6>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformDct, Dct_C<int16_t, 6>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize4_1DTransformAdst
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformAdst] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformAdst, Adst4_C<int16_t>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformAdst, Adst4_C<int16_t>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize8_1DTransformAdst
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformAdst] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformAdst, Adst8_C<int16_t>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformAdst, Adst8_C<int16_t>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize16_1DTransformAdst
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformAdst] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformAdst, Adst16_C<int16_t>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformAdst, Adst16_C<int16_t>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize4_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformIdentity] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformIdentity,
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformIdentity,
                       Identity4Row_C<int16_t>, Identity4Column_C<int16_t>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize8_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformIdentity] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformIdentity,
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformIdentity,
                       Identity8Row_C<int16_t>, Identity8Column_C<int16_t>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize16_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformIdentity] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformIdentity,
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformIdentity,
                       Identity16Row_C<int16_t>, Identity16Column_C<int16_t>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize32_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize32][k1DTransformIdentity] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformIdentity,
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformIdentity,
                       Identity32Row_C<int16_t>, Identity32Column_C<int16_t>>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_1DTransformSize4_1DTransformWht
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformWht] =
-      TransformLoop_C<int16_t, uint8_t, k1DTransformWht, Wht4_C<int16_t>>;
+      TransformLoop_C<8, int16_t, uint8_t, k1DTransformWht, Wht4_C<int16_t>>;
 #endif
 #endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
@@ -979,63 +985,71 @@ void Init10bpp() {
     }
   }
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
-  InitAll<int32_t, uint16_t>(dsp);
+  InitAll<10, int32_t, uint16_t>(dsp);
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize4_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformDct] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformDct, Dct_C<int32_t, 2>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformDct,
+                      Dct_C<int32_t, 2>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize8_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformDct] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformDct, Dct_C<int32_t, 3>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformDct,
+                      Dct_C<int32_t, 3>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize16_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformDct] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformDct, Dct_C<int32_t, 4>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformDct,
+                      Dct_C<int32_t, 4>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize32_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize32][k1DTransformDct] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformDct, Dct_C<int32_t, 5>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformDct,
+                      Dct_C<int32_t, 5>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize64_1DTransformDct
   dsp->inverse_transforms[k1DTransformSize64][k1DTransformDct] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformDct, Dct_C<int32_t, 6>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformDct,
+                      Dct_C<int32_t, 6>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize4_1DTransformAdst
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformAdst] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformAdst, Adst4_C<int32_t>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformAdst,
+                      Adst4_C<int32_t>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize8_1DTransformAdst
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformAdst] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformAdst, Adst8_C<int32_t>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformAdst,
+                      Adst8_C<int32_t>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize16_1DTransformAdst
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformAdst] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformAdst, Adst16_C<int32_t>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformAdst,
+                      Adst16_C<int32_t>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize4_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformIdentity] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformIdentity,
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformIdentity,
                       Identity4Row_C<int32_t>, Identity4Column_C<int32_t>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize8_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize8][k1DTransformIdentity] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformIdentity,
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformIdentity,
                       Identity8Row_C<int32_t>, Identity8Column_C<int32_t>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize16_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize16][k1DTransformIdentity] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformIdentity,
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformIdentity,
                       Identity16Row_C<int32_t>, Identity16Column_C<int32_t>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize32_1DTransformIdentity
   dsp->inverse_transforms[k1DTransformSize32][k1DTransformIdentity] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformIdentity,
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformIdentity,
                       Identity32Row_C<int32_t>, Identity32Column_C<int32_t>>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_1DTransformSize4_1DTransformWht
   dsp->inverse_transforms[k1DTransformSize4][k1DTransformWht] =
-      TransformLoop_C<int32_t, uint16_t, k1DTransformWht, Wht4_C<int32_t>>;
+      TransformLoop_C<10, int32_t, uint16_t, k1DTransformWht, Wht4_C<int32_t>>;
 #endif
 #endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
@@ -1048,6 +1062,11 @@ void InverseTransformInit_C() {
 #if LIBGAV1_MAX_BITDEPTH >= 10
   Init10bpp();
 #endif
+
+  // Local functions that may be unused depending on the optimizations
+  // available.
+  static_cast<void>(RangeCheckValue);
+  static_cast<void>(kBitReverseLookup);
 }
 
 }  // namespace dsp

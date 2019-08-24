@@ -6,7 +6,6 @@
 #include <memory>
 #include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>
-#include <stack>
 
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
@@ -21,16 +20,20 @@ namespace libgav1 {
 // boundary checks since we always push data into the queue before accessing it.
 class TransformParameterQueue {
  public:
-  explicit TransformParameterQueue(int max_size) : max_size_(max_size) {
-    // No initialization is necessary since the data will be always written to
-    // before being read.
-    non_zero_coeff_count_.reset(new (std::nothrow) int16_t[max_size_]);
-    tx_type_.reset(new (std::nothrow) TransformType[max_size_]);
-  }
+  TransformParameterQueue() = default;
 
   // Move only.
   TransformParameterQueue(TransformParameterQueue&& other) = default;
   TransformParameterQueue& operator=(TransformParameterQueue&& other) = default;
+
+  LIBGAV1_MUST_USE_RESULT bool Init(int max_size) {
+    max_size_ = max_size;
+    // No initialization is necessary since the data will be always written to
+    // before being read.
+    non_zero_coeff_count_.reset(new (std::nothrow) int16_t[max_size_]);
+    tx_type_.reset(new (std::nothrow) TransformType[max_size_]);
+    return non_zero_coeff_count_ != nullptr && tx_type_ != nullptr;
+  }
 
   // Adds the |non_zero_coeff_count| and the |tx_type| to the back of the queue.
   void Push(int16_t non_zero_coeff_count, TransformType tx_type) {
@@ -65,22 +68,31 @@ class TransformParameterQueue {
   }
 
   // Used only in the tests. Returns the number of elements in the queue.
-  int Size() { return back_ - front_; }
+  int Size() const { return back_ - front_; }
 
  private:
-  const int max_size_;
+  int max_size_ = 0;
   std::unique_ptr<int16_t[]> non_zero_coeff_count_;
   std::unique_ptr<TransformType[]> tx_type_;
   int front_ = 0;
   int back_ = 0;
 };
 
-// This struct is used for parsing and decoding a superblock. Members of this
-// struct are populated in the "parse" step and consumed in the "decode" step.
-struct ResidualBuffer : public Allocable {
-  ResidualBuffer(size_t buffer_size, int queue_size)
-      : transform_parameters(queue_size) {
-    buffer = MakeAlignedUniquePtr<uint8_t>(32, buffer_size);
+// This class is used for parsing and decoding a superblock. Members of this
+// class are populated in the "parse" step and consumed in the "decode" step.
+class ResidualBuffer : public Allocable {
+ public:
+  static std::unique_ptr<ResidualBuffer> Create(size_t buffer_size,
+                                                int queue_size) {
+    std::unique_ptr<ResidualBuffer> buffer(new (std::nothrow) ResidualBuffer);
+    if (buffer != nullptr) {
+      buffer->buffer_ = MakeAlignedUniquePtr<uint8_t>(32, buffer_size);
+      if (buffer->buffer_ == nullptr ||
+          !buffer->transform_parameters_.Init(queue_size)) {
+        buffer = nullptr;
+      }
+    }
+    return buffer;
   }
 
   // Move only.
@@ -88,9 +100,52 @@ struct ResidualBuffer : public Allocable {
   ResidualBuffer& operator=(ResidualBuffer&& other) = default;
 
   // Buffer used to store the residual values.
-  AlignedUniquePtr<uint8_t> buffer;
+  uint8_t* buffer() { return buffer_.get(); }
   // Queue used to store the transform parameters.
-  TransformParameterQueue transform_parameters;
+  TransformParameterQueue* transform_parameters() {
+    return &transform_parameters_;
+  }
+
+ private:
+  friend class ResidualBufferStack;
+
+  ResidualBuffer() = default;
+
+  AlignedUniquePtr<uint8_t> buffer_;
+  TransformParameterQueue transform_parameters_;
+  // Used by ResidualBufferStack to form a chain of ResidualBuffers.
+  ResidualBuffer* next_ = nullptr;
+};
+
+// A LIFO stack of ResidualBuffers. Owns the buffers in the stack.
+class ResidualBufferStack {
+ public:
+  ResidualBufferStack() = default;
+
+  // Not copyable or movable
+  ResidualBufferStack(const ResidualBufferStack&) = delete;
+  ResidualBufferStack& operator=(const ResidualBufferStack&) = delete;
+
+  ~ResidualBufferStack();
+
+  // Pushes |buffer| to the top of the stack.
+  void Push(std::unique_ptr<ResidualBuffer> buffer);
+
+  // If the stack is non-empty, returns the buffer at the top of the stack and
+  // removes it from the stack. If the stack is empty, returns nullptr.
+  std::unique_ptr<ResidualBuffer> Pop();
+
+  // Swaps the contents of this stack and |other|.
+  void Swap(ResidualBufferStack* other);
+
+  // Returns the number of buffers in the stack.
+  size_t Size() const { return num_buffers_; }
+
+ private:
+  // A singly-linked list of ResidualBuffers, chained together using the next_
+  // field of ResidualBuffer.
+  ResidualBuffer* top_ = nullptr;
+  size_t num_buffers_ = 0;
 };
 
 // Utility class used to manage the residual buffers (and the transform
@@ -122,8 +177,7 @@ class ResidualBufferPool : public Allocable {
 
  private:
   mutable std::mutex mutex_;
-  std::stack<std::unique_ptr<ResidualBuffer>> buffers_
-      LIBGAV1_GUARDED_BY(mutex_);
+  ResidualBufferStack buffers_ LIBGAV1_GUARDED_BY(mutex_);
   size_t buffer_size_;
   int queue_size_;
 };

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "src/frame_buffer.h"
+#include "src/symbol_visibility.h"
 
 // All the declarations in this file are part of the public ABI.
 
@@ -23,7 +24,7 @@ enum ImageFormat : uint8_t {
   kImageFormatMonochrome400
 };
 
-struct DecoderBuffer {
+struct LIBGAV1_PUBLIC DecoderBuffer {
   int NumPlanes() const {
     return (image_format == kImageFormatMonochrome400) ? 1 : 3;
   }

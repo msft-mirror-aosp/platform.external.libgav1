@@ -1,10 +1,4 @@
-#include "src/utils/scan.h"
-
-#include "src/utils/common.h"
-#include "src/utils/constants.h"
-
-namespace libgav1 {
-namespace {
+// This file contains all the scan order tables.
 
 const uint16_t kDefaultScan4x4[16] = {0, 1,  4,  8,  5, 2,  3,  6,
                                       9, 12, 13, 10, 7, 11, 14, 15};
@@ -409,38 +403,24 @@ const uint16_t kDefaultScan32x8[256] = {
     95,  251, 220, 189, 158, 127, 252, 221, 190, 159, 253, 222, 191, 254, 223,
     255};
 
-const uint16_t* kDefaultScan[kNumTransformSizes] = {
-    kDefaultScan4x4,   kDefaultScan4x8,   kDefaultScan4x16,  kDefaultScan8x4,
-    kDefaultScan8x8,   kDefaultScan8x16,  kDefaultScan8x32,  kDefaultScan16x4,
-    kDefaultScan16x8,  kDefaultScan16x16, kDefaultScan16x32, kDefaultScan32x32,
-    kDefaultScan32x8,  kDefaultScan32x16, kDefaultScan32x32, kDefaultScan32x32,
-    kDefaultScan32x32, kDefaultScan32x32, kDefaultScan32x32};
-
-const uint16_t* kColumnScan[kNumTransformSizes] = {
-    kColumnScan4x4,  kColumnScan4x8,   kColumnScan4x16, kColumnScan8x4,
-    kColumnScan8x8,  kColumnScan8x16,  kColumnScan16x4, kColumnScan16x4,
-    kColumnScan16x8, kColumnScan16x16, kColumnScan16x4, kColumnScan16x4,
-    kColumnScan16x4, kColumnScan16x4,  kColumnScan16x4, kColumnScan16x4,
-    kColumnScan16x4, kColumnScan16x4,  kColumnScan16x4};
-
-const uint16_t* kRowScan[kNumTransformSizes] = {
-    kRowScan4x4,  kRowScan4x8,  kRowScan4x16, kRowScan8x4,  kRowScan8x8,
-    kRowScan8x16, kRowScan16x4, kRowScan16x4, kRowScan16x8, kRowScan16x16,
-    kRowScan16x4, kRowScan16x4, kRowScan16x4, kRowScan16x4, kRowScan16x4,
-    kRowScan16x4, kRowScan16x4, kRowScan16x4, kRowScan16x4};
-
-}  // namespace
-
-const uint16_t* GetScan(TransformSize tx_size, TransformType tx_type) {
-  if (tx_size == kTransformSize16x64) return kDefaultScan16x32;
-  if (tx_size == kTransformSize64x16) return kDefaultScan32x16;
-  if (kTransformSizeSquareMax[tx_size] == kTransformSize64x64) {
-    return kDefaultScan32x32;
-  }
-  const TransformClass tx_class = GetTransformClass(tx_type);
-  if (tx_class == kTransformClassVertical) return kRowScan[tx_size];
-  if (tx_class == kTransformClassHorizontal) return kColumnScan[tx_size];
-  return kDefaultScan[tx_size];
-}
-
-}  // namespace libgav1
+// 5.11.41 (implemented as a simple look up of transform class and transform
+// size).
+const uint16_t* kScan[3][kNumTransformSizes] = {
+    // kTransformClass2D
+    {kDefaultScan4x4, kDefaultScan4x8, kDefaultScan4x16, kDefaultScan8x4,
+     kDefaultScan8x8, kDefaultScan8x16, kDefaultScan8x32, kDefaultScan16x4,
+     kDefaultScan16x8, kDefaultScan16x16, kDefaultScan16x32, kDefaultScan16x32,
+     kDefaultScan32x8, kDefaultScan32x16, kDefaultScan32x32, kDefaultScan32x32,
+     kDefaultScan32x16, kDefaultScan32x32, kDefaultScan32x32},
+    // kTransformClassHorizontal
+    {kColumnScan4x4, kColumnScan4x8, kColumnScan4x16, kColumnScan8x4,
+     kColumnScan8x8, kColumnScan8x16, kColumnScan16x4, kColumnScan16x4,
+     kColumnScan16x8, kColumnScan16x16, kColumnScan16x4, kDefaultScan16x32,
+     kColumnScan16x4, kColumnScan16x4, kColumnScan16x4, kDefaultScan32x32,
+     kDefaultScan32x16, kDefaultScan32x32, kDefaultScan32x32},
+    // kTransformClassVertical
+    {kRowScan4x4, kRowScan4x8, kRowScan4x16, kRowScan8x4, kRowScan8x8,
+     kRowScan8x16, kRowScan16x4, kRowScan16x4, kRowScan16x8, kRowScan16x16,
+     kRowScan16x4, kDefaultScan16x32, kRowScan16x4, kRowScan16x4, kRowScan16x4,
+     kDefaultScan32x32, kDefaultScan32x16, kDefaultScan32x32,
+     kDefaultScan32x32}};

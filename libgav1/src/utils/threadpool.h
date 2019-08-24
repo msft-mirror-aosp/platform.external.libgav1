@@ -1,7 +1,6 @@
 #ifndef LIBGAV1_SRC_UTILS_THREADPOOL_H_
 #define LIBGAV1_SRC_UTILS_THREADPOOL_H_
 
-#include <deque>
 #include <functional>
 #include <memory>
 
@@ -20,6 +19,7 @@
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/executor.h"
 #include "src/utils/memory.h"
+#include "src/utils/unbounded_queue.h"
 
 namespace libgav1 {
 
@@ -56,6 +56,13 @@ class ThreadPool : public Executor, public Allocable {
   // Adds the specified "closure" to the queue for processing. If worker threads
   // are available, "closure" will run immediately. Otherwise "closure" is
   // queued for later execution.
+  //
+  // NOTE: If the internal queue is full and cannot be resized because of an
+  // out-of-memory error, the current thread runs "closure" before returning
+  // from Schedule(). For our use cases, this seems better than the
+  // alternatives:
+  //   1. Return a failure status.
+  //   2. Have the current thread wait until the queue is not full.
   void Schedule(std::function<void()> closure) override;
 
   int num_threads() const;
@@ -113,7 +120,7 @@ class ThreadPool : public Executor, public Allocable {
 
 #endif  // LIBGAV1_THREADPOOL_USE_STD_MUTEX
 
-  std::deque<std::function<void()>> queue_ LIBGAV1_GUARDED_BY(queue_mutex_);
+  UnboundedQueue<std::function<void()>> queue_ LIBGAV1_GUARDED_BY(queue_mutex_);
   // If not all the worker threads are created, the first entry after the
   // created worker threads is a null pointer.
   const std::unique_ptr<WorkerThread*[]> threads_;

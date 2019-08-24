@@ -47,7 +47,7 @@ const uint16_t kDefaultSkipModeCdf[kSkipModeContexts][kBooleanFieldCdfSize] = {
     {147, 0, 0}, {12060, 0, 0}, {24641, 0, 0}};
 
 // This constant is also used for DeltaLf and DeltaLfMulti.
-const uint16_t kDefaultDeltaQCdf[kDeltaQSymbolCount + 1] = {4608, 648, 91, 0,
+const uint16_t kDefaultDeltaQCdf[kDeltaSymbolCount + 1] = {4608, 648, 91, 0,
                                                             0};
 
 const uint16_t kDefaultIntraBlockCopyCdf[kBooleanFieldCdfSize] = {2237, 0, 0};

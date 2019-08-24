@@ -17,20 +17,20 @@ namespace libgav1 {
 // transform block size |tx_size| starting at position |start_x| and |start_y|.
 template <typename Residual, typename Pixel>
 void Reconstruct(const dsp::Dsp& dsp, TransformType tx_type,
-                 TransformSize tx_size, int8_t bitdepth, bool lossless,
-                 Residual* buffer, int start_x, int start_y,
-                 Array2DView<Pixel>* frame, int16_t non_zero_coeff_count);
+                 TransformSize tx_size, bool lossless, Residual* buffer,
+                 int start_x, int start_y, Array2DView<Pixel>* frame,
+                 int16_t non_zero_coeff_count);
 
 extern template void Reconstruct(const dsp::Dsp& dsp, TransformType tx_type,
-                                 TransformSize tx_size, int8_t bitdepth,
-                                 bool lossless, int16_t* buffer, int start_x,
-                                 int start_y, Array2DView<uint8_t>* frame,
+                                 TransformSize tx_size, bool lossless,
+                                 int16_t* buffer, int start_x, int start_y,
+                                 Array2DView<uint8_t>* frame,
                                  int16_t non_zero_coeff_count);
 #if LIBGAV1_MAX_BITDEPTH >= 10
 extern template void Reconstruct(const dsp::Dsp& dsp, TransformType tx_type,
-                                 TransformSize tx_size, int8_t bitdepth,
-                                 bool lossless, int32_t* buffer, int start_x,
-                                 int start_y, Array2DView<uint16_t>* frame,
+                                 TransformSize tx_size, bool lossless,
+                                 int32_t* buffer, int start_x, int start_y,
+                                 Array2DView<uint16_t>* frame,
                                  int16_t non_zero_coeff_count);
 #endif
 

@@ -16,18 +16,16 @@
 namespace libgav1 {
 namespace {
 
-const int kMaximumLeb128Size = 8;
-const uint8_t kLeb128ValueByteMask = 0x7f;
-const uint8_t kLeb128TerminationByteMask = 0x80;
+constexpr int kMaximumLeb128Size = 8;
+constexpr uint8_t kLeb128ValueByteMask = 0x7f;
+constexpr uint8_t kLeb128TerminationByteMask = 0x80;
 
-inline uint8_t Mod8(size_t n) {
+uint8_t Mod8(size_t n) {
   // Last 3 bits are the value of mod 8.
   return n & 0x07;
 }
 
-inline size_t DivideBy8(size_t n, bool ceil) {
-  return (n + (ceil ? 7 : 0)) >> 3;
-}
+size_t DivideBy8(size_t n, bool ceil) { return (n + (ceil ? 7 : 0)) >> 3; }
 
 }  // namespace
 

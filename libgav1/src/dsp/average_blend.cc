@@ -12,26 +12,29 @@ namespace dsp {
 namespace {
 
 template <int bitdepth, typename Pixel>
-void AverageBlending_C(const uint16_t* prediction_0,
-                       const ptrdiff_t prediction_stride_0,
-                       const uint16_t* prediction_1,
-                       const ptrdiff_t prediction_stride_1,
-                       const int inter_post_round_bit, const int width,
-                       const int height, void* const dest,
-                       const ptrdiff_t dest_stride) {
+void AverageBlend_C(const uint16_t* prediction_0,
+                    const ptrdiff_t prediction_stride_0,
+                    const uint16_t* prediction_1,
+                    const ptrdiff_t prediction_stride_1, const int width,
+                    const int height, void* const dest,
+                    const ptrdiff_t dest_stride) {
   // An offset to cancel offsets used in compound predictor generation that
   // make intermediate computations non negative.
-  const int compound_round_offset =
-      (1 << (bitdepth + 4)) + (1 << (bitdepth + 3));
+  constexpr int compound_round_offset =
+      (2 << (bitdepth + 4)) + (2 << (bitdepth + 3));
+  // 7.11.3.2 Rounding variables derivation process
+  //   2 * FILTER_BITS(7) - (InterRound0(3|5) + InterRound1(7))
+  constexpr int inter_post_round_bits = (bitdepth == 12) ? 2 : 4;
   auto* dst = static_cast<Pixel*>(dest);
   const ptrdiff_t dst_stride = dest_stride / sizeof(Pixel);
 
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
-      int res = (prediction_0[x] + prediction_1[x]) >> 1;
+      // prediction range: 8bpp: [0, 15471] 10bpp: [0, 61983] 12bpp: [0, 62007].
+      int res = prediction_0[x] + prediction_1[x];
       res -= compound_round_offset;
       dst[x] = static_cast<Pixel>(
-          Clip3(RightShiftWithRounding(res, inter_post_round_bit), 0,
+          Clip3(RightShiftWithRounding(res, inter_post_round_bits + 1), 0,
                 (1 << bitdepth) - 1));
     }
     dst += dst_stride;
@@ -43,14 +46,30 @@ void AverageBlending_C(const uint16_t* prediction_0,
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
   assert(dsp != nullptr);
-  dsp->average_blend = AverageBlending_C<8, uint8_t>;
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  dsp->average_blend = AverageBlend_C<8, uint8_t>;
+#else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
+#ifndef LIBGAV1_Dsp8bpp_AverageBlend
+  dsp->average_blend = AverageBlend_C<8, uint8_t>;
+#endif
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(10);
   assert(dsp != nullptr);
-  dsp->average_blend = AverageBlending_C<10, uint16_t>;
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+#ifndef LIBGAV1_Dsp10bpp_AverageBlend
+  dsp->average_blend = AverageBlend_C<10, uint16_t>;
+#endif
+#else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
+#ifndef LIBGAV1_Dsp10bpp_AverageBlend
+  dsp->average_blend = AverageBlend_C<10, uint16_t>;
+#endif
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
 #endif
 

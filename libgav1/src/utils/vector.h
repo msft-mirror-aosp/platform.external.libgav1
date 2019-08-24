@@ -1,90 +1,325 @@
+// libgav1::Vector implementation
+
 #ifndef LIBGAV1_SRC_UTILS_VECTOR_H_
 #define LIBGAV1_SRC_UTILS_VECTOR_H_
 
-#include <algorithm>
-#include <initializer_list>
+#include <cassert>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
+#include <type_traits>
 #include <utility>
-#include <vector>
 
-#include "src/utils/allocator.h"
 #include "src/utils/compiler_attributes.h"
 
 namespace libgav1 {
+namespace internal {
+
+static constexpr size_t kMinVectorAllocation = 16;
+
+// Returns the smallest power of two greater or equal to 'value'.
+inline size_t NextPow2(size_t value) {
+  if (value == 0) return 0;
+  --value;
+  for (size_t i = 1; i < sizeof(size_t) * 8; i *= 2) value |= value >> i;
+  return value + 1;
+}
+
+// Returns the smallest capacity greater or equal to 'value'.
+inline size_t NextCapacity(size_t value) {
+  if (value == 0) return 0;
+  if (value <= kMinVectorAllocation) return kMinVectorAllocation;
+  return NextPow2(value);
+}
 
 //------------------------------------------------------------------------------
-// Vector class that does *NOT* initialize the content by default, unless an
-// explicit value is passed to the constructor.
-// Should be reserved to POD preferably.
+// Data structure equivalent to std::vector but returning false and to its last
+// valid state on memory allocation failure.
+// std::vector with a custom allocator does not fill this need without
+// exceptions.
 
-// resize(), reserve(), and push_back() are overridden to return bool.
-//
-// New methods: ok() and CopyFrom().
-//
-// DO NOT USE emplace_back(), insert(), and emplace().
-template <typename T, typename super = std::vector<T, AllocatorNoCtor<T>>>
-class VectorNoCtor : public super {
+template <typename T>
+class VectorBase {
  public:
-  using super::super;
-  bool ok() const { return this->get_allocator().ok(); }
-  T* operator*() = delete;
-  LIBGAV1_MUST_USE_RESULT inline bool resize(size_t n) {
-    return ok() && (super::resize(n), ok());
+  using iterator = T*;
+  using const_iterator = const T*;
+
+  VectorBase() noexcept = default;
+  // Move only.
+  VectorBase(const VectorBase&) = delete;
+  VectorBase& operator=(const VectorBase&) = delete;
+  VectorBase(VectorBase&& other) noexcept
+      : items_(other.items_),
+        capacity_(other.capacity_),
+        num_items_(other.num_items_) {
+    other.items_ = nullptr;
+    other.capacity_ = 0;
+    other.num_items_ = 0;
   }
-  LIBGAV1_MUST_USE_RESULT inline bool reserve(size_t n) {
-    return ok() && (super::reserve(n), ok());
+  VectorBase& operator=(VectorBase&& other) noexcept {
+    if (this != &other) {
+      clear();
+      free(items_);
+      items_ = other.items_;
+      capacity_ = other.capacity_;
+      num_items_ = other.num_items_;
+      other.items_ = nullptr;
+      other.capacity_ = 0;
+      other.num_items_ = 0;
+    }
+    return *this;
   }
-  // Release the memory.
-  inline void reset() {
-    VectorNoCtor<T, super> tmp;
-    super::swap(tmp);
+  ~VectorBase() {
+    clear();
+    free(items_);
   }
 
-  // disable resizing ctors
-  VectorNoCtor(size_t size) noexcept = delete;
-  VectorNoCtor(size_t size, const T&) noexcept = delete;
-  VectorNoCtor& operator=(const VectorNoCtor& A) noexcept = delete;
-  VectorNoCtor(const VectorNoCtor& other) noexcept = delete;
-  template <typename InputIt>
-  VectorNoCtor(InputIt first, InputIt last) = delete;
-  VectorNoCtor(std::initializer_list<T> init) = delete;
-
-  // benign ctors
-  VectorNoCtor() noexcept : super() {}
-  VectorNoCtor& operator=(VectorNoCtor&& A) = default;
-  VectorNoCtor(VectorNoCtor&& A) noexcept : super(std::move(A)) {}
-
-  void assign(size_t count, const T& value) = delete;
-  template <typename InputIt>
-  void assign(InputIt first, InputIt last) = delete;
-  void assign(std::initializer_list<T> ilist) = delete;
-
-  // To be used instead of copy-ctor:
-  bool CopyFrom(const VectorNoCtor& A) {
-    if (!resize(A.size())) return false;
-    std::copy(A.begin(), A.end(), super::begin());
+  // Reallocates just enough memory if needed so that 'new_cap' items can fit.
+  LIBGAV1_MUST_USE_RESULT bool reserve(size_t new_cap) {
+    if (capacity_ < new_cap) {
+      T* const new_items = static_cast<T*>(malloc(new_cap * sizeof(T)));
+      if (new_items == nullptr) return false;
+      if (num_items_ > 0) {
+        if (std::is_trivial<T>::value) {
+          memcpy(new_items, items_, num_items_ * sizeof(T));
+        } else {
+          for (size_t i = 0; i < num_items_; ++i) {
+            new (&new_items[i]) T(std::move(items_[i]));
+            items_[i].~T();
+          }
+        }
+      }
+      free(items_);
+      items_ = new_items;
+      capacity_ = new_cap;
+    }
     return true;
   }
-  // Performs a push back *if* the vector was properly allocated.
-  // *NO* re-allocation happens.
-  LIBGAV1_MUST_USE_RESULT inline bool push_back(const T& v) {
-    if (super::size() < super::capacity()) {
-      super::push_back(v);
+
+  // Reallocates less memory so that only the existing items can fit.
+  bool shrink_to_fit() {
+    if (capacity_ == num_items_) return true;
+    if (num_items_ == 0) {
+      free(items_);
+      items_ = nullptr;
+      capacity_ = 0;
       return true;
     }
+    const size_t previous_capacity = capacity_;
+    capacity_ = 0;  // Force reserve() to allocate and copy.
+    if (reserve(num_items_)) return true;
+    capacity_ = previous_capacity;
     return false;
   }
-  LIBGAV1_MUST_USE_RESULT inline bool push_back(T&& v) {
-    if (super::size() < super::capacity()) {
-      super::push_back(v);
-      return true;
+
+  // Constructs a new item by copy constructor. May reallocate if
+  // 'resize_if_needed'.
+  LIBGAV1_MUST_USE_RESULT bool push_back(const T& value,
+                                         bool resize_if_needed = true) {
+    if (num_items_ >= capacity_ &&
+        (!resize_if_needed ||
+         !reserve(internal::NextCapacity(num_items_ + 1)))) {
+      return false;
     }
-    return false;
+    new (&items_[num_items_]) T(value);
+    ++num_items_;
+    return true;
+  }
+
+  // Constructs a new item by copy constructor. reserve() must have been called
+  // with a sufficient capacity.
+  //
+  // WARNING: No error checking is performed.
+  void push_back_unchecked(const T& value) {
+    assert(num_items_ < capacity_);
+    new (&items_[num_items_]) T(value);
+    ++num_items_;
+  }
+
+  // Constructs a new item by move constructor. May reallocate if
+  // 'resize_if_needed'.
+  LIBGAV1_MUST_USE_RESULT bool push_back(T&& value,
+                                         bool resize_if_needed = true) {
+    if (num_items_ >= capacity_ &&
+        (!resize_if_needed ||
+         !reserve(internal::NextCapacity(num_items_ + 1)))) {
+      return false;
+    }
+    new (&items_[num_items_]) T(std::move(value));
+    ++num_items_;
+    return true;
+  }
+
+  // Constructs a new item by move constructor. reserve() must have been called
+  // with a sufficient capacity.
+  //
+  // WARNING: No error checking is performed.
+  void push_back_unchecked(T&& value) {
+    assert(num_items_ < capacity_);
+    new (&items_[num_items_]) T(std::move(value));
+    ++num_items_;
+  }
+
+  // Constructs a new item in place by forwarding the arguments args... to the
+  // constructor. May reallocate.
+  template <typename... Args>
+  LIBGAV1_MUST_USE_RESULT bool emplace_back(Args&&... args) {
+    if (num_items_ >= capacity_ &&
+        !reserve(internal::NextCapacity(num_items_ + 1))) {
+      return false;
+    }
+    new (&items_[num_items_]) T(std::forward<Args>(args)...);
+    ++num_items_;
+    return true;
+  }
+
+  // Destructs the last item.
+  void pop_back() {
+    --num_items_;
+    items_[num_items_].~T();
+  }
+
+  // Destructs the item at 'pos'.
+  void erase(iterator pos) { erase(pos, pos + 1); }
+
+  // Destructs the items in [first,last).
+  void erase(iterator first, iterator last) {
+    for (iterator it = first; it != last; ++it) it->~T();
+    if (last != end()) {
+      if (std::is_trivial<T>::value) {
+        memmove(first, last, (end() - last) * sizeof(T));
+      } else {
+        for (iterator it_src = last, it_dst = first; it_src != end();
+             ++it_src, ++it_dst) {
+          new (it_dst) T(std::move(*it_src));
+          it_src->~T();
+        }
+      }
+    }
+    num_items_ -= std::distance(first, last);
+  }
+
+  // Destructs all the items.
+  void clear() { erase(begin(), end()); }
+
+  // Destroys (including deallocating) all the items.
+  void reset() {
+    clear();
+    if (!shrink_to_fit()) assert(false);
+  }
+
+  // Accessors
+  bool empty() const { return (num_items_ == 0); }
+  size_t size() const { return num_items_; }
+  size_t capacity() const { return capacity_; }
+
+  T* data() { return items_; }
+  T& front() { return items_[0]; }
+  T& back() { return items_[num_items_ - 1]; }
+  T& operator[](size_t i) { return items_[i]; }
+  T& at(size_t i) { return items_[i]; }
+  const T* data() const { return items_; }
+  const T& front() const { return items_[0]; }
+  const T& back() const { return items_[num_items_ - 1]; }
+  const T& operator[](size_t i) const { return items_[i]; }
+  const T& at(size_t i) const { return items_[i]; }
+
+  iterator begin() { return &items_[0]; }
+  const_iterator begin() const { return &items_[0]; }
+  iterator end() { return &items_[num_items_]; }
+  const_iterator end() const { return &items_[num_items_]; }
+
+  void swap(VectorBase& b) {
+    // Although not necessary here, adding "using std::swap;" and then calling
+    // swap() without namespace qualification is recommended. See Effective
+    // C++, Item 25.
+    using std::swap;
+    swap(items_, b.items_);
+    swap(capacity_, b.capacity_);
+    swap(num_items_, b.num_items_);
+  }
+
+ protected:
+  T* items_ = nullptr;
+  size_t capacity_ = 0;
+  size_t num_items_ = 0;
+};
+
+}  // namespace internal
+
+//------------------------------------------------------------------------------
+
+// Vector class that does *NOT* construct the content on resize().
+// Should be reserved to plain old data.
+template <typename T>
+class VectorNoCtor : public internal::VectorBase<T> {
+ public:
+  // Creates or destructs items so that 'new_num_items' exist.
+  // Allocated memory grows every power-of-two items.
+  LIBGAV1_MUST_USE_RESULT bool resize(size_t new_num_items) {
+    using super = internal::VectorBase<T>;
+    if (super::num_items_ < new_num_items) {
+      if (super::capacity_ < new_num_items) {
+        if (!super::reserve(internal::NextCapacity(new_num_items))) {
+          return false;
+        }
+      }
+      super::num_items_ = new_num_items;
+    } else {
+      while (super::num_items_ > new_num_items) {
+        --super::num_items_;
+        super::items_[super::num_items_].~T();
+      }
+    }
+    return true;
   }
 };
 
-// This generic vector class will call the constructors
+// This generic vector class will call the constructors.
 template <typename T>
-using Vector = VectorNoCtor<T, std::vector<T, Allocator<T>>>;
+class Vector : public internal::VectorBase<T> {
+ public:
+  // Constructs or destructs items so that 'new_num_items' exist.
+  // Allocated memory grows every power-of-two items.
+  LIBGAV1_MUST_USE_RESULT bool resize(size_t new_num_items) {
+    using super = internal::VectorBase<T>;
+    if (super::num_items_ < new_num_items) {
+      if (super::capacity_ < new_num_items) {
+        if (!super::reserve(internal::NextCapacity(new_num_items))) {
+          return false;
+        }
+      }
+      while (super::num_items_ < new_num_items) {
+        new (&super::items_[super::num_items_]) T();
+        ++super::num_items_;
+      }
+    } else {
+      while (super::num_items_ > new_num_items) {
+        --super::num_items_;
+        super::items_[super::num_items_].~T();
+      }
+    }
+    return true;
+  }
+};
+
+//------------------------------------------------------------------------------
+
+// Define non-member swap() functions in the namespace in which VectorNoCtor
+// and Vector are implemented. See Effective C++, Item 25.
+
+template <typename T>
+void swap(VectorNoCtor<T>& a, VectorNoCtor<T>& b) {
+  a.swap(b);
+}
+
+template <typename T>
+void swap(Vector<T>& a, Vector<T>& b) {
+  a.swap(b);
+}
+
+//------------------------------------------------------------------------------
 
 }  // namespace libgav1
 

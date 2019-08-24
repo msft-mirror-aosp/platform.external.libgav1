@@ -15,6 +15,16 @@
 
 namespace libgav1 {
 
+enum {
+// The byte alignment required for buffers used with SIMD code to be read or
+// written with aligned operations.
+#if defined(__i386__) || defined(_M_IX86)
+  kMaxAlignment = 16,  // extended alignment is safe on x86.
+#else
+  kMaxAlignment = alignof(max_align_t),
+#endif
+};
+
 // AlignedAlloc, AlignedFree
 //
 // void* AlignedAlloc(size_t alignment, size_t size);
@@ -113,28 +123,54 @@ struct Allocable {
   // Class-specific non-throwing allocation functions
   static void* operator new(size_t size, const std::nothrow_t& tag) noexcept {
     if (size > 0x40000000) return nullptr;
+#ifdef __cpp_aligned_new
+    return ::operator new(size, std::align_val_t(kMaxAlignment), tag);
+#else
     return ::operator new(size, tag);
+#endif
   }
   static void* operator new[](size_t size, const std::nothrow_t& tag) noexcept {
     if (size > 0x40000000) return nullptr;
+#ifdef __cpp_aligned_new
+    return ::operator new[](size, std::align_val_t(kMaxAlignment), tag);
+#else
     return ::operator new[](size, tag);
+#endif
   }
 
   // Class-specific deallocation functions.
-  static void operator delete(void* ptr) noexcept { ::operator delete(ptr); }
+  static void operator delete(void* ptr) noexcept {
+#ifdef __cpp_aligned_new
+    ::operator delete(ptr, std::align_val_t(kMaxAlignment));
+#else
+    ::operator delete(ptr);
+#endif
+  }
   static void operator delete[](void* ptr) noexcept {
+#ifdef __cpp_aligned_new
+    ::operator delete[](ptr, std::align_val_t(kMaxAlignment));
+#else
     ::operator delete[](ptr);
+#endif
   }
 
   // Only called if new (std::nothrow) is used and the constructor throws an
   // exception.
   static void operator delete(void* ptr, const std::nothrow_t& tag) noexcept {
+#ifdef __cpp_aligned_new
+    ::operator delete(ptr, std::align_val_t(kMaxAlignment), tag);
+#else
     ::operator delete(ptr, tag);
+#endif
   }
   // Only called if new[] (std::nothrow) is used and the constructor throws an
   // exception.
   static void operator delete[](void* ptr, const std::nothrow_t& tag) noexcept {
+#ifdef __cpp_aligned_new
+    ::operator delete[](ptr, std::align_val_t(kMaxAlignment), tag);
+#else
     ::operator delete[](ptr, tag);
+#endif
   }
 };
 
