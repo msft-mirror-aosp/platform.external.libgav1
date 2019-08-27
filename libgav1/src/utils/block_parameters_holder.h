@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "src/utils/array_2d.h"
+#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 #include "src/utils/parameter_tree.h"
 #include "src/utils/types.h"
@@ -23,10 +24,13 @@ class BlockParametersHolder {
   BlockParametersHolder(const BlockParametersHolder&) = delete;
   BlockParametersHolder& operator=(const BlockParametersHolder&) = delete;
 
+  // Must be called first.
+  LIBGAV1_MUST_USE_RESULT bool Init();
+
   // Finds the BlockParameters corresponding to |row4x4| and |column4x4|. This
   // is done as a simple look up of the |block_parameters_cache_| matrix.
   // Returns nullptr if the BlockParameters cannot be found.
-  BlockParameters* Find(int row4x4, int column4x4) {
+  BlockParameters* Find(int row4x4, int column4x4) const {
     return block_parameters_cache_[row4x4][column4x4];
   }
 
@@ -40,8 +44,9 @@ class BlockParametersHolder {
                  BlockParameters* bp);
 
  private:
-  int rows4x4_;
-  int columns4x4_;
+  const int rows4x4_;
+  const int columns4x4_;
+  const bool use_128x128_superblock_;
   Array2D<std::unique_ptr<ParameterTree>> trees_;
 
   // This is a 2d array of size |rows4x4_| * |columns4x4_|.This is filled in by

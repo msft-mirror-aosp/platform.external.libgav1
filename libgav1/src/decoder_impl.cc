@@ -1,10 +1,9 @@
 #include "src/decoder_impl.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
-#include <condition_variable>  // NOLINT (unapproved c++11 header)
 #include <iterator>
-#include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>
 #include <utility>
 
@@ -16,6 +15,7 @@
 #include "src/post_filter.h"
 #include "src/prediction_mask.h"
 #include "src/quantizer.h"
+#include "src/utils/blocking_counter.h"
 #include "src/utils/common.h"
 #include "src/utils/logging.h"
 #include "src/utils/parameter_tree.h"
@@ -50,6 +50,24 @@ class RefCountedBufferPtrCleanup {
 
 }  // namespace
 
+// static
+StatusCode DecoderImpl::Create(const DecoderSettings* settings,
+                               std::unique_ptr<DecoderImpl>* output) {
+  if (settings->threads <= 0) {
+    LIBGAV1_DLOG(ERROR, "Invalid settings->threads: %d.", settings->threads);
+    return kLibgav1StatusInvalidArgument;
+  }
+  std::unique_ptr<DecoderImpl> impl(new (std::nothrow) DecoderImpl(settings));
+  if (impl == nullptr) {
+    LIBGAV1_DLOG(ERROR, "Failed to allocate DecoderImpl.");
+    return kLibgav1StatusOutOfMemory;
+  }
+  const StatusCode status = impl->Init();
+  if (status != kLibgav1StatusOk) return status;
+  *output = std::move(impl);
+  return kLibgav1StatusOk;
+}
+
 DecoderImpl::DecoderImpl(const DecoderSettings* settings)
     : buffer_pool_(*settings), settings_(*settings) {
   dsp::DspInit();
@@ -66,17 +84,27 @@ DecoderImpl::~DecoderImpl() {
   }
 }
 
+StatusCode DecoderImpl::Init() {
+  const int max_allowed_frames =
+      settings_.frame_parallel ? settings_.threads : 1;
+  assert(max_allowed_frames > 0);
+  if (!encoded_frames_.Init(max_allowed_frames)) {
+    LIBGAV1_DLOG(ERROR, "encoded_frames_.Init() failed.");
+    return kLibgav1StatusOutOfMemory;
+  }
+  return kLibgav1StatusOk;
+}
+
 StatusCode DecoderImpl::EnqueueFrame(const uint8_t* data, size_t size,
                                      int64_t user_private_data) {
   if (data == nullptr) {
     // This has to actually flush the decoder.
     return kLibgav1StatusOk;
   }
-  int max_allowed_frames = settings_.frame_parallel ? settings_.threads : 1;
-  if (encoded_frames_.size() >= static_cast<size_t>(max_allowed_frames)) {
+  if (encoded_frames_.Full()) {
     return kLibgav1StatusResourceExhausted;
   }
-  encoded_frames_.emplace_back(data, size, user_private_data);
+  encoded_frames_.Push(EncodedFrame(data, size, user_private_data));
   return kLibgav1StatusOk;
 }
 
@@ -96,18 +124,20 @@ StatusCode DecoderImpl::DequeueFrame(const DecoderBuffer** out_ptr) {
   // We assume a call to DequeueFrame() indicates that the caller is no longer
   // using the previous output frame, so we can release it.
   ReleaseOutputFrame();
-  if (encoded_frames_.empty()) {
+  if (encoded_frames_.Empty()) {
     // No encoded frame to decode. Not an error.
     *out_ptr = nullptr;
     return kLibgav1StatusOk;
   }
-  const EncodedFrame encoded_frame = encoded_frames_[0];
-  encoded_frames_.erase(encoded_frames_.begin());
+  const EncodedFrame encoded_frame = encoded_frames_.Pop();
   std::unique_ptr<ObuParser> obu(new (std::nothrow) ObuParser(
       encoded_frame.data, encoded_frame.size, &state_));
   if (obu == nullptr) {
     LIBGAV1_DLOG(ERROR, "Failed to initialize OBU parser.");
     return kLibgav1StatusOutOfMemory;
+  }
+  if (state_.has_sequence_header) {
+    obu->set_sequence_header(state_.sequence_header);
   }
   RefCountedBufferPtrCleanup current_frame_cleanup(&state_.current_frame);
   RefCountedBufferPtr displayable_frame;
@@ -119,14 +149,16 @@ StatusCode DecoderImpl::DequeueFrame(const DecoderBuffer** out_ptr) {
       return kLibgav1StatusResourceExhausted;
     }
 
-    obu->set_sequence_header(state_.sequence_header);
     if (!obu->ParseOneFrame()) {
       LIBGAV1_DLOG(ERROR, "Failed to parse OBU.");
       return kLibgav1StatusUnknownError;
     }
-    if (std::find(obu->types().begin(), obu->types().end(),
-                  kObuSequenceHeader) != obu->types().end()) {
+    if (std::find_if(obu->obu_headers().begin(), obu->obu_headers().end(),
+                     [](const ObuHeader& obu_header) {
+                       return obu_header.type == kObuSequenceHeader;
+                     }) != obu->obu_headers().end()) {
       state_.sequence_header = obu->sequence_header();
+      state_.has_sequence_header = true;
     }
     if (!obu->frame_header().show_existing_frame) {
       if (obu->tile_groups().empty()) {
@@ -355,6 +387,9 @@ StatusCode DecoderImpl::DecodeTiles(const ObuParser* obu) {
       obu->frame_header().rows4x4 + kMaxBlockHeight4x4,
       obu->frame_header().columns4x4 + kMaxBlockWidth4x4,
       obu->sequence_header().use_128x128_superblock);
+  if (!block_parameters_holder.Init()) {
+    return kLibgav1StatusOutOfMemory;
+  }
   const dsp::Dsp* const dsp =
       dsp::GetDspTable(obu->sequence_header().color_config.bitdepth);
   if (dsp == nullptr) {
@@ -384,8 +419,11 @@ StatusCode DecoderImpl::DecodeTiles(const ObuParser* obu) {
   const uint8_t tile_size_bytes = obu->frame_header().tile_info.tile_size_bytes;
   const int tile_count = obu->tile_groups().back().end + 1;
   assert(tile_count >= 1);
-  std::vector<std::unique_ptr<Tile>> tiles;
-  tiles.reserve(tile_count);
+  Vector<std::unique_ptr<Tile>> tiles;
+  if (!tiles.reserve(tile_count)) {
+    LIBGAV1_DLOG(ERROR, "tiles.reserve(%d) failed.\n", tile_count);
+    return kLibgav1StatusOutOfMemory;
+  }
   if (!threading_strategy_.Reset(obu->frame_header(), settings_.threads)) {
     return kLibgav1StatusOutOfMemory;
   }
@@ -412,31 +450,60 @@ StatusCode DecoderImpl::DecodeTiles(const ObuParser* obu) {
     }
   }
 
+  const bool do_cdef =
+      PostFilter::DoCdef(obu->frame_header(), settings_.post_filter_mask);
+  const int num_planes = obu->sequence_header().color_config.is_monochrome
+                             ? kMaxPlanesMonochrome
+                             : kMaxPlanes;
+  const bool do_restoration =
+      PostFilter::DoRestoration(obu->frame_header().loop_restoration,
+                                settings_.post_filter_mask, num_planes);
   if (threading_strategy_.post_filter_thread_pool() != nullptr &&
-      PostFilter::DoRestoration(
-          obu->frame_header().loop_restoration, settings_.post_filter_mask,
-          obu->sequence_header().color_config.is_monochrome
-              ? kMaxPlanesMonochrome
-              : kMaxPlanes)) {
-    const size_t threaded_loop_restoration_buffer_size =
-        PostFilter::kRestorationWindowWidth *
-        PostFilter::GetRestorationWindowHeight(
+      (do_cdef || do_restoration)) {
+    const int window_buffer_width = PostFilter::GetWindowBufferWidth(
+        threading_strategy_.post_filter_thread_pool(), obu->frame_header());
+    size_t threaded_window_buffer_size =
+        window_buffer_width *
+        PostFilter::GetWindowBufferHeight(
             threading_strategy_.post_filter_thread_pool(),
             obu->frame_header()) *
         (obu->sequence_header().color_config.bitdepth == 8 ? sizeof(uint8_t)
                                                            : sizeof(uint16_t));
-    if (threaded_loop_restoration_buffer_size_ <
-        threaded_loop_restoration_buffer_size) {
-      threaded_loop_restoration_buffer_.reset(
-          new (std::nothrow) uint8_t[threaded_loop_restoration_buffer_size]);
-      if (threaded_loop_restoration_buffer_ == nullptr) {
+    if (do_cdef && !do_restoration) {
+      // TODO(chengchen): for cdef U, V planes, if there's subsampling, we can
+      // use smaller buffer.
+      threaded_window_buffer_size *= num_planes;
+    }
+    if (threaded_window_buffer_size_ < threaded_window_buffer_size) {
+      // threaded_window_buffer_ will be subdivided by PostFilter into windows
+      // of width 512 pixels. Each row in the window is filtered by a worker
+      // thread. To avoid false sharing, each 512-pixel row processed by one
+      // thread should not share a cache line with a row processed by another
+      // thread. So we align threaded_window_buffer_ to the cache line size.
+      // In addition, it is faster to memcpy from an aligned buffer.
+      //
+      // On Linux, the cache line size can be looked up with the command:
+      //   getconf LEVEL1_DCACHE_LINESIZE
+      //
+      // The cache line size should ideally be queried at run time. 64 is a
+      // common cache line size of x86 CPUs. Web searches showed the cache line
+      // size of ARM CPUs is 32 or 64 bytes. So aligning to 64-byte boundary
+      // will work for all CPUs that we care about, even though it is excessive
+      // for some ARM CPUs.
+      constexpr size_t kCacheLineSize = 64;
+      // To avoid false sharing, PostFilter's window width in bytes should also
+      // be a multiple of the cache line size. For simplicity, we check the
+      // window width in pixels.
+      assert(window_buffer_width % kCacheLineSize == 0);
+      threaded_window_buffer_ = MakeAlignedUniquePtr<uint8_t>(
+          kCacheLineSize, threaded_window_buffer_size);
+      if (threaded_window_buffer_ == nullptr) {
         LIBGAV1_DLOG(ERROR,
                      "Failed to allocate threaded loop restoration buffer.\n");
-        threaded_loop_restoration_buffer_size_ = 0;
+        threaded_window_buffer_size_ = 0;
         return kLibgav1StatusOutOfMemory;
       }
-      threaded_loop_restoration_buffer_size_ =
-          threaded_loop_restoration_buffer_size;
+      threaded_window_buffer_size_ = threaded_window_buffer_size;
     }
   }
 
@@ -445,9 +512,10 @@ StatusCode DecoderImpl::DecodeTiles(const ObuParser* obu) {
       cdef_index, &loop_restoration_info, &block_parameters_holder,
       state_.current_frame->buffer(), dsp,
       threading_strategy_.post_filter_thread_pool(),
-      threaded_loop_restoration_buffer_.get(), settings_.post_filter_mask);
+      threaded_window_buffer_.get(), settings_.post_filter_mask);
   SymbolDecoderContext saved_symbol_decoder_context;
   int tile_index = 0;
+  BlockingCounterWithStatus pending_tiles(tile_count);
   for (const auto& tile_group : obu->tile_groups()) {
     size_t bytes_left = tile_group.data_size;
     size_t byte_offset = 0;
@@ -484,86 +552,91 @@ StatusCode DecoderImpl::DecodeTiles(const ObuParser* obu) {
           prev_segment_ids, &post_filter, &block_parameters_holder, &cdef_index,
           &inter_transform_sizes_, dsp,
           threading_strategy_.row_thread_pool(tile_index++),
-          residual_buffer_pool_.get()));
+          residual_buffer_pool_.get(), &pending_tiles));
       if (tile == nullptr) {
         LIBGAV1_DLOG(ERROR, "Failed to allocate tile.");
         return kLibgav1StatusOutOfMemory;
       }
-      tiles.push_back(std::move(tile));
+      tiles.push_back_unchecked(std::move(tile));
 
       byte_offset += tile_size;
       bytes_left -= tile_size;
     }
   }
   assert(tiles.size() == static_cast<size_t>(tile_count));
+  bool tile_decoding_failed = false;
   if (threading_strategy_.tile_thread_pool() == nullptr) {
     for (const auto& tile_ptr : tiles) {
-      if (!tile_ptr->Decode()) {
-        LIBGAV1_DLOG(ERROR, "Error decoding tile #%d", tile_ptr->number());
-        return kLibgav1StatusUnknownError;
+      if (!tile_decoding_failed) {
+        if (!tile_ptr->Decode(/*is_main_thread=*/true)) {
+          LIBGAV1_DLOG(ERROR, "Error decoding tile #%d", tile_ptr->number());
+          tile_decoding_failed = true;
+        }
+      } else {
+        pending_tiles.Decrement(false);
       }
     }
   } else {
-    const int num_workers =
-        threading_strategy_.tile_thread_pool()->num_threads();
-    const int tiles_for_thread_pool =
-        tile_count * num_workers / (num_workers + 1);
-    // Make sure the current thread does some work.
-    assert(tiles_for_thread_pool < tile_count);
-    std::mutex mutex;
-    bool tile_decoding_failed = false;          // Guarded by |mutex|.
-    int pending_tiles = tiles_for_thread_pool;  // Guarded by |mutex|.
-    std::condition_variable pending_tiles_zero_condvar;
-    // Submit some tiles to the thread pool for decoding.
-    int i;
-    for (i = 0; i < tiles_for_thread_pool; ++i) {
-      auto* const tile = tiles[i].get();
+    const int num_workers = threading_strategy_.tile_thread_count();
+    BlockingCounterWithStatus pending_workers(num_workers);
+    std::atomic<int> tile_counter(0);
+    // Submit tile decoding jobs to the thread pool.
+    for (int i = 0; i < num_workers; ++i) {
       threading_strategy_.tile_thread_pool()->Schedule(
-          [&mutex, &tile_decoding_failed, tile, &pending_tiles,
-           &pending_tiles_zero_condvar]() {
-            const bool failed = !tile->Decode();
-            if (failed) {
-              LIBGAV1_DLOG(ERROR, "Error decoding tile #%d", tile->number());
+          [&tiles, tile_count, &tile_counter, &pending_workers,
+           &pending_tiles]() {
+            bool failed = false;
+            int index;
+            while ((index = tile_counter.fetch_add(
+                        1, std::memory_order_relaxed)) < tile_count) {
+              if (!failed) {
+                const auto& tile_ptr = tiles[index];
+                if (!tile_ptr->Decode(/*is_main_thread=*/false)) {
+                  LIBGAV1_DLOG(ERROR, "Error decoding tile #%d",
+                               tile_ptr->number());
+                  failed = true;
+                }
+              } else {
+                pending_tiles.Decrement(false);
+              }
             }
-            std::lock_guard<std::mutex> lock(mutex);
-            tile_decoding_failed |= failed;
-            if (--pending_tiles == 0) {
-              // TODO(jzern): the mutex doesn't need to be locked to signal the
-              // condition.
-              pending_tiles_zero_condvar.notify_one();
-            }
+            pending_workers.Decrement(!failed);
           });
     }
-    // Decode the rest of the tiles on the current thread.
-    bool failed = false;
-    for (; i < tile_count; ++i) {
-      const auto& tile_ptr = tiles[i];
-      if (!tile_ptr->Decode()) {
-        LIBGAV1_DLOG(ERROR, "Error decoding tile #%d", tile_ptr->number());
-        failed = true;
-        break;
+    // Have the current thread partake in tile decoding.
+    int index;
+    while ((index = tile_counter.fetch_add(1, std::memory_order_relaxed)) <
+           tile_count) {
+      if (!tile_decoding_failed) {
+        const auto& tile_ptr = tiles[index];
+        if (!tile_ptr->Decode(/*is_main_thread=*/true)) {
+          LIBGAV1_DLOG(ERROR, "Error decoding tile #%d", tile_ptr->number());
+          tile_decoding_failed = true;
+        }
+      } else {
+        pending_tiles.Decrement(false);
       }
     }
-    // Wait for the thread pool to finish decoding the tiles.
-    std::unique_lock<std::mutex> lock(mutex);
-    tile_decoding_failed |= failed;
-    while (pending_tiles != 0) {
-      pending_tiles_zero_condvar.wait(lock);
-    }
-    if (tile_decoding_failed) return kLibgav1StatusUnknownError;
+    // Wait until all the workers are done. This ensures that all the tiles have
+    // been parsed.
+    tile_decoding_failed |= !pending_workers.Wait();
   }
+  // Wait until all the tiles have been decoded.
+  tile_decoding_failed |= !pending_tiles.Wait();
+
+  // At this point, all the tiles have been parsed and decoded and the
+  // threadpool will be empty.
+  if (tile_decoding_failed) return kLibgav1StatusUnknownError;
 
   if (obu->frame_header().enable_frame_end_update_cdf) {
     symbol_decoder_context_ = saved_symbol_decoder_context;
   }
   state_.current_frame->SetFrameContext(symbol_decoder_context_);
-  if (post_filter.DoDeblock() &&
-      !loop_filter_mask_.Build(
-          obu->sequence_header(), obu->frame_header(),
-          obu->tile_groups().front().start, obu->tile_groups().back().end,
-          &block_parameters_holder, inter_transform_sizes_)) {
-    LIBGAV1_DLOG(ERROR, "Error building deblocking filter masks.");
-    return kLibgav1StatusUnknownError;
+  if (post_filter.DoDeblock()) {
+    loop_filter_mask_.Build(obu->sequence_header(), obu->frame_header(),
+                            obu->tile_groups().front().start,
+                            obu->tile_groups().back().end,
+                            block_parameters_holder, inter_transform_sizes_);
   }
   if (!post_filter.ApplyFiltering()) {
     LIBGAV1_DLOG(ERROR, "Error applying in-loop filtering.");

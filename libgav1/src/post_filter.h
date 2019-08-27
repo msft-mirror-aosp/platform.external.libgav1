@@ -3,11 +3,11 @@
 
 #include <algorithm>
 #include <array>
-#include <condition_variable>  // NOLINT (unapproved c++11 header)
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <mutex>  // NOLINT (unapproved c++11 header)
+#include <type_traits>
 
 #include "src/dsp/common.h"
 #include "src/dsp/dsp.h"
@@ -18,6 +18,7 @@
 #include "src/utils/block_parameters_holder.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
+#include "src/utils/memory.h"
 #include "src/utils/threadpool.h"
 #include "src/yuv_buffer.h"
 
@@ -37,8 +38,7 @@ namespace libgav1 {
 // and restoration together to only filter frame buffer once.
 class PostFilter {
  public:
-  // Window width used for multi-threaded loop restoration.
-  static constexpr int kRestorationWindowWidth = 512;
+  static constexpr int kCdefLargeValue = 30000;
 
   // This class does not take ownership of the masks/restoration_info, but it
   // may change their values.
@@ -49,8 +49,7 @@ class PostFilter {
              BlockParametersHolder* block_parameters,
              YuvBuffer* const source_buffer, const dsp::Dsp* dsp,
              ThreadPool* const thread_pool,
-             uint8_t* const threaded_loop_restoration_buffer,
-             int do_post_filter_mask)
+             uint8_t* const threaded_window_buffer, int do_post_filter_mask)
       : frame_header_(frame_header),
         loop_restoration_(frame_header.loop_restoration),
         dsp_(*dsp),
@@ -65,16 +64,21 @@ class PostFilter {
         planes_(sequence_header.color_config.is_monochrome
                     ? kMaxPlanesMonochrome
                     : kMaxPlanes),
+        pixel_size_(static_cast<int>((bitdepth_ == 8) ? sizeof(uint8_t)
+                                                      : sizeof(uint16_t))),
         masks_(masks),
         cdef_index_(cdef_index),
-        threaded_loop_restoration_buffer_(threaded_loop_restoration_buffer),
+        threaded_window_buffer_(threaded_window_buffer),
         restoration_info_(restoration_info),
-        restoration_window_height_(
-            GetRestorationWindowHeight(thread_pool, frame_header)),
-        block_parameters_(block_parameters),
+        window_buffer_width_(GetWindowBufferWidth(thread_pool, frame_header)),
+        window_buffer_height_(GetWindowBufferHeight(thread_pool, frame_header)),
+        block_parameters_(*block_parameters),
         source_buffer_(source_buffer),
         do_post_filter_mask_(do_post_filter_mask),
-        thread_pool_(thread_pool) {}
+        thread_pool_(thread_pool) {
+    const int8_t zero_delta_lf[kFrameLfCount] = {};
+    ComputeDeblockFilterLevels(zero_delta_lf, deblock_filter_levels_);
+  }
 
   // non copyable/movable.
   PostFilter(const PostFilter&) = delete;
@@ -118,13 +122,15 @@ class PostFilter {
   //                Inputs are source_buffer_ and cdef_buffer_.
   //                Ouput is source_buffer_.
   bool ApplyFiltering();
-  bool DoCdef() const {
-    return (do_post_filter_mask_ & 0x02) != 0 &&
-           (frame_header_.cdef.bits > 0 ||
-            frame_header_.cdef.y_primary_strength[0] > 0 ||
-            frame_header_.cdef.y_secondary_strength[0] > 0 ||
-            frame_header_.cdef.uv_primary_strength[0] > 0 ||
-            frame_header_.cdef.uv_secondary_strength[0] > 0);
+  bool DoCdef() const { return DoCdef(frame_header_, do_post_filter_mask_); }
+  static bool DoCdef(const ObuFrameHeader& frame_header,
+                     int do_post_filter_mask) {
+    return (do_post_filter_mask & 0x02) != 0 &&
+           (frame_header.cdef.bits > 0 ||
+            frame_header.cdef.y_primary_strength[0] > 0 ||
+            frame_header.cdef.y_secondary_strength[0] > 0 ||
+            frame_header.cdef.uv_primary_strength[0] > 0 ||
+            frame_header.cdef.uv_secondary_strength[0] > 0);
   }
   // If filter levels for Y plane (0 for vertical, 1 for horizontal),
   // are all zero, deblock filter will not be applied.
@@ -137,6 +143,17 @@ class PostFilter {
   bool DoDeblock() const {
     return DoDeblock(frame_header_, do_post_filter_mask_);
   }
+  uint8_t GetZeroDeltaDeblockFilterLevel(int segment_id, int level_index,
+                                         ReferenceFrameType type,
+                                         int mode_id) const {
+    return deblock_filter_levels_[segment_id][level_index][type][mode_id];
+  }
+  // Computes the deblock filter levels using |delta_lf| and stores them in
+  // |deblock_filter_levels|.
+  void ComputeDeblockFilterLevels(
+      const int8_t delta_lf[kFrameLfCount],
+      uint8_t deblock_filter_levels[kMaxSegments][kFrameLfCount]
+                                   [kNumReferenceFrameTypes][2]) const;
   bool DoRestoration() const;
   // Returns true if loop restoration will be performed for the given parameters
   // and mask.
@@ -172,45 +189,82 @@ class PostFilter {
                            ptrdiff_t stride, int left, int right, int top,
                            int bottom);
 
-  // For multi-threaded loop restoration, window height is the minimum of the
-  // following two quantities:
+  static int GetWindowBufferWidth(const ThreadPool* const thread_pool,
+                                  const ObuFrameHeader& frame_header) {
+    return (thread_pool == nullptr) ? 0
+                                    : Align(frame_header.upscaled_width, 64);
+  }
+
+  // For multi-threaded cdef and loop restoration, window height is the minimum
+  // of the following two quantities:
   //  1) thread_count * 64
   //  2) frame_height rounded up to the nearest power of 64
-  // Where 64 is the block size for loop restoration.
-  static int GetRestorationWindowHeight(const ThreadPool* const thread_pool,
-                                        const ObuFrameHeader& frame_header) {
+  // Where 64 is the block size for cdef and loop restoration.
+  static int GetWindowBufferHeight(const ThreadPool* const thread_pool,
+                                   const ObuFrameHeader& frame_header) {
     if (thread_pool == nullptr) return 0;
     const int thread_count = 1 + thread_pool->num_threads();
     const int window_height = MultiplyBy64(thread_count);
-    const int adjusted_frame_height = (frame_header.height + 63) & ~63;
+    const int adjusted_frame_height = Align(frame_header.height, 64);
     return std::min(adjusted_frame_height, window_height);
   }
 
  private:
+  // The type of the HorizontalDeblockFilter and VerticalDeblockFilter member
+  // functions.
+  using DeblockFilter = void (PostFilter::*)(Plane plane, int row4x4_start,
+                                             int column4x4_start, int unit_id);
+  // Represents a job for a worker thread to apply the deblock filter.
+  struct DeblockFilterJob : public Allocable {
+    int plane;
+    int row4x4;
+    int row_unit;
+  };
   // Buffers for loop restoration intermediate results. Depending on the filter
   // type, only one member of the union is used.
   union IntermediateBuffers {
     // For Wiener filter.
     // The array |intermediate| in Section 7.17.4, the intermediate results
     // between the horizontal and vertical filters.
-    alignas(
-        32) uint16_t wiener[(kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1) *
-                            kMaxSuperBlockSizeInPixels];
+    alignas(kMaxAlignment)
+        uint16_t wiener[(kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1) *
+                        kMaxSuperBlockSizeInPixels];
     // For self-guided filter.
     struct {
       // The arrays flt0 and flt1 in Section 7.17.2, the outputs of the box
       // filter process in pass 0 and pass 1.
-      alignas(32) int32_t output[2][kMaxBoxFilterProcessOutputPixels];
+      alignas(
+          kMaxAlignment) int32_t output[2][kMaxBoxFilterProcessOutputPixels];
       // The 2d arrays A and B in Section 7.17.3, the intermediate results in
       // the box filter process. Reused for pass 0 and pass 1.
-      alignas(32) uint32_t intermediate_a[kBoxFilterProcessIntermediatePixels];
-      alignas(32) uint32_t intermediate_b[kBoxFilterProcessIntermediatePixels];
+      alignas(kMaxAlignment) uint32_t
+          intermediate_a[kBoxFilterProcessIntermediatePixels];
+      alignas(kMaxAlignment) uint32_t
+          intermediate_b[kBoxFilterProcessIntermediatePixels];
     } box_filter;
   };
 
   bool ApplyDeblockFilter();
+  void DeblockFilterWorker(const DeblockFilterJob* jobs, int num_jobs,
+                           std::atomic<int>* job_counter,
+                           DeblockFilter deblock_filter);
   bool ApplyDeblockFilterThreaded();
+
+  uint8_t* GetCdefBufferAndStride(int start_x, int start_y, int plane,
+                                  int subsampling_x, int subsampling_y,
+                                  int window_buffer_plane_size,
+                                  int vertical_shift, int horizontal_shift,
+                                  int* cdef_stride);
+  template <typename Pixel>
+  void ApplyCdefForOneUnit(uint16_t* cdef_block, int index, int block_width4x4,
+                           int block_height4x4, int row4x4_start,
+                           int column4x4_start);
+  template <typename Pixel>
+  void ApplyCdefForOneRowInWindow(int row, int column);
+  template <typename Pixel>
+  bool ApplyCdefThreaded();
   bool ApplyCdef();  // Sections 7.15 and 7.15.1.
+
   bool ApplySuperRes();
   // Note for ApplyLoopRestoration():
   // First, we must differentiate loop restoration processing unit from loop
@@ -252,8 +306,7 @@ class PostFilter {
       uint8_t* deblock_buffer, ptrdiff_t deblock_buffer_stride, Plane plane,
       int plane_height, int plane_width, int x, int y, int row, int unit_row,
       int current_process_unit_height, int process_unit_width, int window_width,
-      int plane_unit_size, int num_horizontal_units, std::mutex* mutex,
-      int* pending_jobs, std::condition_variable* pending_jobs_zero_condvar);
+      int plane_unit_size, int num_horizontal_units);
   template <typename Pixel>
   void ApplyLoopRestorationForOneUnit(
       uint8_t* cdef_buffer, ptrdiff_t cdef_buffer_stride,
@@ -273,10 +326,17 @@ class PostFilter {
                                int column4x4_start, int unit_id);
   void VerticalDeblockFilter(Plane plane, int row4x4_start, int column4x4_start,
                              int unit_id);
+  // HorizontalDeblockFilter and VerticalDeblockFilter must have the correct
+  // signature.
+  static_assert(std::is_same<decltype(&PostFilter::HorizontalDeblockFilter),
+                             DeblockFilter>::value,
+                "");
+  static_assert(std::is_same<decltype(&PostFilter::VerticalDeblockFilter),
+                             DeblockFilter>::value,
+                "");
   void InitDeblockFilterParams();  // Part of 7.14.4.
   void GetDeblockFilterParams(uint8_t level, int* outer_thresh,
                               int* inner_thresh, int* hev_thresh) const;
-  void PrepareRestorationBuffer(RestorationBuffer* restoration_buffer);
   // Applies super resolution and writes result to input_buffer.
   void FrameSuperRes(YuvBuffer* input_buffer);  // Section 7.16.
 
@@ -291,21 +351,31 @@ class PostFilter {
   const int8_t subsampling_x_;
   const int8_t subsampling_y_;
   const int8_t planes_;
+  const int pixel_size_;
   // This class does not take ownership of the masks/restoration_info, but it
   // could change their values.
   LoopFilterMask* const masks_;
   uint8_t inner_thresh_[kMaxLoopFilterValue + 1] = {};
   uint8_t outer_thresh_[kMaxLoopFilterValue + 1] = {};
   uint8_t hev_thresh_[kMaxLoopFilterValue + 1] = {};
+  // This stores the deblocking filter levels assuming that the delta is zero.
+  // This will be used by all superblocks whose delta is zero (without having to
+  // recompute them). The dimensions (in order) are: segment_id, level_index
+  // (based on plane and direction), reference_frame and mode_id.
+  uint8_t deblock_filter_levels_[kMaxSegments][kFrameLfCount]
+                                [kNumReferenceFrameTypes][2];
   const Array2D<int16_t>& cdef_index_;
-  // Pointer to the data buffer used for multi-threaded loop restoration. The
-  // size of this buffer must be at least kRestorationWindowWidth *
-  // |restoration_window_height_| * sizeof(Pixel). If |thread_pool_| is nullptr,
-  // then this buffer is not used and can be nullptr as well.
-  uint8_t* const threaded_loop_restoration_buffer_;
+  // Pointer to the data buffer used for multi-threaded cdef or loop
+  // restoration. The size of this buffer must be at least
+  // |window_buffer_width_| * |window_buffer_height_| * |pixel_size_|.
+  // Or |planes_| times that for multi-threaded cdef.
+  // If |thread_pool_| is nullptr, then this buffer is not used and can be
+  // nullptr as well.
+  uint8_t* const threaded_window_buffer_;
   LoopRestorationInfo* const restoration_info_;
-  const int restoration_window_height_;
-  BlockParametersHolder* const block_parameters_;
+  const int window_buffer_width_;
+  const int window_buffer_height_;
+  const BlockParametersHolder& block_parameters_;
   // Frame buffer to hold cdef filtered frame.
   YuvBuffer cdef_filtered_buffer_;
   // Frame buffer to hold the copy of the buffer to be upscaled,
@@ -323,7 +393,6 @@ class PostFilter {
 
   ThreadPool* const thread_pool_;
 
-  IntermediateBuffers intermediate_buffers_;
   // A small buffer to hold input source image block for loop restoration.
   // Its size is one processing unit size + borders.
   // Self-guided filter needs an extra one-pixel border.
@@ -333,6 +402,10 @@ class PostFilter {
       block_buffer_[kRestorationProcessingUnitSizeWithBorders *
                     kRestorationProcessingUnitSizeWithBorders *
                     sizeof(uint16_t)];
+  // A block buffer to hold the input that is converted to uint16_t before
+  // cdef filtering. Only used in single threaded case.
+  uint16_t cdef_block_[kRestorationProcessingUnitSizeWithBorders *
+                       kRestorationProcessingUnitSizeWithBorders * 3];
 
   template <int bitdepth, typename Pixel>
   friend class PostFilterSuperResTest;
@@ -406,6 +479,104 @@ void PrepareLoopRestorationBlock(const uint8_t* cdef_buffer,
       deblock_ptr += deblock_stride;
     }
     dst += dest_stride;
+  }
+}
+
+template <typename Pixel>
+void CopyRows(const Pixel* src, const ptrdiff_t src_stride,
+              const int block_width, const int unit_width,
+              const bool is_frame_top, const bool is_frame_bottom,
+              const bool is_frame_left, const bool is_frame_right,
+              const bool copy_top, const int num_rows, uint16_t* dst,
+              const ptrdiff_t dst_stride) {
+  if (is_frame_top || is_frame_bottom) {
+    if (is_frame_bottom) dst -= kCdefBorder;
+    for (int y = 0; y < num_rows; ++y) {
+      Memset(dst, PostFilter::kCdefLargeValue, unit_width + 2 * kCdefBorder);
+      dst += dst_stride;
+    }
+  } else {
+    if (copy_top) {
+      src -= kCdefBorder * src_stride;
+      dst += kCdefBorder;
+    }
+    for (int y = 0; y < num_rows; ++y) {
+      for (int x = -kCdefBorder; x < 0; ++x) {
+        dst[x] = is_frame_left ? PostFilter::kCdefLargeValue : src[x];
+      }
+      for (int x = 0; x < block_width; ++x) {
+        dst[x] = src[x];
+      }
+      for (int x = block_width; x < unit_width + kCdefBorder; ++x) {
+        dst[x] = is_frame_right ? PostFilter::kCdefLargeValue : src[x];
+      }
+      dst += dst_stride;
+      src += src_stride;
+    }
+  }
+}
+
+// This function prepares the input source block for cdef filtering.
+// The input source block contains a 12x12 block, with the inner 8x8 as the
+// desired filter region.
+// It pads the block if the 12x12 block includes out of frame pixels with
+// a large value.
+// This achieves the required behavior defined in section 5.11.52 of the spec.
+template <typename Pixel>
+void PrepareCdefBlock(const YuvBuffer* const source_buffer, const int planes,
+                      const int subsampling_x, const int subsampling_y,
+                      const int frame_width, const int frame_height,
+                      const int block_width4x4, const int block_height4x4,
+                      const int row_64x64, const int column_64x64,
+                      uint16_t* cdef_source, const ptrdiff_t cdef_stride) {
+  for (int plane = kPlaneY; plane < planes; ++plane) {
+    uint16_t* cdef_src =
+        cdef_source + plane * kRestorationProcessingUnitSizeWithBorders *
+                          kRestorationProcessingUnitSizeWithBorders;
+    const int plane_subsampling_x = (plane == kPlaneY) ? 0 : subsampling_x;
+    const int plane_subsampling_y = (plane == kPlaneY) ? 0 : subsampling_y;
+    const int start_x = MultiplyBy4(column_64x64) >> plane_subsampling_x;
+    const int start_y = MultiplyBy4(row_64x64) >> plane_subsampling_y;
+    const int plane_width =
+        RightShiftWithRounding(frame_width, plane_subsampling_x);
+    const int plane_height =
+        RightShiftWithRounding(frame_height, plane_subsampling_y);
+    const int block_width = MultiplyBy4(block_width4x4) >> plane_subsampling_x;
+    const int block_height =
+        MultiplyBy4(block_height4x4) >> plane_subsampling_y;
+    // unit_width, unit_height are the same as block_width, block_height unless
+    // it reaches the frame boundary, where block_width < 64 or
+    // block_height < 64. unit_width, unit_height guarantee we build blocks on
+    // a multiple of 8.
+    const int unit_width =
+        Align(block_width, (plane_subsampling_x > 0) ? 4 : 8);
+    const int unit_height =
+        Align(block_height, (plane_subsampling_y > 0) ? 4 : 8);
+    const bool is_frame_left = column_64x64 == 0;
+    const bool is_frame_right = start_x + block_width >= plane_width;
+    const bool is_frame_top = row_64x64 == 0;
+    const bool is_frame_bottom = start_y + block_height >= plane_height;
+    const int src_stride = source_buffer->stride(plane) / sizeof(Pixel);
+    const Pixel* src_buffer =
+        reinterpret_cast<const Pixel*>(source_buffer->data(plane)) +
+        start_y * src_stride + start_x;
+    // Copy to the top 2 rows.
+    CopyRows(src_buffer, src_stride, block_width, unit_width, is_frame_top,
+             false, is_frame_left, is_frame_right, true, kCdefBorder, cdef_src,
+             cdef_stride);
+    cdef_src += kCdefBorder * cdef_stride + kCdefBorder;
+
+    // Copy the body.
+    CopyRows(src_buffer, src_stride, block_width, unit_width, false, false,
+             is_frame_left, is_frame_right, false, block_height, cdef_src,
+             cdef_stride);
+    src_buffer += block_height * src_stride;
+    cdef_src += block_height * cdef_stride;
+
+    // Copy to bottom rows.
+    CopyRows(src_buffer, src_stride, block_width, unit_width, false,
+             is_frame_bottom, is_frame_left, is_frame_right, false,
+             kCdefBorder + unit_height - block_height, cdef_src, cdef_stride);
   }
 }
 

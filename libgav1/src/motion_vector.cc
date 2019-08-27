@@ -6,17 +6,18 @@
 #include <cstdlib>
 #include <memory>
 
+#include "src/utils/bit_mask_set.h"
 #include "src/utils/common.h"
 #include "src/utils/logging.h"
 
 namespace libgav1 {
 namespace {
 
-const int kMvBorder = 128;
-const int kProjectionMvClamp = 16383;
-const int kProjectionMvMaxVerticalOffset = 0;
-const int kProjectionMvMaxHorizontalOffset = 8;
-const int kInvalidMvValue = -32768;
+constexpr int kMvBorder = 128;
+constexpr int kProjectionMvClamp = 16383;
+constexpr int kProjectionMvMaxVerticalOffset = 0;
+constexpr int kProjectionMvMaxHorizontalOffset = 8;
+constexpr int kInvalidMvValue = -32768;
 
 // Applies the sign of |sign_value| to |value| (and does so without a branch).
 int ApplySign(int value, int sign_value) {
@@ -121,12 +122,12 @@ void SetupGlobalMv(const Tile::Block& block, int index,
   }
 }
 
-inline bool HasNewMv(PredictionMode mode) {
-  return mode == kPredictionModeNewMv || mode == kPredictionModeNewNewMv ||
-         mode == kPredictionModeNearNewMv || mode == kPredictionModeNewNearMv ||
-         mode == kPredictionModeNearestNewMv ||
-         mode == kPredictionModeNewNearestMv;
-}
+constexpr BitMaskSet kPredictionModeNewMvMask(kPredictionModeNewMv,
+                                              kPredictionModeNewNewMv,
+                                              kPredictionModeNearNewMv,
+                                              kPredictionModeNewNearMv,
+                                              kPredictionModeNearestNewMv,
+                                              kPredictionModeNewNearestMv);
 
 // 7.10.2.8.
 void SearchStackSingle(const Tile::Block& block, int row, int column, int index,
@@ -148,7 +149,7 @@ void SearchStackSingle(const Tile::Block& block, int row, int column, int index,
     candidate_mv = bp.mv[index];
   }
   LowerMvPrecision(block, candidate_mv.mv);
-  *found_new_mv |= HasNewMv(candidate_mode);
+  *found_new_mv |= kPredictionModeNewMvMask.Contains(candidate_mode);
   *found_match = true;
   for (int i = 0; i < *num_mv_found; ++i) {
     if (ref_mv_stack[i].mv[0] == candidate_mv) {
@@ -183,7 +184,7 @@ void SearchStackCompound(
     }
     LowerMvPrecision(block, candidate_mv[i].mv);
   }
-  *found_new_mv |= HasNewMv(candidate_mode);
+  *found_new_mv |= kPredictionModeNewMvMask.Contains(candidate_mode);
   *found_match = true;
   for (int i = 0; i < *num_mv_found; ++i) {
     if (ref_mv_stack[i].mv[0] == candidate_mv[0] &&
@@ -717,6 +718,21 @@ bool MotionFieldProjection(
           sequence_header.enable_order_hint, sequence_header.order_hint_bits) *
       dst_sign;
   if (std::abs(reference_to_current_with_sign) > kMaxFrameDistance) return true;
+  // Index 0 of these two arrays are never used.
+  int reference_offsets[kNumReferenceFrameTypes];
+  bool skip_reference[kNumReferenceFrameTypes];
+  for (int source_reference_type = kReferenceFrameLast;
+       source_reference_type <= kNumInterReferenceFrameTypes;
+       ++source_reference_type) {
+    const int reference_offset = GetRelativeDistance(
+        current_frame.order_hint(source),
+        source_frame->order_hint(
+            static_cast<ReferenceFrameType>(source_reference_type)),
+        sequence_header.enable_order_hint, sequence_header.order_hint_bits);
+    skip_reference[source_reference_type] =
+        std::abs(reference_offset) > kMaxFrameDistance || reference_offset <= 0;
+    reference_offsets[source_reference_type] = reference_offset;
+  }
   // The column range has to be offset by kProjectionMvMaxHorizontalOffset since
   // coordinates in that range could end up being position_x8 because of
   // projection.
@@ -729,15 +745,11 @@ bool MotionFieldProjection(
     for (int x8 = adjusted_x8_start; x8 < adjusted_x8_end; ++x8) {
       const ReferenceFrameType source_reference =
           *source_frame->motion_field_reference_frame(y8, x8);
-      if (source_reference <= kReferenceFrameIntra) continue;
-      const int reference_offset = GetRelativeDistance(
-          current_frame.order_hint(source),
-          source_frame->order_hint(source_reference),
-          sequence_header.enable_order_hint, sequence_header.order_hint_bits);
-      if (std::abs(reference_offset) > kMaxFrameDistance ||
-          reference_offset <= 0) {
+      if (source_reference <= kReferenceFrameIntra ||
+          skip_reference[source_reference]) {
         continue;
       }
+      const int reference_offset = reference_offsets[source_reference];
       const MotionVector& mv = *source_frame->motion_field_mv(y8, x8);
       MotionVector projection_mv;
       GetMvProjectionNoClamp(mv, reference_to_current_with_sign,

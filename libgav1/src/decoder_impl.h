@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <vector>
 
 #include "src/buffer_pool.h"
 #include "src/decoder_buffer.h"
@@ -22,12 +21,17 @@
 #include "src/utils/block_parameters_holder.h"
 #include "src/utils/constants.h"
 #include "src/utils/memory.h"
+#include "src/utils/queue.h"
 #include "src/utils/segmentation_map.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {
 
-struct EncodedFrame {
+struct EncodedFrame : public Allocable {
+  // The default constructor is invoked by the Queue<EncodedFrame>::Init()
+  // method. Queue<> does not use the default-constructed elements, so it is
+  // safe for the default constructor to not initialize the members.
+  EncodedFrame() = default;
   EncodedFrame(const uint8_t* data, size_t size, int64_t user_private_data)
       : data(data), size(size), user_private_data(user_private_data) {}
 
@@ -38,6 +42,8 @@ struct EncodedFrame {
 
 struct DecoderState {
   ObuSequenceHeader sequence_header = {};
+  // If true, sequence_header is valid.
+  bool has_sequence_header = false;
   // reference_valid and reference_frame_id are used only if
   // sequence_header_.frame_id_numbers_present is true.
   // The reference_valid array is indexed by a reference picture slot number.
@@ -82,14 +88,26 @@ struct DecoderState {
 class DecoderImpl : public Allocable {
  public:
   // The constructor saves a const reference to |*settings|. Therefore
-  // |*settings| must outlive the DecoderImpl object.
-  explicit DecoderImpl(const DecoderSettings* settings);
+  // |*settings| must outlive the DecoderImpl object. On success, |*output|
+  // contains a pointer to the newly-created DecoderImpl object. On failure,
+  // |*output| is not modified.
+  static StatusCode Create(const DecoderSettings* settings,
+                           std::unique_ptr<DecoderImpl>* output);
   ~DecoderImpl();
   StatusCode EnqueueFrame(const uint8_t* data, size_t size,
                           int64_t user_private_data);
   StatusCode DequeueFrame(const DecoderBuffer** out_ptr);
+  static constexpr int GetMaxBitdepth() {
+#if LIBGAV1_MAX_BITDEPTH >= 10
+    return 10;
+#else
+    return 8;
+#endif
+  }
 
  private:
+  explicit DecoderImpl(const DecoderSettings* settings);
+  StatusCode Init();
   bool AllocateCurrentFrame(const ObuFrameHeader& frame_header);
   void ReleaseOutputFrame();
   // Populates buffer_ with values from |frame|. Adds a reference to |frame|
@@ -104,7 +122,7 @@ class DecoderImpl : public Allocable {
   // state_.current_frame, based on the refresh_frame_flags bitmask.
   void UpdateReferenceFrames(int refresh_frame_flags);
 
-  std::vector<EncodedFrame> encoded_frames_;
+  Queue<EncodedFrame> encoded_frames_;
   DecoderState state_;
   ThreadingStrategy threading_strategy_;
   SymbolDecoderContext symbol_decoder_context_;
@@ -117,8 +135,8 @@ class DecoderImpl : public Allocable {
 
   BufferPool buffer_pool_;
   std::unique_ptr<ResidualBufferPool> residual_buffer_pool_;
-  std::unique_ptr<uint8_t[]> threaded_loop_restoration_buffer_;
-  size_t threaded_loop_restoration_buffer_size_ = 0;
+  AlignedUniquePtr<uint8_t> threaded_window_buffer_;
+  size_t threaded_window_buffer_size_ = 0;
   Array2D<TransformSize> inter_transform_sizes_;
 
   LoopFilterMask loop_filter_mask_;

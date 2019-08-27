@@ -1,5 +1,5 @@
-#include "src/dsp/arm/intrapred_neon.h"
 #include "src/dsp/dsp.h"
+#include "src/dsp/intrapred.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -90,9 +90,11 @@ void FilterIntraPredictor_NEON(void* const dest, ptrdiff_t stride,
   const uint8_t* relative_top = top;
   uint8_t relative_left[2] = {left[0], left[1]};
 
-  for (int y = 0; y < height; y += 2) {
+  int y = 0;
+  do {
     uint8_t* row_dst = dst;
-    for (int x = 0; x < width; x += 4) {
+    int x = 0;
+    do {
       uint16x8_t sum = vdupq_n_u16(0);
       const uint16x8_t subtrahend =
           vmull_u8(transposed_taps[0], vdup_n_u8(relative_top_left));
@@ -119,7 +121,8 @@ void FilterIntraPredictor_NEON(void* const dest, ptrdiff_t stride,
       relative_left[0] = row_dst[3];
       relative_left[1] = row_dst[3 + stride];
       row_dst += 4;
-    }
+      x += 4;
+    } while (x < width);
 
     // Progress down.
     relative_top_left = left[y + 1];
@@ -128,7 +131,8 @@ void FilterIntraPredictor_NEON(void* const dest, ptrdiff_t stride,
     relative_left[1] = left[y + 3];
 
     dst += 2 * stride;
-  }
+    y += 2;
+  } while (y < height);
 }
 
 void Init8bpp() {

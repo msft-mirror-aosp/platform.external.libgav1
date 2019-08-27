@@ -2,6 +2,9 @@
 #define LIBGAV1_SRC_UTILS_CONSTANTS_H_
 
 #include <cstdint>
+#include <cstdlib>
+
+#include "src/utils/bit_mask_set.h"
 
 namespace libgav1 {
 
@@ -18,7 +21,6 @@ enum {
   kFrameLfCount = 4,
   kMaxLoopFilterValue = 63,
   kNum4x4In64x64 = 256,
-  kNumTransformSizesLoopFilter = 3,  // 0: 4x4, 1: 8x8, 2: 16x16.
   kNumLoopFilterMasks = 4,
   kMaxAngleDelta = 3,
   kDirectionalIntraModes = 8,
@@ -30,9 +32,10 @@ enum {
   kRestorationTypeSymbolCount = 3,
   kSgrProjParamsBits = 4,
   kSgrProjPrecisionBits = 7,
-  kRestorationBorder = 3,  // Horizontal and vertical border are both 3.
-  kConvolveBorderLeftTop = 3,
-  kConvolveBorderRightBottom = 4,
+  kRestorationBorder = 3,      // Padding on each side of a restoration block.
+  kCdefBorder = 2,             // Padding on each side of a cdef block.
+  kConvolveBorderLeftTop = 3,  // Left/top padding of a convolve block.
+  kConvolveBorderRightBottom = 4,  // Right/bottom padding of a convolve block.
   kSubPixelTaps = 8,
   kWienerFilterBits = 7,
   kMaxPaletteSize = 8,
@@ -178,6 +181,29 @@ enum BlockSize : uint8_t {
   kBlockInvalid
 };
 
+//  Partition types.  R: Recursive
+//
+//  None          Horizontal    Vertical      Split
+//  +-------+     +-------+     +---+---+     +---+---+
+//  |       |     |       |     |   |   |     | R | R |
+//  |       |     +-------+     |   |   |     +---+---+
+//  |       |     |       |     |   |   |     | R | R |
+//  +-------+     +-------+     +---+---+     +---+---+
+//
+//  Horizontal    Horizontal    Vertical      Vertical
+//  with top      with bottom   with left     with right
+//  split         split         split         split
+//  +---+---+     +-------+     +---+---+     +---+---+
+//  |   |   |     |       |     |   |   |     |   |   |
+//  +---+---+     +---+---+     +---+   |     |   +---+
+//  |       |     |   |   |     |   |   |     |   |   |
+//  +-------+     +---+---+     +---+---+     +---+---+
+//
+//  Horizontal4   Vertical4
+//  +-----+       +-+-+-+
+//  +-----+       | | | |
+//  +-----+       | | | |
+//  +-----+       +-+-+-+
 enum Partition : uint8_t {
   kPartitionNone,
   kPartitionHorizontal,
@@ -276,19 +302,14 @@ enum TransformType : uint8_t {
   kNumTransformTypes
 };
 
-// Allows checking whether a transform requires rows or columns to be flipped
-// with a single comparison rather than a chain of ||s. This should result in
-// fewer instructions overall.
-enum : uint32_t {
-  kTransformFlipColumnsMask = (1U << kTransformTypeFlipadstDct) |
-                              (1U << kTransformTypeFlipadstAdst) |
-                              (1U << kTransformTypeFlipadstIdentity) |
-                              (1U << kTransformTypeFlipadstFlipadst),
-  kTransformFlipRowsMask = (1U << kTransformTypeDctFlipadst) |
-                           (1U << kTransformTypeAdstFlipadst) |
-                           (1U << kTransformTypeIdentityFlipadst) |
-                           (1U << kTransformTypeFlipadstFlipadst)
-};
+constexpr BitMaskSet kTransformFlipColumnsMask(kTransformTypeFlipadstDct,
+                                               kTransformTypeFlipadstAdst,
+                                               kTransformTypeFlipadstIdentity,
+                                               kTransformTypeFlipadstFlipadst);
+constexpr BitMaskSet kTransformFlipRowsMask(kTransformTypeDctFlipadst,
+                                            kTransformTypeAdstFlipadst,
+                                            kTransformTypeIdentityFlipadst,
+                                            kTransformTypeFlipadstFlipadst);
 
 enum TransformSize : uint8_t {
   kTransformSize4x4,
@@ -311,24 +332,6 @@ enum TransformSize : uint8_t {
   kTransformSize64x32,
   kTransformSize64x64,
   kNumTransformSizes
-};
-
-enum : uint32_t {
-  // Mask of all transform sizes with either dimension equal to 64.
-  kTransformSize64Mask =
-      (1U << kTransformSize64x16) | (1U << kTransformSize64x32) |
-      (1U << kTransformSize64x64) | (1U << kTransformSize16x64) |
-      (1U << kTransformSize32x64),
-  // Mask of all transform sizes with width equal to 16.
-  kTransformWidth16Mask =
-      (1U << kTransformSize16x4) | (1U << kTransformSize16x8) |
-      (1U << kTransformSize16x16) | (1U << kTransformSize16x32) |
-      (1U << kTransformSize16x64),
-  // Mask of all transform sizes with height equal to 16.
-  kTransformHeight16Mask =
-      (1U << kTransformSize4x16) | (1U << kTransformSize8x16) |
-      (1U << kTransformSize16x16) | (1U << kTransformSize32x16) |
-      (1U << kTransformSize64x16)
 };
 
 enum TransformSet : uint8_t {
@@ -364,12 +367,25 @@ enum FilterIntraPredictor : uint8_t {
   kNumFilterIntraPredictors
 };
 
+enum ObmcDirection : uint8_t {
+  kObmcDirectionVertical,
+  kObmcDirectionHorizontal,
+  kNumObmcDirections
+};
+
 // In AV1 the name of the filter refers to the direction of filter application.
 // Horizontal refers to the column edge and vertical the row edge.
 enum LoopFilterType : uint8_t {
   kLoopFilterTypeVertical,
   kLoopFilterTypeHorizontal,
   kNumLoopFilterTypes
+};
+
+enum LoopFilterTransformSizeId : uint8_t {
+  kLoopFilterTransformSizeId4x4,
+  kLoopFilterTransformSizeId8x8,
+  kLoopFilterTransformSizeId16x16,
+  kNumLoopFilterTransformSizeIds
 };
 
 enum LoopRestorationType : uint8_t {
@@ -433,6 +449,155 @@ enum ObuType : int8_t {
   kObuPadding = 15,
 };
 
+//------------------------------------------------------------------------------
+// ToString()
+//
+// These functions are meant to be used only in debug logging and within tests.
+// They are defined inline to avoid including the strings in the release
+// library when logging is disabled; unreferenced functions will not be added to
+// any object file in that case.
+
+inline const char* ToString(const BlockSize size) {
+  switch (size) {
+    case kBlock4x4:
+      return "kBlock4x4";
+    case kBlock4x8:
+      return "kBlock4x8";
+    case kBlock4x16:
+      return "kBlock4x16";
+    case kBlock8x4:
+      return "kBlock8x4";
+    case kBlock8x8:
+      return "kBlock8x8";
+    case kBlock8x16:
+      return "kBlock8x16";
+    case kBlock8x32:
+      return "kBlock8x32";
+    case kBlock16x4:
+      return "kBlock16x4";
+    case kBlock16x8:
+      return "kBlock16x8";
+    case kBlock16x16:
+      return "kBlock16x16";
+    case kBlock16x32:
+      return "kBlock16x32";
+    case kBlock16x64:
+      return "kBlock16x64";
+    case kBlock32x8:
+      return "kBlock32x8";
+    case kBlock32x16:
+      return "kBlock32x16";
+    case kBlock32x32:
+      return "kBlock32x32";
+    case kBlock32x64:
+      return "kBlock32x64";
+    case kBlock64x16:
+      return "kBlock64x16";
+    case kBlock64x32:
+      return "kBlock64x32";
+    case kBlock64x64:
+      return "kBlock64x64";
+    case kBlock64x128:
+      return "kBlock64x128";
+    case kBlock128x64:
+      return "kBlock128x64";
+    case kBlock128x128:
+      return "kBlock128x128";
+    case kMaxBlockSizes:
+      return "kMaxBlockSizes";
+    case kBlockInvalid:
+      return "kBlockInvalid";
+  }
+  abort();
+}
+
+inline const char* ToString(const InterIntraMode mode) {
+  switch (mode) {
+    case kInterIntraModeDc:
+      return "kInterIntraModeDc";
+    case kInterIntraModeVertical:
+      return "kInterIntraModeVertical";
+    case kInterIntraModeHorizontal:
+      return "kInterIntraModeHorizontal";
+    case kInterIntraModeSmooth:
+      return "kInterIntraModeSmooth";
+    case kNumInterIntraModes:
+      return "kNumInterIntraModes";
+  }
+  abort();
+}
+
+inline const char* ToString(const ObmcDirection direction) {
+  switch (direction) {
+    case kObmcDirectionVertical:
+      return "kObmcDirectionVertical";
+    case kObmcDirectionHorizontal:
+      return "kObmcDirectionHorizontal";
+    case kNumObmcDirections:
+      return "kNumObmcDirections";
+  }
+  abort();
+}
+
+inline const char* ToString(const LoopRestorationType type) {
+  switch (type) {
+    case kLoopRestorationTypeNone:
+      return "kLoopRestorationTypeNone";
+    case kLoopRestorationTypeSwitchable:
+      return "kLoopRestorationTypeSwitchable";
+    case kLoopRestorationTypeWiener:
+      return "kLoopRestorationTypeWiener";
+    case kLoopRestorationTypeSgrProj:
+      return "kLoopRestorationTypeSgrProj";
+    case kNumLoopRestorationTypes:
+      return "kNumLoopRestorationTypes";
+  }
+  abort();
+}
+
+inline const char* ToString(const TransformType type) {
+  switch (type) {
+    case kTransformTypeDctDct:
+      return "kTransformTypeDctDct";
+    case kTransformTypeAdstDct:
+      return "kTransformTypeAdstDct";
+    case kTransformTypeDctAdst:
+      return "kTransformTypeDctAdst";
+    case kTransformTypeAdstAdst:
+      return "kTransformTypeAdstAdst";
+    case kTransformTypeFlipadstDct:
+      return "kTransformTypeFlipadstDct";
+    case kTransformTypeDctFlipadst:
+      return "kTransformTypeDctFlipadst";
+    case kTransformTypeFlipadstFlipadst:
+      return "kTransformTypeFlipadstFlipadst";
+    case kTransformTypeAdstFlipadst:
+      return "kTransformTypeAdstFlipadst";
+    case kTransformTypeFlipadstAdst:
+      return "kTransformTypeFlipadstAdst";
+    case kTransformTypeIdentityIdentity:
+      return "kTransformTypeIdentityIdentity";
+    case kTransformTypeIdentityDct:
+      return "kTransformTypeIdentityDct";
+    case kTransformTypeDctIdentity:
+      return "kTransformTypeDctIdentity";
+    case kTransformTypeIdentityAdst:
+      return "kTransformTypeIdentityAdst";
+    case kTransformTypeAdstIdentity:
+      return "kTransformTypeAdstIdentity";
+    case kTransformTypeIdentityFlipadst:
+      return "kTransformTypeIdentityFlipadst";
+    case kTransformTypeFlipadstIdentity:
+      return "kTransformTypeFlipadstIdentity";
+    // case to quiet compiler
+    case kNumTransformTypes:
+      return "kNumTransformTypes";
+  }
+  abort();
+}
+
+//------------------------------------------------------------------------------
+
 extern const uint8_t k4x4WidthLog2[kMaxBlockSizes];
 
 extern const uint8_t k4x4HeightLog2[kMaxBlockSizes];
@@ -453,13 +618,13 @@ extern const uint8_t kTransformWidth[kNumTransformSizes];
 
 extern const uint8_t kTransformHeight[kNumTransformSizes];
 
+extern const uint8_t kTransformWidth4x4[kNumTransformSizes];
+
+extern const uint8_t kTransformHeight4x4[kNumTransformSizes];
+
 extern const uint8_t kTransformWidthLog2[kNumTransformSizes];
 
 extern const uint8_t kTransformHeightLog2[kNumTransformSizes];
-
-extern const TransformSize kMaxTransformSizeRectangle[kMaxBlockSizes];
-
-extern const int kMaxTransformDepth[kMaxBlockSizes];
 
 extern const TransformSize kSplitTransformSize[kNumTransformSizes];
 
@@ -469,25 +634,13 @@ extern const TransformSize kTransformSizeSquareMin[kNumTransformSizes];
 // Square transform of size max(w,h).
 extern const TransformSize kTransformSizeSquareMax[kNumTransformSizes];
 
-extern const TransformType kModeToTransformType[kIntraPredictionModesUV];
-
 extern const uint8_t kNumTransformTypesInSet[kNumTransformSets];
-
-extern const TransformType kInverseTransformTypeBySet[kNumTransformSets - 1]
-                                                     [16];
-
-// Replaces all occurrences of 64x* and *x64 with 32x* and *x32 respectively.
-extern const TransformSize kAdjustedTransformSize[kNumTransformSizes];
 
 extern const uint8_t kSgrProjParams[1 << kSgrProjParamsBits][4];
 
 extern const int8_t kSgrProjMultiplierMin[2];
 
 extern const int8_t kSgrProjMultiplierMax[2];
-
-extern const int8_t kSgrProjDefaultMultiplier[2];
-
-extern const int8_t kWienerDefaultFilter[3];
 
 extern const int8_t kWienerTapsMin[3];
 
@@ -501,7 +654,15 @@ extern const int16_t kSubPixelFilters[6][16][8];
 
 extern const int16_t kDirectionalIntraPredictorDerivative[44];
 
-extern const uint8_t kPredictionModeDeltasLookup[kNumPredictionModes];
+extern const uint8_t kDeblockFilterLevelIndex[kMaxPlanes][kNumLoopFilterTypes];
+
+extern const int8_t kMaskIdLookup[4][kMaxBlockSizes];
+
+extern const int8_t kVerticalBorderMaskIdLookup[kMaxBlockSizes];
+
+extern const uint64_t kTopMaskLookup[67][4];
+
+extern const uint64_t kLeftMaskLookup[67][4];
 
 }  // namespace libgav1
 

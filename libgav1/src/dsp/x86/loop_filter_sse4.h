@@ -3,13 +3,12 @@
 
 #include "src/dsp/cpu.h"
 #include "src/dsp/dsp.h"
-#include "src/dsp/loop_filter.h"
 
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::loop_filters with sse4 implementations. This function
-// is not thread-safe.
+// Initializes Dsp::loop_filters, see the defines below for specifics. This
+// function is not thread-safe.
 void LoopFilterInit_SSE4_1();
 
 }  // namespace dsp

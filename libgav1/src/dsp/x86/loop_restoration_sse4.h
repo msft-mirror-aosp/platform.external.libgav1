@@ -3,13 +3,12 @@
 
 #include "src/dsp/cpu.h"
 #include "src/dsp/dsp.h"
-#include "src/dsp/loop_restoration.h"
 
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::loop_restorations with sse4 implementations. This function
-// is not thread-safe.
+// Initializes Dsp::loop_restorations, see the defines below for specifics.
+// This function is not thread-safe.
 void LoopRestorationInit_SSE4_1();
 
 }  // namespace dsp

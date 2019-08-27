@@ -15,8 +15,7 @@ enum {
   kSkipContexts = 3,
   kSkipModeContexts = 3,
   kBooleanFieldCdfSize = 3,
-  kDeltaQSymbolCount = 4,
-  kDeltaLfSymbolCount = 4,
+  kDeltaSymbolCount = 4,  // Used for both delta_q and delta_lf.
   kIntraModeContexts = 5,
   kYModeContexts = 4,
   kAngleDeltaSymbolCount = 2 * kMaxAngleDelta + 1,
@@ -73,8 +72,6 @@ enum {
   kNumMvComponents = 2,
 };  // anonymous enum
 
-extern const int kEobPtSymbolCount[7];
-
 struct SymbolDecoderContext {
   SymbolDecoderContext() = default;
   explicit SymbolDecoderContext(int base_quantizer_index) {
@@ -104,9 +101,9 @@ struct SymbolDecoderContext {
                                        [kBooleanFieldCdfSize];
   uint16_t skip_cdf[kSkipContexts][kBooleanFieldCdfSize];
   uint16_t skip_mode_cdf[kSkipModeContexts][kBooleanFieldCdfSize];
-  uint16_t delta_q_cdf[kDeltaQSymbolCount + 1];
-  uint16_t delta_lf_cdf[kDeltaLfSymbolCount + 1];
-  uint16_t delta_lf_multi_cdf[kFrameLfCount][kDeltaLfSymbolCount + 1];
+  uint16_t delta_q_cdf[kDeltaSymbolCount + 1];
+  uint16_t delta_lf_cdf[kDeltaSymbolCount + 1];
+  uint16_t delta_lf_multi_cdf[kFrameLfCount][kDeltaSymbolCount + 1];
   uint16_t intra_block_copy_cdf[kBooleanFieldCdfSize];
   uint16_t intra_frame_y_mode_cdf[kIntraModeContexts][kIntraModeContexts]
                                  [kIntraPredictionModesY + 1];

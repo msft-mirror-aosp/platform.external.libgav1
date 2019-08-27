@@ -11,7 +11,10 @@ namespace libgav1 {
 
 // Applications must populate this structure before creating a decoder instance.
 struct DecoderSettings {
-  // Number of threads to use when decoding. Defaults to 1.
+  // Number of threads to use when decoding. Must be greater than 0. The
+  // library will create at most |threads|-1 new threads, the calling thread is
+  // considered part of the library's thread count. Defaults to 1 (no new
+  // threads will be created).
   int threads = 1;
   // Do frame parallel decoding.
   bool frame_parallel = false;
