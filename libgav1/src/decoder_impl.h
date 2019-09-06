@@ -138,6 +138,7 @@ class DecoderImpl : public Allocable {
   AlignedUniquePtr<uint8_t> threaded_window_buffer_;
   size_t threaded_window_buffer_size_ = 0;
   Array2D<TransformSize> inter_transform_sizes_;
+  DecoderScratchBufferPool decoder_scratch_buffer_pool_;
 
   LoopFilterMask loop_filter_mask_;
 

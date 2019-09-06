@@ -11,6 +11,7 @@
 #include "src/dsp/constants.h"
 #include "src/utils/array_2d.h"
 #include "src/utils/blocking_counter.h"
+#include "src/utils/constants.h"
 #include "src/utils/logging.h"
 #include "src/utils/memory.h"
 #include "src/utils/types.h"
@@ -113,6 +114,8 @@ bool PostFilter::ApplyFiltering() {
     const int plane_width =
         RightShiftWithRounding(upscaled_width_, subsampling_x);
     const int plane_height = RightShiftWithRounding(height_, subsampling_y);
+    assert(source_buffer_->left_border(plane) >= kMinLeftBorderPixels &&
+           source_buffer_->right_border(plane) >= kMinRightBorderPixels);
     ExtendFrameBoundary(
         source_buffer_->data(plane), plane_width, plane_height,
         source_buffer_->stride(plane), source_buffer_->left_border(plane),

@@ -22,6 +22,39 @@ constexpr int kSgrProjSgrBits = 8;
 // Precision bits of generated values higher than source before projection.
 constexpr int kSgrProjRestoreBits = 4;
 
+// Section 7.17.3.
+// a2: range [1, 256].
+// if (z >= 255)
+//   a2 = 256;
+// else if (z == 0)
+//   a2 = 1;
+// else
+//   a2 = ((z << kSgrProjSgrBits) + (z >> 1)) / (z + 1);
+constexpr int kXByXPlus1[256] = {
+    1,   128, 171, 192, 205, 213, 219, 224, 228, 230, 233, 235, 236, 238, 239,
+    240, 241, 242, 243, 243, 244, 244, 245, 245, 246, 246, 247, 247, 247, 247,
+    248, 248, 248, 248, 249, 249, 249, 249, 249, 250, 250, 250, 250, 250, 250,
+    250, 251, 251, 251, 251, 251, 251, 251, 251, 251, 251, 252, 252, 252, 252,
+    252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 253, 253,
+    253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253,
+    253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 253, 254, 254, 254,
+    254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254,
+    254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254,
+    254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254,
+    254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254, 254,
+    254, 254, 254, 254, 254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    256};
+
+constexpr int kOneByX[25] = {
+    4096, 2048, 1365, 1024, 819, 683, 585, 512, 455, 410, 372, 341, 315,
+    293,  273,  256,  241,  228, 216, 205, 195, 186, 178, 171, 164,
+};
+
 template <int bitdepth, typename Pixel>
 struct LoopRestorationFuncs_C {
   LoopRestorationFuncs_C() = delete;
@@ -210,16 +243,8 @@ void LoopRestorationFuncs_C<bitdepth, Pixel>::BoxFilterPreProcess(
       // (this holds even after accounting for the rounding in s)
       const uint32_t z = RightShiftWithRounding(p * s, kSgrProjScaleBits);
       // a2: range [1, 256].
-      uint32_t a2;
-      if (z >= 255) {
-        a2 = 256;
-      } else if (z == 0) {
-        a2 = 1;
-      } else {
-        a2 = ((z << kSgrProjSgrBits) + (z >> 1)) / (z + 1);
-      }
-      const uint32_t one_over_n =
-          ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
+      uint32_t a2 = kXByXPlus1[std::min(z, 255u)];
+      const uint32_t one_over_n = kOneByX[n - 1];
       // (kSgrProjSgrBits - a2) < 2^8, b < 2^(bitdepth) * n,
       // one_over_n = round(2^12 / n)
       // => the product here is < 2^(20 + bitdepth) <= 2^32,

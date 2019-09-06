@@ -27,7 +27,7 @@ constexpr int kWarpedDiffPrecisionBits = 10;
 void Warp_NEON(const void* const source, const ptrdiff_t source_stride,
                const int source_width, const int source_height,
                const int* const warp_params, const int subsampling_x,
-               const int subsampling_y, const uint8_t inter_round_bits_vertical,
+               const int subsampling_y, const int inter_round_bits_vertical,
                const int block_start_x, const int block_start_y,
                const int block_width, const int block_height,
                const int16_t alpha, const int16_t beta, const int16_t gamma,
@@ -47,9 +47,6 @@ void Warp_NEON(const void* const source, const ptrdiff_t source_stride,
 
   assert(block_width >= 8);
   assert(block_height >= 8);
-
-  const uint8x16_t index_vec = vcombine_u8(vcreate_u8(0x0706050403020100),
-                                           vcreate_u8(0x0f0e0d0c0b0a0908));
 
   // Warp process applies for each 8x8 block (or smaller).
   int start_y = block_start_y;
@@ -87,7 +84,7 @@ void Warp_NEON(const void* const source, const ptrdiff_t source_stride,
               (horizontal_offset >> kInterRoundBitsHorizontal) +
               (src_row[source_width - 1] << (7 - kInterRoundBitsHorizontal));
           const int16x8_t sum = vdupq_n_s16(s);
-          vst1q_s16(&intermediate_result[y + 7][0], sum);
+          vst1q_s16(intermediate_result[y + 7], sum);
           sx4 += beta;
           continue;
         }
@@ -98,7 +95,7 @@ void Warp_NEON(const void* const source, const ptrdiff_t source_stride,
           const int16_t s = (horizontal_offset >> kInterRoundBitsHorizontal) +
                             (src_row[0] << (7 - kInterRoundBitsHorizontal));
           const int16x8_t sum = vdupq_n_s16(s);
-          vst1q_s16(&intermediate_result[y + 7][0], sum);
+          vst1q_s16(intermediate_result[y + 7], sum);
           sx4 += beta;
           continue;
         }
@@ -106,31 +103,11 @@ void Warp_NEON(const void* const source, const ptrdiff_t source_stride,
         // read but is ignored.
         //
         // NOTE: This may read up to 13 bytes before src_row[0] or up to 14
-        // bytes after src_row[source_width - 1]. There must be enough padding
-        // before and after the |source| buffer.
-        static_assert(kBorderPixels >= 14, "");
-        uint8x16_t src_row_u8 = vld1q_u8(&src_row[ix4 - 7]);
-        // If clipping is needed, duplicate the border samples.
-        //
-        // Here is the correspondence between the index for the src_row
-        // buffer and the index for the src_row_u8 vector:
-        //
-        // src_row index    : (ix4 - 7) (ix4 - 6) ... (ix4 + 6) (ix4 + 7)
-        // src_row_u8 index :     0         1     ...     13        14
-        if (ix4 - 7 < 0) {
-          const int out_of_boundary_left = -(ix4 - 7);
-          const uint8x16_t cmp_vec = vdupq_n_u8(out_of_boundary_left);
-          const uint8x16_t vec_dup = vdupq_n_u8(src_row[0]);
-          const uint8x16_t mask_val = vcltq_u8(index_vec, cmp_vec);
-          src_row_u8 = vbslq_u8(mask_val, vec_dup, src_row_u8);
-        }
-        if (ix4 + 7 > source_width - 1) {
-          const int out_of_boundary_right = ix4 + 8 - source_width;
-          const uint8x16_t cmp_vec = vdupq_n_u8(14 - out_of_boundary_right);
-          const uint8x16_t vec_dup = vdupq_n_u8(src_row[source_width - 1]);
-          const uint8x16_t mask_val = vcgtq_u8(index_vec, cmp_vec);
-          src_row_u8 = vbslq_u8(mask_val, vec_dup, src_row_u8);
-        }
+        // bytes after src_row[source_width - 1]. We assume the source frame
+        // has left and right borders of at least 13 bytes that extend the
+        // frame boundary pixels. We also assume there is at least one extra
+        // padding byte after the right border of the last source row.
+        const uint8x16_t src_row_u8 = vld1q_u8(&src_row[ix4 - 7]);
         const int16x8_t src_row_low_s16 =
             vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(src_row_u8)));
         const int16x8_t src_row_high_s16 =
@@ -201,7 +178,7 @@ void Warp_NEON(const void* const source, const ptrdiff_t source_stride,
         // Treat sum as unsigned for the right shift.
         sum = vreinterpretq_s16_u16(vrshrq_n_u16(vreinterpretq_u16_s16(sum),
                                                  kInterRoundBitsHorizontal));
-        vst1q_s16(&intermediate_result[y + 7][0], sum);
+        vst1q_s16(intermediate_result[y + 7], sum);
         sx4 += beta;
       }
 
