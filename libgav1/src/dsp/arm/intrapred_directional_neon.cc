@@ -234,21 +234,14 @@ void DirectionalIntraPredictorZone1_NEON(void* const dest,
     int y = 0;
     do {
       const int top_base_x = top_x >> 6;
-
-      if (top_base_x >= max_base_x) {
-        for (int i = y; i < height; ++i) {
-          memset(dst, top[max_base_x], width);
-          dst += stride;
-        }
-        return;
-      }
-
       const uint8_t shift = ((top_x << upsample_shift) & 0x3F) >> 1;
-
       uint8x8_t base_v = vadd_u8(vdup_n_u8(top_base_x), all);
-
       int x = 0;
-      do {
+      // Only calculate a block of 8 when at least one of the output values is
+      // within range. Otherwise it can read off the end of |top|.
+      const int must_calculate_width =
+          std::min(width, max_base_x - top_base_x + 7) & ~7;
+      for (; x < must_calculate_width; x += 8) {
         const uint8x8_t max_base_mask = vclt_u8(base_v, max_base);
 
         // Since these |xstep| values can not be upsampled the load is
@@ -260,10 +253,9 @@ void DirectionalIntraPredictorZone1_NEON(void* const dest,
             vbsl_u8(max_base_mask, value, top_max_base);
 
         vst1_u8(dst + x, masked_value);
-
         base_v = vadd_u8(base_v, block_step);
-        x += 8;
-      } while (x < width);
+      }
+      memset(dst + x, top[max_base_x], width - x);
       dst += stride;
       top_x += xstep;
     } while (++y < height);

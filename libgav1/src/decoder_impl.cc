@@ -552,7 +552,8 @@ StatusCode DecoderImpl::DecodeTiles(const ObuParser* obu) {
           prev_segment_ids, &post_filter, &block_parameters_holder, &cdef_index,
           &inter_transform_sizes_, dsp,
           threading_strategy_.row_thread_pool(tile_index++),
-          residual_buffer_pool_.get(), &pending_tiles));
+          residual_buffer_pool_.get(), &decoder_scratch_buffer_pool_,
+          &pending_tiles));
       if (tile == nullptr) {
         LIBGAV1_DLOG(ERROR, "Failed to allocate tile.");
         return kLibgav1StatusOutOfMemory;

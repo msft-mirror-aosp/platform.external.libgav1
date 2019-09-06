@@ -156,6 +156,18 @@ inline __m128i RightShiftWithRounding_S32(const __m128i v_val_d, int bits) {
   return _mm_srai_epi32(v_tmp_d, bits);
 }
 
+//------------------------------------------------------------------------------
+// Masking utilities
+inline __m128i MaskHighNBytes(int n) {
+  const uint8_t lu_table[32] = {
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,   0,   0,   0,   0,   255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+  };
+
+  return LoadUnaligned16(lu_table + n);
+}
+
 }  // namespace dsp
 }  // namespace libgav1
 

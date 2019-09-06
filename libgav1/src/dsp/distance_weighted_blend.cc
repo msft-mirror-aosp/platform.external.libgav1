@@ -29,8 +29,10 @@ void DistanceWeightedBlend_C(const uint16_t* prediction_0,
   auto* dst = static_cast<Pixel*>(dest);
   const ptrdiff_t dst_stride = dest_stride / sizeof(Pixel);
 
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       // prediction range: 8bpp: [0, 15471] 10bpp: [0, 61983] 12bpp: [0, 62007].
       // weight_0 + weight_1 = 16.
       int res = prediction_0[x] * weight_0 + prediction_1[x] * weight_1;
@@ -38,11 +40,12 @@ void DistanceWeightedBlend_C(const uint16_t* prediction_0,
       dst[x] = static_cast<Pixel>(
           Clip3(RightShiftWithRounding(res, inter_post_round_bits + 4), 0,
                 (1 << bitdepth) - 1));
-    }
+    } while (++x < width);
+
     dst += dst_stride;
     prediction_0 += prediction_stride_0;
     prediction_1 += prediction_stride_1;
-  }
+  } while (++y < height);
 }
 
 void Init8bpp() {

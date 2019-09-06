@@ -50,6 +50,7 @@ class RawBitReader : public BitReader, public Allocable {
  private:
   // Returns true if it is safe to read a literal of size |num_bits|.
   bool CanReadLiteral(size_t num_bits) const;
+  int ReadBitImpl();
 
   const uint8_t* const data_;
   size_t bit_offset_;

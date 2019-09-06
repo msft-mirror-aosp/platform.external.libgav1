@@ -36,7 +36,7 @@ template <int bitdepth, typename Pixel>
 void ConvolveScale2D_C(
     const void* const reference, const ptrdiff_t reference_stride,
     const int horizontal_filter_index, const int vertical_filter_index,
-    const uint8_t inter_round_bits_vertical, const int subpixel_x,
+    const int inter_round_bits_vertical, const int subpixel_x,
     const int subpixel_y, const int step_x, const int step_y, const int width,
     const int height, void* prediction, const ptrdiff_t pred_stride) {
   constexpr int kRoundBitsHorizontal = (bitdepth == 12)
@@ -68,8 +68,11 @@ void ConvolveScale2D_C(
   const int ref_x = subpixel_x >> kScaleSubPixelBits;
   // Note: assume the input src is already aligned to the correct start
   // position.
-  for (int y = 0; y < intermediate_height; ++y) {
-    for (int x = 0, p = subpixel_x; x < width; ++x, p += step_x) {
+  int y = 0;
+  do {
+    int p = subpixel_x;
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << (bitdepth + kFilterBits - 1);
       const Pixel* src_x = &src[(p >> kScaleSubPixelBits) - ref_x];
@@ -80,17 +83,23 @@ void ConvolveScale2D_C(
       assert(sum >= 0 && sum < (1 << (bitdepth + kFilterBits + 1)));
       intermediate[x] = static_cast<int16_t>(
           RightShiftWithRounding(sum, kRoundBitsHorizontal));
-    }
+      p += step_x;
+    } while (++x < width);
+
     src += src_stride;
     intermediate += intermediate_stride;
-  }
+  } while (++y < intermediate_height);
+
   // Vertical filter.
   filter_index = GetFilterIndex(vertical_filter_index, height);
   intermediate = intermediate_result;
   const int offset_bits = bitdepth + 2 * kFilterBits - kRoundBitsHorizontal;
-  for (int y = 0, p = subpixel_y & 1023; y < height; ++y, p += step_y) {
+  int p = subpixel_y & 1023;
+  y = 0;
+  do {
     const int filter_id = (p >> 6) & kSubPixelMask;
-    for (int x = 0; x < width; ++x) {
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << offset_bits;
       for (int k = 0; k < kSubPixelTaps; ++k) {
@@ -104,16 +113,18 @@ void ConvolveScale2D_C(
           Clip3(RightShiftWithRounding(sum, inter_round_bits_vertical) -
                     single_round_offset,
                 0, max_pixel_value));
-    }
+    } while (++x < width);
+
     dest += dest_stride;
-  }
+    p += step_y;
+  } while (++y < height);
 }
 
 template <int bitdepth, typename Pixel>
 void ConvolveCompoundScale2D_C(
     const void* const reference, const ptrdiff_t reference_stride,
     const int horizontal_filter_index, const int vertical_filter_index,
-    const uint8_t inter_round_bits_vertical, const int subpixel_x,
+    const int inter_round_bits_vertical, const int subpixel_x,
     const int subpixel_y, const int step_x, const int step_y, const int width,
     const int height, void* prediction, const ptrdiff_t pred_stride) {
   constexpr int kRoundBitsHorizontal = (bitdepth == 12)
@@ -142,8 +153,11 @@ void ConvolveCompoundScale2D_C(
   const int ref_x = subpixel_x >> kScaleSubPixelBits;
   // Note: assume the input src is already aligned to the correct start
   // position.
-  for (int y = 0; y < intermediate_height; ++y) {
-    for (int x = 0, p = subpixel_x; x < width; ++x, p += step_x) {
+  int y = 0;
+  do {
+    int p = subpixel_x;
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << (bitdepth + kFilterBits - 1);
       const Pixel* src_x = &src[(p >> kScaleSubPixelBits) - ref_x];
@@ -154,17 +168,23 @@ void ConvolveCompoundScale2D_C(
       assert(sum >= 0 && sum < (1 << (bitdepth + kFilterBits + 1)));
       intermediate[x] = static_cast<int16_t>(
           RightShiftWithRounding(sum, kRoundBitsHorizontal));
-    }
+      p += step_x;
+    } while (++x < width);
+
     src += src_stride;
     intermediate += intermediate_stride;
-  }
+  } while (++y < intermediate_height);
+
   // Vertical filter.
   filter_index = GetFilterIndex(vertical_filter_index, height);
   intermediate = intermediate_result;
   const int offset_bits = bitdepth + 2 * kFilterBits - kRoundBitsHorizontal;
-  for (int y = 0, p = subpixel_y & 1023; y < height; ++y, p += step_y) {
+  int p = subpixel_y & 1023;
+  y = 0;
+  do {
     const int filter_id = (p >> 6) & kSubPixelMask;
-    for (int x = 0; x < width; ++x) {
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << offset_bits;
       for (int k = 0; k < kSubPixelTaps; ++k) {
@@ -176,9 +196,11 @@ void ConvolveCompoundScale2D_C(
       assert(sum >= 0 && sum < (1 << (offset_bits + 2)));
       dest[x] = static_cast<uint16_t>(
           RightShiftWithRounding(sum, inter_round_bits_vertical));
-    }
+    } while (++x < width);
+
     dest += pred_stride;
-  }
+    p += step_y;
+  } while (++y < height);
 }
 
 template <int bitdepth, typename Pixel>
@@ -186,7 +208,7 @@ void ConvolveCompound2D_C(const void* const reference,
                           const ptrdiff_t reference_stride,
                           const int horizontal_filter_index,
                           const int vertical_filter_index,
-                          const uint8_t inter_round_bits_vertical,
+                          const int inter_round_bits_vertical,
                           const int subpixel_x, const int subpixel_y,
                           const int /*step_x*/, const int /*step_y*/,
                           const int width, const int height, void* prediction,
@@ -213,8 +235,10 @@ void ConvolveCompound2D_C(const void* const reference,
                     kVerticalOffset * src_stride - kHorizontalOffset;
   auto* dest = static_cast<uint16_t*>(prediction);
   int filter_id = (subpixel_x >> 6) & kSubPixelMask;
-  for (int y = 0; y < intermediate_height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << (bitdepth + kFilterBits - 1);
       for (int k = 0; k < kSubPixelTaps; ++k) {
@@ -223,17 +247,21 @@ void ConvolveCompound2D_C(const void* const reference,
       assert(sum >= 0 && sum < (1 << (bitdepth + kFilterBits + 1)));
       intermediate[x] = static_cast<int16_t>(
           RightShiftWithRounding(sum, kRoundBitsHorizontal));
-    }
+    } while (++x < width);
+
     src += src_stride;
     intermediate += intermediate_stride;
-  }
+  } while (++y < intermediate_height);
+
   // Vertical filter.
   filter_index = GetFilterIndex(vertical_filter_index, height);
   intermediate = intermediate_result;
   filter_id = ((subpixel_y & 1023) >> 6) & kSubPixelMask;
   const int offset_bits = bitdepth + 2 * kFilterBits - kRoundBitsHorizontal;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  y = 0;
+  do {
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << offset_bits;
       for (int k = 0; k < kSubPixelTaps; ++k) {
@@ -243,10 +271,11 @@ void ConvolveCompound2D_C(const void* const reference,
       assert(sum >= 0 && sum < (1 << (offset_bits + 2)));
       dest[x] = static_cast<uint16_t>(
           RightShiftWithRounding(sum, inter_round_bits_vertical));
-    }
+    } while (++x < width);
+
     dest += pred_stride;
     intermediate += intermediate_stride;
-  }
+  } while (++y < height);
 }
 
 // This function is a simplified version of ConvolveCompound2D_C.
@@ -258,7 +287,7 @@ template <int bitdepth, typename Pixel>
 void Convolve2D_C(const void* const reference, const ptrdiff_t reference_stride,
                   const int horizontal_filter_index,
                   const int vertical_filter_index,
-                  const uint8_t inter_round_bits_vertical, const int subpixel_x,
+                  const int inter_round_bits_vertical, const int subpixel_x,
                   const int subpixel_y, const int /*step_x*/,
                   const int /*step_y*/, const int width, const int height,
                   void* prediction, const ptrdiff_t pred_stride) {
@@ -287,8 +316,10 @@ void Convolve2D_C(const void* const reference, const ptrdiff_t reference_stride,
   auto* dest = static_cast<Pixel*>(prediction);
   const ptrdiff_t dest_stride = pred_stride / sizeof(Pixel);
   int filter_id = (subpixel_x >> 6) & kSubPixelMask;
-  for (int y = 0; y < intermediate_height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << (bitdepth + kFilterBits - 1);
       for (int k = 0; k < kSubPixelTaps; ++k) {
@@ -297,17 +328,21 @@ void Convolve2D_C(const void* const reference, const ptrdiff_t reference_stride,
       assert(sum >= 0 && sum < (1 << (bitdepth + kFilterBits + 1)));
       intermediate[x] = static_cast<int16_t>(
           RightShiftWithRounding(sum, kRoundBitsHorizontal));
-    }
+    } while (++x < width);
+
     src += src_stride;
     intermediate += intermediate_stride;
-  }
+  } while (++y < intermediate_height);
+
   // Vertical filter.
   filter_index = GetFilterIndex(vertical_filter_index, height);
   intermediate = intermediate_result;
   filter_id = ((subpixel_y & 1023) >> 6) & kSubPixelMask;
   const int offset_bits = bitdepth + 2 * kFilterBits - kRoundBitsHorizontal;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  y = 0;
+  do {
+    int x = 0;
+    do {
       // An offset to guarantee the sum is non negative.
       int sum = 1 << offset_bits;
       for (int k = 0; k < kSubPixelTaps; ++k) {
@@ -319,10 +354,11 @@ void Convolve2D_C(const void* const reference, const ptrdiff_t reference_stride,
           Clip3(RightShiftWithRounding(sum, inter_round_bits_vertical) -
                     single_round_offset,
                 0, max_pixel_value));
-    }
+    } while (++x < width);
+
     dest += dest_stride;
     intermediate += intermediate_stride;
-  }
+  } while (++y < height);
 }
 
 // This function is a simplified version of Convolve2D_C.
@@ -335,7 +371,7 @@ void ConvolveHorizontal_C(const void* const reference,
                           const ptrdiff_t reference_stride,
                           const int horizontal_filter_index,
                           const int /*vertical_filter_index*/,
-                          const uint8_t /*inter_round_bits_vertical*/,
+                          const int /*inter_round_bits_vertical*/,
                           const int subpixel_x, const int /*subpixel_y*/,
                           const int /*step_x*/, const int /*step_y*/,
                           const int width, const int height, void* prediction,
@@ -351,8 +387,10 @@ void ConvolveHorizontal_C(const void* const reference,
   const ptrdiff_t dest_stride = pred_stride / sizeof(Pixel);
   const int filter_id = (subpixel_x >> 6) & kSubPixelMask;
   const int max_pixel_value = (1 << bitdepth) - 1;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       int sum = 0;
       for (int k = 0; k < kSubPixelTaps; ++k) {
         sum += kSubPixelFilters[filter_index][filter_id][k] * src[x + k];
@@ -360,10 +398,11 @@ void ConvolveHorizontal_C(const void* const reference,
       sum = RightShiftWithRounding(sum, kRoundBitsHorizontal);
       dest[x] = static_cast<Pixel>(
           Clip3(RightShiftWithRounding(sum, bits), 0, max_pixel_value));
-    }
+    } while (++x < width);
+
     src += src_stride;
     dest += dest_stride;
-  }
+  } while (++y < height);
 }
 
 // This function is a simplified version of Convolve2D_C.
@@ -376,7 +415,7 @@ void ConvolveVertical_C(const void* const reference,
                         const ptrdiff_t reference_stride,
                         const int /*horizontal_filter_index*/,
                         const int vertical_filter_index,
-                        const uint8_t /*inter_round_bits_vertical*/,
+                        const int /*inter_round_bits_vertical*/,
                         const int /*subpixel_x*/, const int subpixel_y,
                         const int /*step_x*/, const int /*step_y*/,
                         const int width, const int height, void* prediction,
@@ -401,8 +440,10 @@ void ConvolveVertical_C(const void* const reference,
     return;
   }
   const int max_pixel_value = (1 << bitdepth) - 1;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       int sum = 0;
       for (int k = 0; k < kSubPixelTaps; ++k) {
         sum += kSubPixelFilters[filter_index][filter_id][k] *
@@ -410,10 +451,11 @@ void ConvolveVertical_C(const void* const reference,
       }
       dest[x] = static_cast<Pixel>(
           Clip3(RightShiftWithRounding(sum, kFilterBits), 0, max_pixel_value));
-    }
+    } while (++x < width);
+
     src += src_stride;
     dest += dest_stride;
-  }
+  } while (++y < height);
 }
 
 template <int bitdepth, typename Pixel>
@@ -421,18 +463,19 @@ void ConvolveCopy_C(const void* const reference,
                     const ptrdiff_t reference_stride,
                     const int /*horizontal_filter_index*/,
                     const int /*vertical_filter_index*/,
-                    const uint8_t /*inter_round_bits_vertical*/,
+                    const int /*inter_round_bits_vertical*/,
                     const int /*subpixel_x*/, const int /*subpixel_y*/,
                     const int /*step_x*/, const int /*step_y*/, const int width,
                     const int height, void* prediction,
                     const ptrdiff_t pred_stride) {
   const auto* src = static_cast<const uint8_t*>(reference);
   auto* dest = static_cast<uint8_t*>(prediction);
-  for (int y = 0; y < height; ++y) {
+  int y = 0;
+  do {
     memcpy(dest, src, width * sizeof(Pixel));
     src += reference_stride;
     dest += pred_stride;
-  }
+  } while (++y < height);
 }
 
 template <int bitdepth, typename Pixel>
@@ -440,7 +483,7 @@ void ConvolveCompoundCopy_C(const void* const reference,
                             const ptrdiff_t reference_stride,
                             const int /*horizontal_filter_index*/,
                             const int /*vertical_filter_index*/,
-                            const uint8_t /*inter_round_bits_vertical*/,
+                            const int /*inter_round_bits_vertical*/,
                             const int /*subpixel_x*/, const int /*subpixel_y*/,
                             const int /*step_x*/, const int /*step_y*/,
                             const int width, const int height, void* prediction,
@@ -450,13 +493,16 @@ void ConvolveCompoundCopy_C(const void* const reference,
   auto* dest = static_cast<uint16_t*>(prediction);
   const int compound_round_offset =
       (1 << (bitdepth + 4)) + (1 << (bitdepth + 3));
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       dest[x] = (src[x] << 4) + compound_round_offset;
-    }
+    } while (++x < width);
+
     src += src_stride;
     dest += pred_stride;
-  }
+  } while (++y < height);
 }
 
 // This function is a simplified version of ConvolveCompound2D_C.
@@ -468,7 +514,7 @@ template <int bitdepth, typename Pixel>
 void ConvolveCompoundHorizontal_C(
     const void* const reference, const ptrdiff_t reference_stride,
     const int horizontal_filter_index, const int /*vertical_filter_index*/,
-    const uint8_t inter_round_bits_vertical, const int subpixel_x,
+    const int inter_round_bits_vertical, const int subpixel_x,
     const int /*subpixel_y*/, const int /*step_x*/, const int /*step_y*/,
     const int width, const int height, void* prediction,
     const ptrdiff_t pred_stride) {
@@ -483,18 +529,21 @@ void ConvolveCompoundHorizontal_C(
   const int bits_shift = kFilterBits - inter_round_bits_vertical;
   const int compound_round_offset =
       (1 << (bitdepth + 4)) + (1 << (bitdepth + 3));
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       int sum = 0;
       for (int k = 0; k < kSubPixelTaps; ++k) {
         sum += kSubPixelFilters[filter_index][filter_id][k] * src[x + k];
       }
       sum = RightShiftWithRounding(sum, kRoundBitsHorizontal) << bits_shift;
       dest[x] = sum + compound_round_offset;
-    }
+    } while (++x < width);
+
     src += src_stride;
     dest += pred_stride;
-  }
+  } while (++y < height);
 }
 
 // This function is a simplified version of ConvolveCompound2D_C.
@@ -507,7 +556,7 @@ void ConvolveCompoundVertical_C(const void* const reference,
                                 const ptrdiff_t reference_stride,
                                 const int /*horizontal_filter_index*/,
                                 const int vertical_filter_index,
-                                const uint8_t inter_round_bits_vertical,
+                                const int inter_round_bits_vertical,
                                 const int /*subpixel_x*/, const int subpixel_y,
                                 const int /*step_x*/, const int /*step_y*/,
                                 const int width, const int height,
@@ -524,8 +573,10 @@ void ConvolveCompoundVertical_C(const void* const reference,
   const int bits_shift = kFilterBits - kRoundBitsHorizontal;
   const int compound_round_offset =
       (1 << (bitdepth + 4)) + (1 << (bitdepth + 3));
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       int sum = 0;
       for (int k = 0; k < kSubPixelTaps; ++k) {
         sum += kSubPixelFilters[filter_index][filter_id][k] *
@@ -534,10 +585,11 @@ void ConvolveCompoundVertical_C(const void* const reference,
       dest[x] = RightShiftWithRounding(LeftShift(sum, bits_shift),
                                        inter_round_bits_vertical) +
                 compound_round_offset;
-    }
+    } while (++x < width);
+
     src += src_stride;
     dest += pred_stride;
-  }
+  } while (++y < height);
 }
 
 // This function is used when intra block copy is present.
@@ -550,7 +602,7 @@ template <int bitdepth, typename Pixel>
 void ConvolveIntraBlockCopy2D_C(
     const void* const reference, const ptrdiff_t reference_stride,
     const int /*horizontal_filter_index*/, const int /*vertical_filter_index*/,
-    const uint8_t /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
+    const int /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
     const int /*subpixel_y*/, const int /*step_x*/, const int /*step_y*/,
     const int width, const int height, void* prediction,
     const ptrdiff_t pred_stride) {
@@ -565,22 +617,29 @@ void ConvolveIntraBlockCopy2D_C(
   // Note: allow vertical access to height + 1. Because this function is only
   // for u/v plane of intra block copy, such access is guaranteed to be within
   // the prediction block.
-  for (int y = 0; y < intermediate_height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       intermediate[x] = src[x] + src[x + 1];
-    }
+    } while (++x < width);
+
     src += src_stride;
     intermediate += width;
-  }
+  } while (++y < intermediate_height);
+
   intermediate = intermediate_result;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  y = 0;
+  do {
+    int x = 0;
+    do {
       dest[x] = static_cast<Pixel>(
           RightShiftWithRounding(intermediate[x] + intermediate[x + width], 2));
-    }
+    } while (++x < width);
+
     intermediate += width;
     dest += dest_stride;
-  }
+  } while (++y < height);
 }
 
 // This function is used when intra block copy is present.
@@ -595,7 +654,7 @@ template <int bitdepth, typename Pixel, bool is_horizontal>
 void ConvolveIntraBlockCopy1D_C(
     const void* const reference, const ptrdiff_t reference_stride,
     const int /*horizontal_filter_index*/, const int /*vertical_filter_index*/,
-    const uint8_t /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
+    const int /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
     const int /*subpixel_y*/, const int /*step_x*/, const int /*step_y*/,
     const int width, const int height, void* prediction,
     const ptrdiff_t pred_stride) {
@@ -604,14 +663,17 @@ void ConvolveIntraBlockCopy1D_C(
   auto* dest = reinterpret_cast<Pixel*>(prediction);
   const ptrdiff_t dest_stride = pred_stride / sizeof(Pixel);
   const ptrdiff_t offset = is_horizontal ? 1 : src_stride;
-  for (int y = 0; y < height; ++y) {
-    for (int x = 0; x < width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       dest[x] = static_cast<Pixel>(
           RightShiftWithRounding(src[x] + src[x + offset], 1));
-    }
+    } while (++x < width);
+
     src += src_stride;
     dest += dest_stride;
-  }
+  } while (++y < height);
 }
 
 void Init8bpp() {
