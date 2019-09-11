@@ -425,6 +425,38 @@ using ButterflyRotationFunc = void (*)(int16x8_t* a, int16x8_t* b, int angle,
 //------------------------------------------------------------------------------
 // Discrete Cosine Transforms (DCT).
 
+template <int width>
+LIBGAV1_ALWAYS_INLINE bool DctDcOnly(void* dest, const void* source,
+                                     int non_zero_coeff_count,
+                                     bool should_round, int row_shift) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  const int16x8_t v_src = vdupq_n_s16(src[0]);
+  const uint16x8_t v_mask = vdupq_n_u16(should_round ? 0xffff : 0);
+  const int16x8_t v_src_round =
+      vqrdmulhq_n_s16(v_src, kTransformRowMultiplier << 3);
+  const int16x8_t s0 = vbslq_s16(v_mask, v_src_round, v_src);
+  const int16_t cos128 = Cos128(32);
+  const int16x8_t xy = vqrdmulhq_s16(s0, vdupq_n_s16(cos128 << 3));
+  // vqrshlq_s16 will shift right if shift value is negative.
+  const int16x8_t xy_shifted = vqrshlq_s16(xy, vdupq_n_s16(-row_shift));
+
+  if (width == 4) {
+    vst1_s16(dst, vget_low_s16(xy_shifted));
+  } else {
+    for (int i = 0; i < width; i += 8) {
+      vst1q_s16(dst, xy_shifted);
+      dst += 8;
+    }
+  }
+  return true;
+}
+
 template <ButterflyRotationFunc bufferfly_rotation,
           bool is_fast_bufferfly = false>
 LIBGAV1_ALWAYS_INLINE void Dct4Stages(int16x8_t* s) {
@@ -1982,8 +2014,15 @@ void Dct4TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
     const bool should_round = (tx_height == 8);
+    const int row_shift = (tx_height == 16);
+
+    if (DctDcOnly<4>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                     row_shift)) {
+      return;
+    }
+
+    const int num_rows = tx_height;
     if (should_round) {
       ApplyRounding<4>(src, num_rows);
     }
@@ -2038,8 +2077,16 @@ void Dct8TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
-    if (kShouldRound[tx_size]) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<8>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                     row_shift)) {
+      return;
+    }
+
+    const int num_rows = tx_height;
+    if (should_round) {
       ApplyRounding<8>(src, num_rows);
     }
 
@@ -2056,7 +2103,6 @@ void Dct8TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
         i += 8;
       } while (i < num_rows);
     }
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     if (row_shift > 0) {
       RowShift<8>(src, num_rows, row_shift);
     }
@@ -2094,9 +2140,16 @@ void Dct16TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<16>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                      row_shift)) {
+      return;
+    }
+
+    const int num_rows = std::min(tx_height, 32);
+    if (should_round) {
       ApplyRounding<16>(src, num_rows);
     }
 
@@ -2113,7 +2166,6 @@ void Dct16TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
         i += 8;
       } while (i < num_rows);
     }
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     // row_shift is always non zero here.
     RowShift<16>(src, num_rows, row_shift);
 
@@ -2151,9 +2203,16 @@ void Dct32TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<32>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                      row_shift)) {
+      return;
+    }
+
+    const int num_rows = std::min(tx_height, 32);
+    if (should_round) {
       ApplyRounding<32>(src, num_rows);
     }
     // Process 8 1d dct32 rows in parallel per iteration.
@@ -2162,7 +2221,7 @@ void Dct32TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
       Dct32_NEON(&src[i * 32], &src[i * 32], 32, /*transpose=*/true);
       i += 8;
     } while (i < num_rows);
-    const uint8_t row_shift = kTransformRowShift[tx_size];
+
     // row_shift is always non zero here.
     RowShift<32>(src, num_rows, row_shift);
 
@@ -2189,9 +2248,16 @@ void Dct64TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<64>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                      row_shift)) {
+      return;
+    }
+
+    const int num_rows = std::min(tx_height, 32);
+    if (should_round) {
       ApplyRounding<64>(src, num_rows);
     }
     // Process 8 1d dct64 rows in parallel per iteration.
@@ -2200,7 +2266,6 @@ void Dct64TransformLoop_NEON(TransformType tx_type, TransformSize tx_size,
       Dct64_NEON(&src[i * 64], &src[i * 64], 64, /*transpose=*/true);
       i += 8;
     } while (i < num_rows);
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     // row_shift is always non zero here.
     RowShift<64>(src, num_rows, row_shift);
 

@@ -188,6 +188,10 @@ inline void Uint32ToMem(uint8_t* const buf, uint32_t val) {
   memcpy(buf, &val, 4);
 }
 
+inline void Uint32ToMem(uint16_t* const buf, uint32_t val) {
+  memcpy(buf, &val, 4);
+}
+
 // Store 4 uint8_t values from the low half of a uint8x8_t register.
 inline void StoreLo4(uint8_t* const buf, const uint8x8_t val) {
   Uint32ToMem(buf, vget_lane_u32(vreinterpret_u32_u8(val), 0));
@@ -196,6 +200,13 @@ inline void StoreLo4(uint8_t* const buf, const uint8x8_t val) {
 // Store 4 uint8_t values from the high half of a uint8x8_t register.
 inline void StoreHi4(uint8_t* const buf, const uint8x8_t val) {
   Uint32ToMem(buf, vget_lane_u32(vreinterpret_u32_u8(val), 1));
+}
+
+// Store 2 uint16_t values from |lane| * 2 and |lane| * 2 + 1 of a uint16x8_t
+// register.
+template <int lane>
+inline void Store2(uint16_t* const buf, const uint16x8_t val) {
+  Uint32ToMem(buf, vgetq_lane_u32(vreinterpretq_u32_u16(val), lane));
 }
 
 //------------------------------------------------------------------------------

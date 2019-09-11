@@ -3,15 +3,10 @@
 #include <algorithm>
 #include <cassert>
 
+#include "src/utils/constants.h"
 #include "src/utils/logging.h"
 
 namespace libgav1 {
-namespace {
-
-// Maximum number of threads that the library will ever create.
-constexpr int kMaxThreads = 32;
-
-}  // namespace
 
 bool ThreadingStrategy::Reset(const ObuFrameHeader& frame_header,
                               int thread_count) {
@@ -25,7 +20,7 @@ bool ThreadingStrategy::Reset(const ObuFrameHeader& frame_header,
 
   // We do work in the current thread, so it is sufficient to create
   // |thread_count|-1 threads in the threadpool.
-  thread_count = std::min(thread_count - 1, kMaxThreads);
+  thread_count = std::min(thread_count - 1, static_cast<int>(kMaxThreads));
 
   if (thread_pool_ == nullptr || thread_pool_->num_threads() != thread_count) {
     thread_pool_ = ThreadPool::Create("libgav1", thread_count);

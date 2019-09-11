@@ -8,6 +8,7 @@
 #include "src/dsp/dsp.h"
 #include "src/utils/array_2d.h"
 #include "src/utils/common.h"
+#include "src/utils/compiler_attributes.h"
 #include "src/utils/logging.h"
 
 namespace libgav1 {
@@ -36,8 +37,9 @@ int32_t RangeCheckValue(int32_t value, int8_t range) {
 }
 
 template <typename Residual>
-void ButterflyRotation_C(Residual* const dst, int a, int b, int angle,
-                         bool flip, int8_t range) {
+LIBGAV1_ALWAYS_INLINE void ButterflyRotation_C(Residual* const dst, int a,
+                                               int b, int angle, bool flip,
+                                               int8_t range) {
   // Note that we multiply in 32 bits and then add/subtract the products in 64
   // bits. The 32-bit multiplications do not overflow. Please see the comment
   // and assert() in Cos128().

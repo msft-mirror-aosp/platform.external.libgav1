@@ -169,6 +169,285 @@ uint16x8_t SumTaps8To16(const int16x8_t* const src, const int16x8_t taps) {
   return vreinterpretq_u16_s16(sum);
 }
 
+template <int num_taps, int filter_index, bool negative_outside_taps = true>
+uint16x8_t SumCompoundHorizontalTaps(const uint8_t* const src,
+                                     const uint8x8_t* const v_tap) {
+  // Start with an offset to guarantee the sum is non negative.
+  uint16x8_t v_sum = vdupq_n_u16(1 << 14);
+  uint8x16_t v_src[8];
+  v_src[0] = vld1q_u8(&src[0]);
+  if (num_taps == 8) {
+    v_src[1] = vextq_u8(v_src[0], v_src[0], 1);
+    v_src[2] = vextq_u8(v_src[0], v_src[0], 2);
+    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
+    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
+    v_src[5] = vextq_u8(v_src[0], v_src[0], 5);
+    v_src[6] = vextq_u8(v_src[0], v_src[0], 6);
+    v_src[7] = vextq_u8(v_src[0], v_src[0], 7);
+
+    // tap signs : - + - + + - + -
+    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[0]), v_tap[0]);
+    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
+    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
+    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
+    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
+    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
+    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
+    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[7]), v_tap[7]);
+  } else if (num_taps == 6) {
+    v_src[1] = vextq_u8(v_src[0], v_src[0], 1);
+    v_src[2] = vextq_u8(v_src[0], v_src[0], 2);
+    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
+    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
+    v_src[5] = vextq_u8(v_src[0], v_src[0], 5);
+    v_src[6] = vextq_u8(v_src[0], v_src[0], 6);
+    if (filter_index == 0) {
+      // tap signs : + - + + - +
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
+      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
+      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
+    } else {
+      if (negative_outside_taps) {
+        // tap signs : - + + + + -
+        v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
+        v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
+      } else {
+        // tap signs : + + + + + +
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
+        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
+      }
+    }
+  } else if (num_taps == 4) {
+    v_src[2] = vextq_u8(v_src[0], v_src[0], 2);
+    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
+    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
+    v_src[5] = vextq_u8(v_src[0], v_src[0], 5);
+    if (filter_index == 4) {
+      // tap signs : - + + -
+      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
+      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
+    } else {
+      // tap signs : + + + +
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
+      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
+    }
+  } else {
+    assert(num_taps == 2);
+    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
+    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
+    // tap signs : + +
+    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
+    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
+  }
+
+  return v_sum;
+}
+
+template <int num_taps, int filter_index>
+uint16x8_t SumHorizontalTaps2xH(const uint8_t* src, const ptrdiff_t src_stride,
+                                const uint8x8_t* const v_tap) {
+  constexpr int positive_offset_bits = kBitdepth8 + kFilterBits - 1;
+  uint16x8_t sum = vdupq_n_u16(1 << positive_offset_bits);
+  uint8x8_t input0 = vld1_u8(src);
+  src += src_stride;
+  uint8x8_t input1 = vld1_u8(src);
+  uint8x8x2_t input = vzip_u8(input0, input1);
+
+  if (num_taps == 2) {
+    // tap signs : + +
+    sum = vmlal_u8(sum, vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
+    sum = vmlal_u8(sum, input.val[1], v_tap[4]);
+  } else if (filter_index == 4) {
+    // tap signs : - + + -
+    sum = vmlsl_u8(sum, RightShift<4 * 8>(input.val[0]), v_tap[2]);
+    sum = vmlal_u8(sum, vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
+    sum = vmlal_u8(sum, input.val[1], v_tap[4]);
+    sum = vmlsl_u8(sum, RightShift<2 * 8>(input.val[1]), v_tap[5]);
+  } else {
+    // tap signs : + + + +
+    sum = vmlal_u8(sum, RightShift<4 * 8>(input.val[0]), v_tap[2]);
+    sum = vmlal_u8(sum, vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
+    sum = vmlal_u8(sum, input.val[1], v_tap[4]);
+    sum = vmlal_u8(sum, RightShift<2 * 8>(input.val[1]), v_tap[5]);
+  }
+
+  return vrshrq_n_u16(sum, kInterRoundBitsHorizontal);
+}
+
+// TODO(johannkoenig): Rename this function. It works for more than just
+// compound convolutions.
+template <int num_taps, int step, int filter_index,
+          bool negative_outside_taps = true, bool is_2d = false,
+          bool is_8bit = false>
+void ConvolveCompoundHorizontalBlock(const uint8_t* src,
+                                     const ptrdiff_t src_stride,
+                                     void* const dest,
+                                     const ptrdiff_t pred_stride,
+                                     const int width, const int height,
+                                     const uint8x8_t* const v_tap) {
+  const uint16x8_t v_compound_round_offset = vdupq_n_u16(1 << (kBitdepth8 + 4));
+  const int16x8_t v_inter_round_bits_0 =
+      vdupq_n_s16(-kInterRoundBitsHorizontal);
+
+  auto* dest8 = static_cast<uint8_t*>(dest);
+  auto* dest16 = static_cast<uint16_t*>(dest);
+
+  if (width > 4) {
+    int y = 0;
+    do {
+      int x = 0;
+      do {
+        uint16x8_t v_sum =
+            SumCompoundHorizontalTaps<num_taps, filter_index,
+                                      negative_outside_taps>(&src[x], v_tap);
+        if (is_8bit) {
+          // Split shifts the way they are in C. They can be combined but that
+          // makes removing the 1 << 14 offset much more difficult.
+          v_sum = vrshrq_n_u16(v_sum, kInterRoundBitsHorizontal);
+          int16x8_t v_sum_signed = vreinterpretq_s16_u16(vsubq_u16(
+              v_sum, vdupq_n_u16(1 << (14 - kInterRoundBitsHorizontal))));
+          uint8x8_t result = vqrshrun_n_s16(
+              v_sum_signed, kFilterBits - kInterRoundBitsHorizontal);
+          vst1_u8(&dest8[x], result);
+        } else {
+          v_sum = vrshlq_u16(v_sum, v_inter_round_bits_0);
+          if (!is_2d) {
+            v_sum = vaddq_u16(v_sum, v_compound_round_offset);
+          }
+          vst1q_u16(&dest16[x], v_sum);
+        }
+        x += step;
+      } while (x < width);
+      src += src_stride;
+      dest8 += pred_stride;
+      dest16 += pred_stride;
+    } while (++y < height);
+    return;
+  } else if (width == 4) {
+    int y = 0;
+    do {
+      uint16x8_t v_sum =
+          SumCompoundHorizontalTaps<num_taps, filter_index,
+                                    negative_outside_taps>(&src[0], v_tap);
+      if (is_8bit) {
+        v_sum = vrshrq_n_u16(v_sum, kInterRoundBitsHorizontal);
+        int16x8_t v_sum_signed = vreinterpretq_s16_u16(vsubq_u16(
+            v_sum, vdupq_n_u16(1 << (14 - kInterRoundBitsHorizontal))));
+        uint8x8_t result = vqrshrun_n_s16(
+            v_sum_signed, kFilterBits - kInterRoundBitsHorizontal);
+        StoreLo4(&dest8[0], result);
+      } else {
+        v_sum = vrshlq_u16(v_sum, v_inter_round_bits_0);
+        if (!is_2d) {
+          v_sum = vaddq_u16(v_sum, v_compound_round_offset);
+        }
+        vst1_u16(&dest16[0], vget_low_u16(v_sum));
+      }
+      src += src_stride;
+      dest8 += pred_stride;
+      dest16 += pred_stride;
+    } while (++y < height);
+    return;
+  }
+
+  // Horizontal passes only needs to account for |num_taps| 2 and 4 when
+  // |width| == 2.
+  assert(width == 2);
+  assert(num_taps <= 4);
+
+  constexpr int positive_offset_bits = kBitdepth8 + kFilterBits - 1;
+  // Leave off + 1 << (kBitdepth8 + 3).
+  constexpr int compound_round_offset = 1 << (kBitdepth8 + 4);
+
+  if (num_taps <= 4) {
+    int y = 0;
+    do {
+      // TODO(johannkoenig): Re-order the values for storing.
+      uint16x8_t sum =
+          SumHorizontalTaps2xH<num_taps, filter_index>(src, src_stride, v_tap);
+
+      if (is_2d) {
+        dest16[0] = vgetq_lane_u16(sum, 0);
+        dest16[1] = vgetq_lane_u16(sum, 2);
+        dest16 += pred_stride;
+        dest16[0] = vgetq_lane_u16(sum, 1);
+        dest16[1] = vgetq_lane_u16(sum, 3);
+        dest16 += pred_stride;
+      } else if (!is_8bit) {
+        // None of the test vectors hit this path but the unit tests do.
+        sum = vaddq_u16(sum, vdupq_n_u16(compound_round_offset));
+
+        dest16[0] = vgetq_lane_u16(sum, 0);
+        dest16[1] = vgetq_lane_u16(sum, 2);
+        dest16 += pred_stride;
+        dest16[0] = vgetq_lane_u16(sum, 1);
+        dest16[1] = vgetq_lane_u16(sum, 3);
+        dest16 += pred_stride;
+      } else {
+        // Split shifts the way they are in C. They can be combined but that
+        // makes removing the 1 << 14 offset much more difficult.
+        int16x8_t sum_signed = vreinterpretq_s16_u16(vsubq_u16(
+            sum, vdupq_n_u16(
+                     1 << (positive_offset_bits - kInterRoundBitsHorizontal))));
+        uint8x8_t result =
+            vqrshrun_n_s16(sum_signed, kFilterBits - kInterRoundBitsHorizontal);
+
+        // Could de-interleave and vst1_lane_u16().
+        dest8[0] = vget_lane_u8(result, 0);
+        dest8[1] = vget_lane_u8(result, 2);
+        dest8 += pred_stride;
+
+        dest8[0] = vget_lane_u8(result, 1);
+        dest8[1] = vget_lane_u8(result, 3);
+        dest8 += pred_stride;
+      }
+
+      src += src_stride << 1;
+      y += 2;
+    } while (y < height - 1);
+
+    // The 2d filters have an odd |height| because the horizontal pass generates
+    // context for the vertical pass.
+    if (is_2d) {
+      assert(height % 2 == 1);
+      uint16x8_t sum = vdupq_n_u16(1 << positive_offset_bits);
+      uint8x8_t input = vld1_u8(src);
+      if (filter_index == 3) {  // |num_taps| == 2
+        sum = vmlal_u8(sum, RightShift<3 * 8>(input), v_tap[3]);
+        sum = vmlal_u8(sum, RightShift<4 * 8>(input), v_tap[4]);
+      } else if (filter_index == 4) {
+        sum = vmlsl_u8(sum, RightShift<2 * 8>(input), v_tap[2]);
+        sum = vmlal_u8(sum, RightShift<3 * 8>(input), v_tap[3]);
+        sum = vmlal_u8(sum, RightShift<4 * 8>(input), v_tap[4]);
+        sum = vmlsl_u8(sum, RightShift<5 * 8>(input), v_tap[5]);
+      } else {
+        assert(filter_index == 5);
+        sum = vmlal_u8(sum, RightShift<2 * 8>(input), v_tap[2]);
+        sum = vmlal_u8(sum, RightShift<3 * 8>(input), v_tap[3]);
+        sum = vmlal_u8(sum, RightShift<4 * 8>(input), v_tap[4]);
+        sum = vmlal_u8(sum, RightShift<5 * 8>(input), v_tap[5]);
+        sum = vrshrq_n_u16(sum, kInterRoundBitsHorizontal);
+      }
+      Store2<0>(dest16, sum);
+    }
+  }
+}
+
 // Process 16 bit inputs and output 32 bits.
 template <int num_taps>
 uint32x4x2_t Sum2DVerticalTaps(const int16x8_t* const src,
@@ -241,175 +520,428 @@ uint32x4x2_t Sum2DVerticalTaps(const int16x8_t* const src,
   return return_val;
 }
 
+// Process 16 bit inputs and output 32 bits.
 template <int num_taps>
+uint32x4_t Sum2DVerticalTaps(const int16x4_t* const src, const int16x8_t taps) {
+  // In order to get the rollover correct with the lengthening instruction we
+  // need to treat these as signed so that they sign extend properly.
+  const int16x4_t taps_lo = vget_low_s16(taps);
+  const int16x4_t taps_hi = vget_high_s16(taps);
+  // An offset to guarantee the sum is non negative. Captures 56 * -4590 =
+  // 257040 (worst case negative value from horizontal pass). It should be
+  // possible to use 1 << 18 (262144) instead of 1 << 19 but there probably
+  // isn't any benefit.
+  // |offset_bits| = bitdepth + 2 * kFilterBits - kInterRoundBitsHorizontal
+  // == 19.
+  int32x4_t sum = vdupq_n_s32(1 << 19);
+  if (num_taps == 8) {
+    sum = vmlal_lane_s16(sum, src[0], taps_lo, 0);
+    sum = vmlal_lane_s16(sum, src[1], taps_lo, 1);
+    sum = vmlal_lane_s16(sum, src[2], taps_lo, 2);
+    sum = vmlal_lane_s16(sum, src[3], taps_lo, 3);
+
+    sum = vmlal_lane_s16(sum, src[4], taps_hi, 0);
+    sum = vmlal_lane_s16(sum, src[5], taps_hi, 1);
+    sum = vmlal_lane_s16(sum, src[6], taps_hi, 2);
+    sum = vmlal_lane_s16(sum, src[7], taps_hi, 3);
+  } else if (num_taps == 6) {
+    sum = vmlal_lane_s16(sum, src[0], taps_lo, 1);
+    sum = vmlal_lane_s16(sum, src[1], taps_lo, 2);
+    sum = vmlal_lane_s16(sum, src[2], taps_lo, 3);
+
+    sum = vmlal_lane_s16(sum, src[3], taps_hi, 0);
+    sum = vmlal_lane_s16(sum, src[4], taps_hi, 1);
+    sum = vmlal_lane_s16(sum, src[5], taps_hi, 2);
+  } else if (num_taps == 4) {
+    sum = vmlal_lane_s16(sum, src[0], taps_lo, 2);
+    sum = vmlal_lane_s16(sum, src[1], taps_lo, 3);
+
+    sum = vmlal_lane_s16(sum, src[2], taps_hi, 0);
+    sum = vmlal_lane_s16(sum, src[3], taps_hi, 1);
+  } else if (num_taps == 2) {
+    sum = vmlal_lane_s16(sum, src[0], taps_lo, 3);
+
+    sum = vmlal_lane_s16(sum, src[1], taps_hi, 0);
+  }
+
+  // This is guaranteed to be positive. Convert it for the final shift.
+  return vreinterpretq_u32_s32(sum);
+}
+
+template <int num_taps, bool is_compound = false>
 void Filter2DVertical(const uint16_t* src, const ptrdiff_t src_stride,
-                      uint8_t* dst, const ptrdiff_t dst_stride, const int width,
-                      const int height, const int16x8_t taps) {
+                      void* const dst, const ptrdiff_t dst_stride,
+                      const int width, const int height, const int16x8_t taps,
+                      const int inter_round_bits_vertical) {
   constexpr int next_row = num_taps - 1;
+  const int32x4_t v_inter_round_bits_vertical =
+      vdupq_n_s32(-inter_round_bits_vertical);
 
-  int x = 0;
-  do {
-    int16x8_t srcs[8];
-    srcs[0] = vreinterpretq_s16_u16(vld1q_u16(src + x));
-    if (num_taps >= 4) {
-      srcs[1] = vreinterpretq_s16_u16(vld1q_u16(src + x + src_stride));
-      srcs[2] = vreinterpretq_s16_u16(vld1q_u16(src + x + 2 * src_stride));
-      if (num_taps >= 6) {
-        srcs[3] = vreinterpretq_s16_u16(vld1q_u16(src + x + 3 * src_stride));
-        srcs[4] = vreinterpretq_s16_u16(vld1q_u16(src + x + 4 * src_stride));
-        if (num_taps == 8) {
-          srcs[5] = vreinterpretq_s16_u16(vld1q_u16(src + x + 5 * src_stride));
-          srcs[6] = vreinterpretq_s16_u16(vld1q_u16(src + x + 6 * src_stride));
-        }
-      }
-    }
+  auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
 
-    int y = 0;
+  if (width > 4) {
+    int x = 0;
     do {
-      srcs[next_row] = vreinterpretq_s16_u16(
-          vld1q_u16(src + x + (y + next_row) * src_stride));
-
-      const uint32x4x2_t sums = Sum2DVerticalTaps<num_taps>(srcs, taps);
-      const uint16x8_t first_shift =
-          vcombine_u16(vqrshrn_n_u32(sums.val[0], kInterRoundBitsVertical),
-                       vqrshrn_n_u32(sums.val[1], kInterRoundBitsVertical));
-      // |single_round_offset| == (1 << bitdepth) + (1 << (bitdepth - 1)) ==
-      // 384
-      const uint8x8_t results =
-          vqmovn_u16(vqsubq_u16(first_shift, vdupq_n_u16(384)));
-
-      vst1_u8(dst + x + y * dst_stride, results);
-
-      srcs[0] = srcs[1];
+      int16x8_t srcs[8];
+      srcs[0] = vreinterpretq_s16_u16(vld1q_u16(src + x));
       if (num_taps >= 4) {
-        srcs[1] = srcs[2];
-        srcs[2] = srcs[3];
+        srcs[1] = vreinterpretq_s16_u16(vld1q_u16(src + x + src_stride));
+        srcs[2] = vreinterpretq_s16_u16(vld1q_u16(src + x + 2 * src_stride));
         if (num_taps >= 6) {
-          srcs[3] = srcs[4];
-          srcs[4] = srcs[5];
+          srcs[3] = vreinterpretq_s16_u16(vld1q_u16(src + x + 3 * src_stride));
+          srcs[4] = vreinterpretq_s16_u16(vld1q_u16(src + x + 4 * src_stride));
           if (num_taps == 8) {
-            srcs[5] = srcs[6];
-            srcs[6] = srcs[7];
+            srcs[5] =
+                vreinterpretq_s16_u16(vld1q_u16(src + x + 5 * src_stride));
+            srcs[6] =
+                vreinterpretq_s16_u16(vld1q_u16(src + x + 6 * src_stride));
           }
         }
       }
-    } while (++y < height);
-    x += 8;
-  } while (x < width);
+
+      int y = 0;
+      do {
+        srcs[next_row] = vreinterpretq_s16_u16(
+            vld1q_u16(src + x + (y + next_row) * src_stride));
+
+        const uint32x4x2_t sums = Sum2DVerticalTaps<num_taps>(srcs, taps);
+        if (is_compound) {
+          const uint16x8_t results = vcombine_u16(
+              vmovn_u32(vqrshlq_u32(sums.val[0], v_inter_round_bits_vertical)),
+              vmovn_u32(vqrshlq_u32(sums.val[1], v_inter_round_bits_vertical)));
+          vst1q_u16(dst16 + x + y * dst_stride, results);
+        } else {
+          const uint16x8_t first_shift =
+              vcombine_u16(vqrshrn_n_u32(sums.val[0], kInterRoundBitsVertical),
+                           vqrshrn_n_u32(sums.val[1], kInterRoundBitsVertical));
+          // |single_round_offset| == (1 << bitdepth) + (1 << (bitdepth - 1)) ==
+          // 384
+          const uint8x8_t results =
+              vqmovn_u16(vqsubq_u16(first_shift, vdupq_n_u16(384)));
+
+          vst1_u8(dst8 + x + y * dst_stride, results);
+        }
+
+        srcs[0] = srcs[1];
+        if (num_taps >= 4) {
+          srcs[1] = srcs[2];
+          srcs[2] = srcs[3];
+          if (num_taps >= 6) {
+            srcs[3] = srcs[4];
+            srcs[4] = srcs[5];
+            if (num_taps == 8) {
+              srcs[5] = srcs[6];
+              srcs[6] = srcs[7];
+            }
+          }
+        }
+      } while (++y < height);
+      x += 8;
+    } while (x < width);
+    return;
+  }
+
+  assert(width == 4);
+  int16x4_t srcs[8];
+  srcs[0] = vreinterpret_s16_u16(vld1_u16(src));
+  src += src_stride;
+  if (num_taps >= 4) {
+    srcs[1] = vreinterpret_s16_u16(vld1_u16(src));
+    src += src_stride;
+    srcs[2] = vreinterpret_s16_u16(vld1_u16(src));
+    src += src_stride;
+    if (num_taps >= 6) {
+      srcs[3] = vreinterpret_s16_u16(vld1_u16(src));
+      src += src_stride;
+      srcs[4] = vreinterpret_s16_u16(vld1_u16(src));
+      src += src_stride;
+      if (num_taps == 8) {
+        srcs[5] = vreinterpret_s16_u16(vld1_u16(src));
+        src += src_stride;
+        srcs[6] = vreinterpret_s16_u16(vld1_u16(src));
+        src += src_stride;
+      }
+    }
+  }
+
+  int y = 0;
+  do {
+    srcs[next_row] = vreinterpret_s16_u16(vld1_u16(src));
+    src += src_stride;
+
+    const uint32x4_t sums = Sum2DVerticalTaps<num_taps>(srcs, taps);
+    if (is_compound) {
+      const uint16x4_t results =
+          vmovn_u32(vqrshlq_u32(sums, v_inter_round_bits_vertical));
+      vst1_u16(dst16, results);
+      dst16 += dst_stride;
+    } else {
+      const uint16x4_t first_shift =
+          vqrshrn_n_u32(sums, kInterRoundBitsVertical);
+      // |single_round_offset| == (1 << bitdepth) + (1 << (bitdepth - 1)) ==
+      // 384
+      const uint8x8_t results = vqmovn_u16(
+          vcombine_u16(vqsub_u16(first_shift, vdup_n_u16(384)), vdup_n_u16(0)));
+
+      StoreLo4(dst8, results);
+      dst8 += dst_stride;
+    }
+
+    srcs[0] = srcs[1];
+    if (num_taps >= 4) {
+      srcs[1] = srcs[2];
+      srcs[2] = srcs[3];
+      if (num_taps >= 6) {
+        srcs[3] = srcs[4];
+        srcs[4] = srcs[5];
+        if (num_taps == 8) {
+          srcs[5] = srcs[6];
+          srcs[6] = srcs[7];
+        }
+      }
+    }
+  } while (++y < height);
+}
+
+template <bool is_2d = false, bool is_8bit = false>
+void HorizontalPass(const uint8_t* const src, const ptrdiff_t src_stride,
+                    void* const dst, const ptrdiff_t dst_stride,
+                    const int width, const int height, const int subpixel,
+                    const int filter_index) {
+  // Duplicate the absolute value for each tap.  Negative taps are corrected
+  // by using the vmlsl_u8 instruction.  Positive taps use vmlal_u8.
+  uint8x8_t v_tap[kSubPixelTaps];
+  const int filter_id = (subpixel >> 6) & kSubPixelMask;
+  for (int k = 0; k < kSubPixelTaps; ++k) {
+    v_tap[k] = vreinterpret_u8_s8(
+        vabs_s8(vdup_n_s8(kSubPixelFilters[filter_index][filter_id][k])));
+  }
+
+  if (filter_index == 2) {  // 8 tap.
+    ConvolveCompoundHorizontalBlock<8, 8, 2, true, is_2d, is_8bit>(
+        src, src_stride, dst, dst_stride, width, height, v_tap);
+  } else if (filter_index == 1) {  // 6 tap.
+    // Check if outside taps are positive.
+    if ((filter_id == 1) | (filter_id == 15)) {
+      ConvolveCompoundHorizontalBlock<6, 8, 1, false, is_2d, is_8bit>(
+          src, src_stride, dst, dst_stride, width, height, v_tap);
+    } else {
+      ConvolveCompoundHorizontalBlock<6, 8, 1, true, is_2d, is_8bit>(
+          src, src_stride, dst, dst_stride, width, height, v_tap);
+    }
+  } else if (filter_index == 0) {  // 6 tap.
+    ConvolveCompoundHorizontalBlock<6, 8, 0, true, is_2d, is_8bit>(
+        src, src_stride, dst, dst_stride, width, height, v_tap);
+  } else if (filter_index == 4) {  // 4 tap.
+    ConvolveCompoundHorizontalBlock<4, 8, 4, true, is_2d, is_8bit>(
+        src, src_stride, dst, dst_stride, width, height, v_tap);
+  } else if (filter_index == 5) {  // 4 tap.
+    ConvolveCompoundHorizontalBlock<4, 8, 5, true, is_2d, is_8bit>(
+        src, src_stride, dst, dst_stride, width, height, v_tap);
+  } else {  // 2 tap.
+    ConvolveCompoundHorizontalBlock<2, 8, 3, true, is_2d, is_8bit>(
+        src, src_stride, dst, dst_stride, width, height, v_tap);
+  }
+}
+
+// There are three forms of this function:
+// 2D: input 8bit, output 16bit. |is_compound| has no effect.
+// 1D Horizontal: input 8bit, output 8bit.
+// 1D Compound Horizontal: input 8bit, output 16bit. Different rounding from 2D.
+// |width| is guaranteed to be 2 because all other cases are handled in neon.
+template <bool is_2d = true, bool is_compound = false>
+void HorizontalPass2xH(const uint8_t* src, const ptrdiff_t src_stride,
+                       void* const dst, const ptrdiff_t dst_stride,
+                       const int height, const int filter_index, const int taps,
+                       const int subpixel) {
+  // Even though |is_compound| has no effect when |is_2d| is true we block this
+  // combination in case the compiler gets confused.
+  static_assert(!is_2d || !is_compound, "|is_compound| is ignored.");
+  // Since this only handles |width| == 2, we only need to be concerned with
+  // 2 or 4 tap filters.
+  assert(taps == 2 || taps == 4);
+  auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
+
+  const int compound_round_offset =
+      (1 << (kBitdepth8 + 4)) + (1 << (kBitdepth8 + 3));
+
+  const int filter_id = (subpixel >> 6) & kSubPixelMask;
+  const int taps_start = (kSubPixelTaps - taps) / 2;
+  int y = 0;
+  do {
+    int x = 0;
+    do {
+      int sum;
+      if (is_2d) {
+        // An offset to guarantee the sum is non negative.
+        sum = 1 << (kBitdepth8 + kFilterBits - 1);
+      } else if (is_compound) {
+        sum = 0;
+      } else {
+        // 1D non-Compound. The C uses a two stage shift with rounding. Here the
+        // shifts are combined and the rounding bit from the first stage is
+        // added in.
+        // (sum + 4 >> 3) + 8) >> 4 == (sum + 64 + 4) >> 7
+        sum = 4;
+      }
+      for (int k = 0; k < taps; ++k) {
+        const int tap = k + taps_start;
+        sum += kSubPixelFilters[filter_index][filter_id][tap] * src[x + k];
+      }
+      if (is_2d) {
+        dst16[x] = static_cast<int16_t>(
+            RightShiftWithRounding(sum, kInterRoundBitsHorizontal));
+      } else if (is_compound) {
+        sum = RightShiftWithRounding(sum, kInterRoundBitsHorizontal);
+        dst16[x] = sum + compound_round_offset;
+      } else {
+        // 1D non-Compound.
+        dst8[x] = static_cast<uint8_t>(
+            Clip3(RightShiftWithRounding(sum, kFilterBits), 0, 255));
+      }
+    } while (++x < 2);
+
+    src += src_stride;
+    dst8 += dst_stride;
+    dst16 += dst_stride;
+  } while (++y < height);
+}
+
+// This will always need to handle all |filter_index| values. Even with |width|
+// restricted to 2 the value of |height| can go up to at least 16.
+template <bool is_2d = true, bool is_compound = false>
+void VerticalPass2xH(const void* const src, const ptrdiff_t src_stride,
+                     void* const dst, const ptrdiff_t dst_stride,
+                     const int height, const int inter_round_bits_vertical,
+                     const int filter_index, const int taps,
+                     const int subpixel) {
+  const auto* src8 = static_cast<const uint8_t*>(src);
+  const auto* src16 = static_cast<const uint16_t*>(src);
+  auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
+  const int filter_id = (subpixel >> 6) & kSubPixelMask;
+  const int taps_start = (kSubPixelTaps - taps) / 2;
+  constexpr int max_pixel_value = (1 << kBitdepth8) - 1;
+
+  int y = 0;
+  do {
+    int x = 0;
+    do {
+      int sum;
+      if (is_2d) {
+        sum = 1 << (kBitdepth8 + 2 * kFilterBits - kInterRoundBitsHorizontal);
+      } else if (is_compound) {
+        // TODO(johannkoenig): Keeping the sum positive is valuable for neon but
+        // may not actually help the C implementation. Investigate removing
+        // this.
+        // Use this offset to cancel out 1 << (kBitdepth8 + 3) >> 3 from
+        // |compound_round_offset|.
+        sum = (1 << (kBitdepth8 + 3)) << 3;
+      } else {
+        sum = 0;
+      }
+
+      for (int k = 0; k < taps; ++k) {
+        const int tap = k + taps_start;
+        if (is_2d) {
+          sum += kSubPixelFilters[filter_index][filter_id][tap] *
+                 src16[x + k * src_stride];
+        } else {
+          sum += kSubPixelFilters[filter_index][filter_id][tap] *
+                 src8[x + k * src_stride];
+        }
+      }
+
+      if (is_2d) {
+        if (is_compound) {
+          dst16[x] = static_cast<uint16_t>(
+              RightShiftWithRounding(sum, inter_round_bits_vertical));
+        } else {
+          constexpr int single_round_offset =
+              (1 << kBitdepth8) + (1 << (kBitdepth8 - 1));
+          dst8[x] = static_cast<uint8_t>(
+              Clip3(RightShiftWithRounding(sum, kInterRoundBitsVertical) -
+                        single_round_offset,
+                    0, max_pixel_value));
+        }
+      } else if (is_compound) {
+        // Leave off + 1 << (kBitdepth8 + 3).
+        constexpr int compound_round_offset = 1 << (kBitdepth8 + 4);
+        dst16[x] = RightShiftWithRounding(sum, 3) + compound_round_offset;
+      } else {
+        // 1D non-compound.
+        dst8[x] = static_cast<uint8_t>(Clip3(
+            RightShiftWithRounding(sum, kFilterBits), 0, max_pixel_value));
+      }
+    } while (++x < 2);
+
+    src8 += src_stride;
+    src16 += src_stride;
+    dst8 += dst_stride;
+    dst16 += dst_stride;
+  } while (++y < height);
+}
+
+int NumTapsInFilter(const int filter_index) {
+  if (filter_index < 2) {
+    // Despite the names these only use 6 taps.
+    // kInterpolationFilterEightTap
+    // kInterpolationFilterEightTapSmooth
+    return 6;
+  }
+
+  if (filter_index == 2) {
+    // kInterpolationFilterEightTapSharp
+    return 8;
+  }
+
+  if (filter_index == 3) {
+    // kInterpolationFilterBilinear
+    return 2;
+  }
+
+  assert(filter_index > 3);
+  // For small sizes (width/height <= 4) the large filters are replaced with 4
+  // tap options.
+  // If the original filters were |kInterpolationFilterEightTap| or
+  // |kInterpolationFilterEightTapSharp| then it becomes
+  // |kInterpolationFilterSwitchable|.
+  // If it was |kInterpolationFilterEightTapSmooth| then it becomes an unnamed 4
+  // tap filter.
+  return 4;
 }
 
 void Convolve2D_NEON(const void* const reference,
                      const ptrdiff_t reference_stride,
                      const int horizontal_filter_index,
                      const int vertical_filter_index,
-                     const uint8_t /*inter_round_bits_vertical*/,
+                     const int /*inter_round_bits_vertical*/,
                      const int subpixel_x, const int subpixel_y,
                      const int /*step_x*/, const int /*step_y*/,
                      const int width, const int height, void* prediction,
                      const ptrdiff_t pred_stride) {
   const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
   const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
-  int horizontal_taps, horizontal_taps_start, vertical_taps,
-      vertical_taps_start;
+  const int horizontal_taps = NumTapsInFilter(horiz_filter_index);
+  const int vertical_taps = NumTapsInFilter(vert_filter_index);
 
-  if (horiz_filter_index < 2) {
-    horizontal_taps = 6;
-    horizontal_taps_start = 1;
-  } else if (horiz_filter_index == 2) {
-    horizontal_taps = 8;
-    horizontal_taps_start = 0;
-  } else if (horiz_filter_index == 3) {
-    horizontal_taps = 2;
-    horizontal_taps_start = 3;
-  } else /* if (horiz_filter_index > 3) */ {
-    horizontal_taps = 4;
-    horizontal_taps_start = 2;
-  }
-
-  if (vert_filter_index < 2) {
-    vertical_taps = 6;
-    vertical_taps_start = 1;
-  } else if (vert_filter_index == 2) {
-    vertical_taps = 8;
-    vertical_taps_start = 0;
-  } else if (vert_filter_index == 3) {
-    vertical_taps = 2;
-    vertical_taps_start = 3;
-  } else /* if (vert_filter_index > 3) */ {
-    vertical_taps = 4;
-    vertical_taps_start = 2;
-  }
-
-  // Neon processes blocks of 8x8 for context during the horizontal pass so it
-  // still does a few more than it needs.
-  const int intermediate_height = height + vertical_taps - 1;
   // The output of the horizontal filter is guaranteed to fit in 16 bits.
-  uint16_t intermediate_result[kMaxSuperBlockSizeInPixels *
-                               (kMaxSuperBlockSizeInPixels + kSubPixelTaps)];
+  uint16_t
+      intermediate_result[kMaxSuperBlockSizeInPixels *
+                          (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1)];
   const int intermediate_stride = width;
-  const int max_pixel_value = 255;
+  const int intermediate_height = height + vertical_taps - 1;
 
-  if (width > 4) {
-    // Horizontal filter.
-    const int horiz_filter_id = (subpixel_x >> 6) & kSubPixelMask;
-    const int16x8_t horiz_taps =
-        vld1q_s16(kSubPixelFilters[horiz_filter_index][horiz_filter_id]);
-
-    uint16_t* intermediate = intermediate_result;
+  if (width >= 4) {
     const ptrdiff_t src_stride = reference_stride;
-    // Offset for 8 tap horizontal filter and |vertical_taps|.
     const auto* src = static_cast<const uint8_t*>(reference) -
-                      ((vertical_taps / 2) - 1) * src_stride -
-                      kHorizontalOffset;
-    int y = 0;
-    do {
-      int x = 0;
-      do {
-        uint8x16_t temp[8];
-        uint8x8_t input[16];
-        for (int i = 0; i < 8; ++i) {
-          temp[i] = vld1q_u8(src + 0 + x + i * src_stride);
-        }
-        // TODO(johannkoenig): It should be possible to get the transpose
-        // started with vld2().
-        Transpose16x8(temp, input);
-        int16x8_t input16[16];
-        for (int i = 0; i < 16; ++i) {
-          input16[i] = ZeroExtend(input[i]);
-        }
+                      (vertical_taps / 2 - 1) * src_stride - kHorizontalOffset;
 
-        // TODO(johannkoenig): Explore moving the branch outside the main loop.
-        uint16x8_t output[8];
-        if (horizontal_taps == 8) {
-          for (int i = 0; i < 8; ++i) {
-            const uint16x8_t neon_sums =
-                SumTaps8To16<8>(input16 + i, horiz_taps);
-            output[i] = vrshrq_n_u16(neon_sums, kInterRoundBitsHorizontal);
-          }
-        } else if (horizontal_taps == 6) {
-          for (int i = 0; i < 8; ++i) {
-            const uint16x8_t neon_sums =
-                SumTaps8To16<6>(input16 + i + 1, horiz_taps);
-            output[i] = vrshrq_n_u16(neon_sums, kInterRoundBitsHorizontal);
-          }
-        } else {  // |horizontal_taps| == 2
-          for (int i = 0; i < 8; ++i) {
-            const uint16x8_t neon_sums =
-                SumTaps8To16<2>(input16 + i + 3, horiz_taps);
-            output[i] = vrshrq_n_u16(neon_sums, kInterRoundBitsHorizontal);
-          }
-        }
-
-        Transpose8x8(output);
-        for (int i = 0; i < 8; ++i) {
-          vst1q_u16(intermediate + x + i * intermediate_stride, output[i]);
-        }
-        x += 8;
-      } while (x < width);
-      src += src_stride << 3;
-      intermediate += intermediate_stride << 3;
-      y += 8;
-    } while (y < intermediate_height);
+    HorizontalPass<true>(src, src_stride, intermediate_result,
+                         intermediate_stride, width, intermediate_height,
+                         subpixel_x, horiz_filter_index);
 
     // Vertical filter.
     auto* dest = static_cast<uint8_t*>(prediction);
@@ -420,63 +952,34 @@ void Convolve2D_NEON(const void* const reference,
 
     if (vertical_taps == 8) {
       Filter2DVertical<8>(intermediate_result, intermediate_stride, dest,
-                          dest_stride, width, height, taps);
+                          dest_stride, width, height, taps, 0);
     } else if (vertical_taps == 6) {
       Filter2DVertical<6>(intermediate_result, intermediate_stride, dest,
-                          dest_stride, width, height, taps);
+                          dest_stride, width, height, taps, 0);
     } else if (vertical_taps == 4) {
       Filter2DVertical<4>(intermediate_result, intermediate_stride, dest,
-                          dest_stride, width, height, taps);
+                          dest_stride, width, height, taps, 0);
     } else {  // |vertical_taps| == 2
       Filter2DVertical<2>(intermediate_result, intermediate_stride, dest,
-                          dest_stride, width, height, taps);
+                          dest_stride, width, height, taps, 0);
     }
   } else {
+    assert(width == 2);
     // Horizontal filter.
-    // Filter types used for width <= 4 are different from those for width > 4.
-    // When width > 4, the valid filter index range is always [0, 3].
-    // When width <= 4, the valid filter index range is always [4, 5].
-    // Similarly for height.
-    uint16_t* intermediate = intermediate_result;
-    const ptrdiff_t src_stride = reference_stride;
-    const auto* src = static_cast<const uint8_t*>(reference) -
-                      ((vertical_taps / 2) - 1) * src_stride -
-                      ((horizontal_taps / 2) - 1);
+    const auto* const src = static_cast<const uint8_t*>(reference) -
+                            ((vertical_taps / 2) - 1) * reference_stride -
+                            ((horizontal_taps / 2) - 1);
+
+    HorizontalPass2xH(src, reference_stride, intermediate_result,
+                      intermediate_stride, intermediate_height,
+                      horiz_filter_index, horizontal_taps, subpixel_x);
+
+    // Vertical filter.
     auto* dest = static_cast<uint8_t*>(prediction);
     const ptrdiff_t dest_stride = pred_stride;
-    int filter_id = (subpixel_x >> 6) & kSubPixelMask;
-    for (int y = 0; y < intermediate_height; ++y) {
-      for (int x = 0; x < width; ++x) {
-        // An offset to guarantee the sum is non negative.
-        int sum = 1 << 14;
-        for (int k = 0; k < horizontal_taps; ++k) {
-          const int tap = k + horizontal_taps_start;
-          sum +=
-              kSubPixelFilters[horiz_filter_index][filter_id][tap] * src[x + k];
-        }
-        intermediate[x] = static_cast<int16_t>(RightShiftWithRounding(sum, 3));
-      }
-      src += src_stride;
-      intermediate += intermediate_stride;
-    }
-    // Vertical filter.
-    intermediate = intermediate_result;
-    filter_id = ((subpixel_y & 1023) >> 6) & kSubPixelMask;
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < width; ++x) {
-        // An offset to guarantee the sum is non negative.
-        int sum = 1 << 19;
-        for (int k = 0; k < vertical_taps; ++k) {
-          const int tap = k + vertical_taps_start;
-          sum += kSubPixelFilters[vert_filter_index][filter_id][tap] *
-                 intermediate[k * intermediate_stride + x];
-        }
-        dest[x] = static_cast<uint8_t>(
-            Clip3(RightShiftWithRounding(sum, 11) - 384, 0, max_pixel_value));
-      }
-      dest += dest_stride;
-      intermediate += intermediate_stride;
-    }
+
+    VerticalPass2xH(intermediate_result, intermediate_stride, dest, dest_stride,
+                    height, 0, vert_filter_index, vertical_taps, subpixel_y);
   }
 }
 
@@ -568,6 +1071,10 @@ inline void ConvolveHorizontalScaled_NEON(const uint8_t* src,
     int16x8_t s[(grade_x + 1) * 8];
     const uint8_t* src_x =
         &src[(p >> kScaleSubPixelBits) - ref_x + kernel_offset];
+    // TODO(petersonab,b/139707209): Fix source buffer overreads.
+    // For example, when |height| == 2 and |num_taps| == 8 then
+    // |intermediate_height| == 9. On the second pass this will load and
+    // transpose 7 rows past where |src| may end.
     Load8x8(src_x, src_stride, s);
     Transpose8x8(s);
     if (grade_x > 1) {
@@ -843,7 +1350,7 @@ inline void ConvolveKernelHorizontalSigned4Tap(
 void ConvolveCompoundScale2D_NEON(
     const void* const reference, const ptrdiff_t reference_stride,
     const int horizontal_filter_index, const int vertical_filter_index,
-    const uint8_t inter_round_bits_vertical, const int subpixel_x,
+    const int inter_round_bits_vertical, const int subpixel_x,
     const int subpixel_y, const int step_x, const int step_y, const int width,
     const int height, void* prediction, const ptrdiff_t pred_stride) {
   const int intermediate_height =
@@ -944,7 +1451,7 @@ void ConvolveHorizontal_NEON(const void* const reference,
                              const ptrdiff_t reference_stride,
                              const int horizontal_filter_index,
                              const int /*vertical_filter_index*/,
-                             const uint8_t /*inter_round_bits_vertical*/,
+                             const int /*inter_round_bits_vertical*/,
                              const int subpixel_x, const int /*subpixel_y*/,
                              const int /*step_x*/, const int /*step_y*/,
                              const int width, const int height,
@@ -953,101 +1460,10 @@ void ConvolveHorizontal_NEON(const void* const reference,
   const int filter_index = GetFilterIndex(horizontal_filter_index, width);
   // Set |src| to the outermost tap.
   const auto* src = static_cast<const uint8_t*>(reference) - kHorizontalOffset;
-  const ptrdiff_t src_stride = reference_stride;
   auto* dest = static_cast<uint8_t*>(prediction);
-  const ptrdiff_t dest_stride = pred_stride;
-  const int filter_id = (subpixel_x >> 6) & kSubPixelMask;
-  const int block_output_height = std::min(height, 8);
-  const int16x8_t four = vdupq_n_s16(4);
 
-  int16x8_t taps;
-  if (filter_index < 3) {
-    // 6 and 8 tap filters.
-    taps = vld1q_s16(kSubPixelFilters[filter_index][filter_id]);
-  } else {
-    // The 2 tap filter only uses the lower half of |taps|.
-    taps = vld1q_s16(kSubPixelFilters[filter_index][filter_id] + 2);
-  }
-
-  // TODO(johannkoenig): specialize small |height| variants so we don't
-  // overread |reference|.
-  if (width > 4 && height > 4) {
-    int y = 0;
-    do {
-      // This was intended to load and transpose 16 values before the |width|
-      // loop. At the end of the loop it would keep 8 of those values and only
-      // load and transpose 8 additional values. Unfortunately the approach did
-      // not appear to provide any benefit.
-      int x = 0;
-      do {
-        uint8x16_t temp[8];
-        uint8x8_t input[16];
-        for (int i = 0; i < 8; ++i) {
-          temp[i] = vld1q_u8(src + x + i * src_stride);
-        }
-        // TODO(johannkoenig): It should be possible to get the transpose
-        // started with vld4().
-        Transpose16x8(temp, input);
-        int16x8_t input16[16];
-        for (int i = 0; i < 16; ++i) {
-          input16[i] = ZeroExtend(input[i]);
-        }
-
-        // This does not handle |filter_index| > 3 because those 4 tap filters
-        // are only used when |width| <= 4.
-        // TODO(johannkoenig): Explore moving the branch outside the main loop.
-        uint8x8_t output[8];
-        if (filter_index == 2) {  // 8 taps.
-          for (int i = 0; i < 8; ++i) {
-            const int16x8_t neon_sums = SumTaps<8>(input16 + i, taps);
-            output[i] =
-                vqrshrun_n_s16(vqaddq_s16(neon_sums, four), kFilterBits);
-          }
-        } else if (filter_index < 2) {  // 6 taps.
-          for (int i = 0; i < 8; ++i) {
-            const int16x8_t neon_sums = SumTaps<6>(input16 + i + 1, taps);
-            output[i] =
-                vqrshrun_n_s16(vqaddq_s16(neon_sums, four), kFilterBits);
-          }
-        } else {  // |filter_index| == 3. 2 taps.
-          for (int i = 0; i < 8; ++i) {
-            const int16x8_t neon_sums = SumTaps<2>(input16 + i + 3, taps);
-            output[i] =
-                vqrshrun_n_s16(vqaddq_s16(neon_sums, four), kFilterBits);
-          }
-        }
-
-        Transpose8x8(output);
-
-        int i = 0;
-        do {
-          vst1_u8(dest + x + i * dest_stride, output[i]);
-        } while (++i < block_output_height);
-        x += 8;
-      } while (x < width);
-      y += 8;
-      src += 8 * src_stride;
-      dest += 8 * dest_stride;
-    } while (y < height);
-  } else {
-    // TODO(johannkoenig): Investigate 2xH and 4xH. During the original
-    // implementation 4x2 was slower than C, 4x4 reached parity, and 4x8
-    // was < 20% faster.
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < width; ++x) {
-        int sum = 0;
-        for (int k = 0; k < kSubPixelTaps; ++k) {
-          sum += kSubPixelFilters[filter_index][filter_id][k] * src[x + k];
-        }
-        // We can combine the shifts if we compensate for the skipped rounding.
-        // ((sum + 4 >> 3) + 8) >> 4 == (sum + 64 + 4) >> 7;
-        dest[x] = static_cast<uint8_t>(
-            Clip3(RightShiftWithRounding(sum + 4, kFilterBits), 0, 255));
-      }
-      src += src_stride;
-      dest += dest_stride;
-    }
-  }
+  HorizontalPass<false, true>(src, reference_stride, dest, pred_stride, width,
+                              height, subpixel_x, filter_index);
 }
 
 template <int min_width, int num_taps>
@@ -1123,7 +1539,7 @@ void ConvolveVertical_NEON(const void* const reference,
                            const ptrdiff_t reference_stride,
                            const int /*horizontal_filter_index*/,
                            const int vertical_filter_index,
-                           const uint8_t /*inter_round_bits_vertical*/,
+                           const int /*inter_round_bits_vertical*/,
                            const int /*subpixel_x*/, const int subpixel_y,
                            const int /*step_x*/, const int /*step_y*/,
                            const int width, const int height, void* prediction,
@@ -1201,31 +1617,19 @@ void ConvolveVertical_NEON(const void* const reference,
       }
     }
   } else {
-    // TODO(johannkoenig): Determine if it is worth writing a 2xH
-    // implementation.
     assert(width == 2);
-    const int max_pixel_value = 255;
-    int y = 0;
-    do {
-      for (int x = 0; x < 2; ++x) {
-        int sum = 0;
-        for (int k = 0; k < kSubPixelTaps; ++k) {
-          sum += kSubPixelFilters[filter_index][filter_id][k] *
-                 src[k * src_stride + x];
-        }
-        dest[x] = static_cast<uint8_t>(Clip3(
-            RightShiftWithRounding(sum, kFilterBits), 0, max_pixel_value));
-      }
-      src += src_stride;
-      dest += pred_stride;
-    } while (++y < height);
+    const int taps = NumTapsInFilter(filter_index);
+    src =
+        static_cast<const uint8_t*>(reference) - ((taps / 2) - 1) * src_stride;
+    VerticalPass2xH</*is_2d=*/false>(src, src_stride, dest, pred_stride, height,
+                                     0, filter_index, taps, subpixel_y);
   }
 }
 
 void ConvolveCompoundCopy_NEON(
     const void* const reference, const ptrdiff_t reference_stride,
     const int /*horizontal_filter_index*/, const int /*vertical_filter_index*/,
-    const uint8_t /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
+    const int /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
     const int /*subpixel_y*/, const int /*step_x*/, const int /*step_y*/,
     const int width, const int height, void* prediction,
     const ptrdiff_t pred_stride) {
@@ -1339,9 +1743,10 @@ void FilterCompoundVertical(const uint8_t* src, const ptrdiff_t src_stride,
       // the end. Instead we use that to compensate for the initial offset.
       // (1 << (bitdepth + 4)) + (1 << (bitdepth + 3)) == (1 << 12) + (1 << 11)
       // After taking into account the shift above:
-      // RightShiftWithRounding(LeftShift(sum, bits_shift), inter_round_bits[1])
-      // where bits_shift == kFilterBits - inter_round_bits[0] == 4
-      // and inter_round_bits[1] == 7
+      // RightShiftWithRounding(LeftShift(sum, bits_shift),
+      //                        inter_round_bits_vertical)
+      // where bits_shift == kFilterBits - kInterRoundBitsHorizontal == 4
+      // and inter_round_bits_vertical == 7
       // and simplifying it to RightShiftWithRounding(sum, 3)
       // we see that the initial offset of 1 << 14 >> 3 == 1 << 11 and
       // |compound_round_offset| can be simplified to 1 << 12.
@@ -1374,7 +1779,7 @@ void FilterCompoundVertical(const uint8_t* src, const ptrdiff_t src_stride,
 void ConvolveCompoundVertical_NEON(
     const void* const reference, const ptrdiff_t reference_stride,
     const int /*horizontal_filter_index*/, const int vertical_filter_index,
-    const uint8_t /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
+    const int /*inter_round_bits_vertical*/, const int /*subpixel_x*/,
     const int subpixel_y, const int /*step_x*/, const int /*step_y*/,
     const int width, const int height, void* prediction,
     const ptrdiff_t pred_stride) {
@@ -1384,7 +1789,6 @@ void ConvolveCompoundVertical_NEON(
       static_cast<const uint8_t*>(reference) - kVerticalOffset * src_stride;
   auto* dest = static_cast<uint16_t*>(prediction);
   const int filter_id = (subpixel_y >> 6) & kSubPixelMask;
-  const int compound_round_offset = 1 << 12;  // Leave off + 1 << 11.
 
   if (width >= 4) {
     const int16x8_t taps = vld1q_s16(kSubPixelFilters[filter_index][filter_id]);
@@ -1424,236 +1828,108 @@ void ConvolveCompoundVertical_NEON(
     }
   } else {
     assert(width == 2);
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < 2; ++x) {
-        // Use an offset to avoid 32 bits.
-        int sum = 1 << 14;
-        for (int k = 0; k < kSubPixelTaps; ++k) {
-          sum += kSubPixelFilters[filter_index][filter_id][k] *
-                 src[k * src_stride + x];
-        }
-        // |compound_round_offset| has been modified to take into account the
-        // offset used above. The 1 << 11 term cancels out with 1 << 14 >> 3.
-        dest[x] = RightShiftWithRounding(sum, 3) + compound_round_offset;
-      }
-      src += src_stride;
-      dest += pred_stride;
-    }
-  }
-}
-
-template <int num_taps, int filter_index, bool negative_outside_taps = true>
-uint16x8_t SumCompoundHorizontalTaps(const uint8_t* const src,
-                                     uint8x8_t* v_tap) {
-  // Start with an offset to guarantee the sum is non negative.
-  uint16x8_t v_sum = vdupq_n_u16(1 << 14);
-  uint8x16_t v_src[8];
-  v_src[0] = vld1q_u8(&src[0]);
-  if (num_taps == 8) {
-    v_src[1] = vextq_u8(v_src[0], v_src[0], 1);
-    v_src[2] = vextq_u8(v_src[0], v_src[0], 2);
-    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
-    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
-    v_src[5] = vextq_u8(v_src[0], v_src[0], 5);
-    v_src[6] = vextq_u8(v_src[0], v_src[0], 6);
-    v_src[7] = vextq_u8(v_src[0], v_src[0], 7);
-
-    // tap signs : - + - + + - + -
-    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[0]), v_tap[0]);
-    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
-    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
-    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
-    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
-    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
-    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
-    v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[7]), v_tap[7]);
-  } else if (num_taps == 6) {
-    v_src[1] = vextq_u8(v_src[0], v_src[0], 1);
-    v_src[2] = vextq_u8(v_src[0], v_src[0], 2);
-    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
-    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
-    v_src[5] = vextq_u8(v_src[0], v_src[0], 5);
-    v_src[6] = vextq_u8(v_src[0], v_src[0], 6);
-    if (filter_index == 0) {
-      // tap signs : + - + + - +
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
-      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
-      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
-    } else {
-      if (negative_outside_taps) {
-        // tap signs : - + + + + -
-        v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
-        v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
-      } else {
-        // tap signs : + + + + + +
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[1]), v_tap[1]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
-        v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[6]), v_tap[6]);
-      }
-    }
-  } else if (num_taps == 4) {
-    v_src[2] = vextq_u8(v_src[0], v_src[0], 2);
-    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
-    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
-    v_src[5] = vextq_u8(v_src[0], v_src[0], 5);
-    if (filter_index == 4) {
-      // tap signs : - + + -
-      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
-      v_sum = vmlsl_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
-    } else {
-      // tap signs : + + + +
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[2]), v_tap[2]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
-      v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[5]), v_tap[5]);
-    }
-  } else {
-    assert(num_taps == 2);
-    v_src[3] = vextq_u8(v_src[0], v_src[0], 3);
-    v_src[4] = vextq_u8(v_src[0], v_src[0], 4);
-    // tap signs : + +
-    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[3]), v_tap[3]);
-    v_sum = vmlal_u8(v_sum, vget_low_u8(v_src[4]), v_tap[4]);
-  }
-
-  return v_sum;
-}
-
-template <int num_taps, int step, int filter_index,
-          bool negative_outside_taps = true>
-void ConvolveCompoundHorizontalBlock(const uint8_t* src, ptrdiff_t src_stride,
-                                     uint16_t* dest, ptrdiff_t pred_stride,
-                                     const int width, const int height,
-                                     uint8x8_t* v_tap,
-                                     int16x8_t v_inter_round_bits_0,
-                                     int16x8_t v_bits_shift,
-                                     uint16x8_t v_compound_round_offset) {
-  if (width > 4) {
-    int y = 0;
-    do {
-      int x = 0;
-      do {
-        uint16x8_t v_sum =
-            SumCompoundHorizontalTaps<num_taps, filter_index,
-                                      negative_outside_taps>(&src[x], v_tap);
-        v_sum = vrshlq_u16(v_sum, v_inter_round_bits_0);
-        v_sum = vshlq_u16(v_sum, v_bits_shift);
-        v_sum = vaddq_u16(v_sum, v_compound_round_offset);
-        vst1q_u16(&dest[x], v_sum);
-        x += step;
-      } while (x < width);
-      src += src_stride;
-      dest += pred_stride;
-    } while (++y < height);
-  } else {
-    int y = 0;
-    do {
-      uint16x8_t v_sum =
-          SumCompoundHorizontalTaps<num_taps, filter_index,
-                                    negative_outside_taps>(&src[0], v_tap);
-      v_sum = vrshlq_u16(v_sum, v_inter_round_bits_0);
-      v_sum = vshlq_u16(v_sum, v_bits_shift);
-      v_sum = vaddq_u16(v_sum, v_compound_round_offset);
-      vst1_u16(&dest[0], vget_low_u16(v_sum));
-      src += src_stride;
-      dest += pred_stride;
-    } while (++y < height);
+    const int taps = NumTapsInFilter(filter_index);
+    src =
+        static_cast<const uint8_t*>(reference) - ((taps / 2) - 1) * src_stride;
+    VerticalPass2xH</*is_2d=*/false, /*is_compound=*/true>(
+        src, src_stride, dest, pred_stride, height, 0, filter_index, taps,
+        subpixel_y);
   }
 }
 
 void ConvolveCompoundHorizontal_NEON(
     const void* const reference, const ptrdiff_t reference_stride,
     const int horizontal_filter_index, const int /*vertical_filter_index*/,
-    const uint8_t inter_round_bits_vertical, const int subpixel_x,
+    const int /*inter_round_bits_vertical*/, const int subpixel_x,
     const int /*subpixel_y*/, const int /*step_x*/, const int /*step_y*/,
     const int width, const int height, void* prediction,
     const ptrdiff_t pred_stride) {
   const int filter_index = GetFilterIndex(horizontal_filter_index, width);
   const auto* src = static_cast<const uint8_t*>(reference) - kHorizontalOffset;
-  const ptrdiff_t src_stride = reference_stride;
   auto* dest = static_cast<uint16_t*>(prediction);
-  const int filter_id = (subpixel_x >> 6) & kSubPixelMask;
-  const int bits_shift = kFilterBits - inter_round_bits_vertical;
 
-  const int compound_round_offset =
-      (1 << (kBitdepth8 + 4)) + (1 << (kBitdepth8 + 3));
+  HorizontalPass(src, reference_stride, dest, pred_stride, width, height,
+                 subpixel_x, filter_index);
+}
+
+void ConvolveCompound2D_NEON(const void* const reference,
+                             const ptrdiff_t reference_stride,
+                             const int horizontal_filter_index,
+                             const int vertical_filter_index,
+                             const int inter_round_bits_vertical,
+                             const int subpixel_x, const int subpixel_y,
+                             const int /*step_x*/, const int /*step_y*/,
+                             const int width, const int height,
+                             void* prediction, const ptrdiff_t pred_stride) {
+  // The output of the horizontal filter, i.e. the intermediate_result, is
+  // guaranteed to fit in int16_t.
+  uint16_t
+      intermediate_result[kMaxSuperBlockSizeInPixels *
+                          (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1)];
+  const int intermediate_stride = kMaxSuperBlockSizeInPixels;
+
+  // Horizontal filter.
+  // Filter types used for width <= 4 are different from those for width > 4.
+  // When width > 4, the valid filter index range is always [0, 3].
+  // When width <= 4, the valid filter index range is always [4, 5].
+  // Similarly for height.
+  const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
+  const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
+  const int horizontal_taps = NumTapsInFilter(horiz_filter_index);
+  const int vertical_taps = NumTapsInFilter(vert_filter_index);
+  uint16_t* intermediate = intermediate_result;
+  const int intermediate_height = height + vertical_taps - 1;
+  const ptrdiff_t src_stride = reference_stride;
+  const auto* src = static_cast<const uint8_t*>(reference) -
+                    kVerticalOffset * src_stride - kHorizontalOffset;
+  auto* dest = static_cast<uint16_t*>(prediction);
+  int filter_id = (subpixel_x >> 6) & kSubPixelMask;
 
   if (width >= 4) {
-    // Duplicate the absolute value for each tap.  Negative taps are corrected
-    // by using the vmlsl_u8 instruction.  Positive taps use vmlal_u8.
-    uint8x8_t v_tap[kSubPixelTaps];
-    for (int k = 0; k < kSubPixelTaps; ++k) {
-      v_tap[k] = vreinterpret_u8_s8(
-          vabs_s8(vdup_n_s8(kSubPixelFilters[filter_index][filter_id][k])));
-    }
+    // TODO(johannkoenig): Use |width| for |intermediate_stride|.
+    src = static_cast<const uint8_t*>(reference) -
+          (vertical_taps / 2 - 1) * src_stride - kHorizontalOffset;
+    HorizontalPass<true>(src, src_stride, intermediate_result,
+                         intermediate_stride, width, intermediate_height,
+                         subpixel_x, horiz_filter_index);
 
-    const int16x8_t v_inter_round_bits_0 =
-        vdupq_n_s16(-kInterRoundBitsHorizontal);
-    const int16x8_t v_bits_shift = vdupq_n_s16(bits_shift);
+    // Vertical filter.
+    intermediate = intermediate_result;
+    filter_id = ((subpixel_y & 1023) >> 6) & kSubPixelMask;
 
-    const uint16x8_t v_compound_round_offset =
-        vdupq_n_u16(compound_round_offset - (1 << (kBitdepth8 + 3)));
+    const ptrdiff_t dest_stride = pred_stride;
+    const int16x8_t taps =
+        vld1q_s16(kSubPixelFilters[vert_filter_index][filter_id]);
 
-    if (filter_index == 2) {  // 8 tap.
-      ConvolveCompoundHorizontalBlock<8, 8, 2>(
-          src, src_stride, dest, pred_stride, width, height, v_tap,
-          v_inter_round_bits_0, v_bits_shift, v_compound_round_offset);
-    } else if (filter_index == 1) {  // 6 tap.
-      // Check if outside taps are positive.
-      if ((filter_id == 1) | (filter_id == 15)) {
-        ConvolveCompoundHorizontalBlock<6, 8, 1, false>(
-            src, src_stride, dest, pred_stride, width, height, v_tap,
-            v_inter_round_bits_0, v_bits_shift, v_compound_round_offset);
-      } else {
-        ConvolveCompoundHorizontalBlock<6, 8, 1>(
-            src, src_stride, dest, pred_stride, width, height, v_tap,
-            v_inter_round_bits_0, v_bits_shift, v_compound_round_offset);
-      }
-    } else if (filter_index == 0) {  // 6 tap.
-      ConvolveCompoundHorizontalBlock<6, 8, 0>(
-          src, src_stride, dest, pred_stride, width, height, v_tap,
-          v_inter_round_bits_0, v_bits_shift, v_compound_round_offset);
-    } else if (filter_index == 4) {  // 4 tap.
-      ConvolveCompoundHorizontalBlock<4, 8, 4>(
-          src, src_stride, dest, pred_stride, width, height, v_tap,
-          v_inter_round_bits_0, v_bits_shift, v_compound_round_offset);
-    } else if (filter_index == 5) {  // 4 tap.
-      ConvolveCompoundHorizontalBlock<4, 8, 5>(
-          src, src_stride, dest, pred_stride, width, height, v_tap,
-          v_inter_round_bits_0, v_bits_shift, v_compound_round_offset);
-    } else {  // 2 tap.
-      ConvolveCompoundHorizontalBlock<2, 8, 3>(
-          src, src_stride, dest, pred_stride, width, height, v_tap,
-          v_inter_round_bits_0, v_bits_shift, v_compound_round_offset);
+    if (vertical_taps == 8) {
+      Filter2DVertical<8, /*is_compound=*/true>(
+          intermediate, intermediate_stride, dest, dest_stride, width, height,
+          taps, inter_round_bits_vertical);
+    } else if (vertical_taps == 6) {
+      Filter2DVertical<6, /*is_compound=*/true>(
+          intermediate, intermediate_stride, dest, dest_stride, width, height,
+          taps, inter_round_bits_vertical);
+    } else if (vertical_taps == 4) {
+      Filter2DVertical<4, /*is_compound=*/true>(
+          intermediate, intermediate_stride, dest, dest_stride, width, height,
+          taps, inter_round_bits_vertical);
+    } else {  // |vertical_taps| == 2
+      Filter2DVertical<2, /*is_compound=*/true>(
+          intermediate, intermediate_stride, dest, dest_stride, width, height,
+          taps, inter_round_bits_vertical);
     }
   } else {
-    // 2xH
-    int y = 0;
-    do {
-      for (int x = 0; x < 2; ++x) {
-        int sum = 0;
-        for (int k = 0; k < kSubPixelTaps; ++k) {
-          sum += kSubPixelFilters[filter_index][filter_id][k] * src[x + k];
-        }
-        sum = RightShiftWithRounding(sum, kInterRoundBitsHorizontal)
-              << bits_shift;
-        dest[x] = sum + compound_round_offset;
-      }
-      src += src_stride;
-      dest += pred_stride;
-    } while (++y < height);
+    src = static_cast<const uint8_t*>(reference) -
+          ((vertical_taps / 2) - 1) * src_stride - ((horizontal_taps / 2) - 1);
+
+    HorizontalPass2xH(src, src_stride, intermediate_result, intermediate_stride,
+                      intermediate_height, horiz_filter_index, horizontal_taps,
+                      subpixel_x);
+
+    VerticalPass2xH</*is_2d=*/true, /*is_compound=*/true>(
+        intermediate_result, intermediate_stride, dest, pred_stride, height,
+        inter_round_bits_vertical, vert_filter_index, vertical_taps,
+        subpixel_y);
   }
 }
 
@@ -1662,14 +1938,14 @@ void Init8bpp() {
   assert(dsp != nullptr);
   dsp->convolve[0][0][0][1] = ConvolveHorizontal_NEON;
   dsp->convolve[0][0][1][0] = ConvolveVertical_NEON;
-  // TODO(b/139707209): reenable after segfault on android is fixed.
-  // dsp->convolve[0][0][1][1] = Convolve2D_NEON;
-  static_cast<void>(Convolve2D_NEON);
+  dsp->convolve[0][0][1][1] = Convolve2D_NEON;
 
   dsp->convolve[0][1][0][0] = ConvolveCompoundCopy_NEON;
   dsp->convolve[0][1][0][1] = ConvolveCompoundHorizontal_NEON;
   dsp->convolve[0][1][1][0] = ConvolveCompoundVertical_NEON;
+  dsp->convolve[0][1][1][1] = ConvolveCompound2D_NEON;
 
+  // TODO(petersonab,b/139707209): Fix source buffer overreads.
   // dsp->convolve_scale[1] = ConvolveCompoundScale2D_NEON;
   static_cast<void>(ConvolveCompoundScale2D_NEON);
 }

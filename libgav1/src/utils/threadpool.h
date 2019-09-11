@@ -109,8 +109,8 @@ class ThreadPool : public Executor, public Allocable {
 
 #else  // !LIBGAV1_THREADPOOL_USE_STD_MUTEX
 
-  void LockMutex() EXCLUSIVE_LOCK_FUNCTION() { queue_mutex_.Lock(); }
-  void UnlockMutex() UNLOCK_FUNCTION() { queue_mutex_.Unlock(); }
+  void LockMutex() ABSL_EXCLUSIVE_LOCK_FUNCTION() { queue_mutex_.Lock(); }
+  void UnlockMutex() ABSL_UNLOCK_FUNCTION() { queue_mutex_.Unlock(); }
   void Wait() { condition_.Wait(&queue_mutex_); }
   void SignalOne() { condition_.Signal(); }
   void SignalAll() { condition_.SignalAll(); }
