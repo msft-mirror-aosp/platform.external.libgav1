@@ -16,8 +16,8 @@ void LoopRestorationInit_NEON();
 
 #if LIBGAV1_ENABLE_NEON
 
-#define LIBGAV1_Dsp8bpp_SelfGuidedFilter LIBGAV1_DSP_NEON
 #define LIBGAV1_Dsp8bpp_WienerFilter LIBGAV1_DSP_NEON
+#define LIBGAV1_Dsp8bpp_SelfGuidedFilter LIBGAV1_DSP_NEON
 
 #endif  // LIBGAV1_ENABLE_NEON
 

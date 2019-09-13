@@ -40,6 +40,7 @@ cc_library_static {
         "libgav1/src/buffer_pool.cc",
         "libgav1/src/decoder.cc",
         "libgav1/src/decoder_impl.cc",
+        "libgav1/src/decoder_scratch_buffer.cc",
         "libgav1/src/dsp/arm/average_blend_neon.cc",
         "libgav1/src/dsp/arm/convolve_neon.cc",
         "libgav1/src/dsp/arm/distance_weighted_blend_neon.cc",

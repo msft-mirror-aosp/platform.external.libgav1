@@ -30,16 +30,7 @@ class DaalaBitReader : public BitReader {
   // on |symbol_count|. ReadSymbol calls for which the |symbol_count| is known
   // at compile time will use this variant.
   template <int symbol_count>
-  int ReadSymbol(uint16_t* const cdf) {
-    static_assert(symbol_count >= 3 && symbol_count <= 16, "");
-    const int symbol = (symbol_count <= 13)
-                           ? ReadSymbolImpl(cdf, symbol_count)
-                           : ReadSymbolImplBinarySearch(cdf, symbol_count);
-    if (allow_update_cdf_) {
-      UpdateCdf(cdf, symbol_count, symbol);
-    }
-    return symbol;
-  }
+  int ReadSymbol(uint16_t* cdf);
 
  private:
   using WindowSize = uint32_t;
@@ -66,7 +57,6 @@ class DaalaBitReader : public BitReader {
   // Normalizes the range so that 32768 <= |values_in_range_| < 65536. Also
   // calls PopulateBits() if necessary.
   void NormalizeRange();
-  void UpdateCdf(uint16_t* cdf, int symbol_count, int symbol);
 
   const uint8_t* data_;
   const size_t size_;

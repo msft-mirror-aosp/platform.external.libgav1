@@ -10,6 +10,7 @@
 #include "src/dsp/dsp.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
+#include "src/utils/memory.h"
 
 namespace libgav1 {
 namespace dsp {
@@ -22,7 +23,7 @@ template <int bitdepth, typename Pixel>
 void Warp_C(const void* const source, ptrdiff_t source_stride,
             const int source_width, const int source_height,
             const int* const warp_params, const int subsampling_x,
-            const int subsampling_y, const uint8_t inter_round_bits_vertical,
+            const int subsampling_y, const int inter_round_bits_vertical,
             const int block_start_x, const int block_start_y,
             const int block_width, const int block_height, const int16_t alpha,
             const int16_t beta, const int16_t gamma, const int16_t delta,
@@ -69,6 +70,31 @@ void Warp_C(const void* const source, ptrdiff_t source_stride,
         // filtering.
         const int row = Clip3(iy4 + y, 0, source_height - 1);
         const Pixel* const src_row = src + row * source_stride;
+        // Check for two simple special cases.
+        if (ix4 - 7 >= source_width - 1) {
+          // Every sample is equal to src_row[source_width - 1]. Since the sum
+          // of the warped filter coefficients is 128 (= 2^7), the filtering is
+          // equivalent to multiplying src_row[source_width - 1] by 128.
+          const int s =
+              (horizontal_offset >> kInterRoundBitsHorizontal) +
+              (src_row[source_width - 1] << (7 - kInterRoundBitsHorizontal));
+          Memset(intermediate_result[y + 7], s, 8);
+          sx4 += beta;
+          continue;
+        }
+        if (ix4 + 7 <= 0) {
+          // Every sample is equal to src_row[0]. Since the sum of the warped
+          // filter coefficients is 128 (= 2^7), the filtering is equivalent to
+          // multiplying src_row[0] by 128.
+          const int s = (horizontal_offset >> kInterRoundBitsHorizontal) +
+                        (src_row[0] << (7 - kInterRoundBitsHorizontal));
+          Memset(intermediate_result[y + 7], s, 8);
+          sx4 += beta;
+          continue;
+        }
+        // At this point, we know ix4 - 7 < source_width - 1 and ix4 + 7 > 0.
+        // It follows that -6 <= ix4 <= source_width + 5. This inequality is
+        // used below.
         int sx = sx4 - MultiplyBy4(alpha);
         for (int x = -4; x < 4; ++x) {
           const int offset =
@@ -87,7 +113,15 @@ void Warp_C(const void* const source, ptrdiff_t source_stride,
           // uint16_t.
           // For 10/12 bit, the range of sum is within 32 bits.
           for (int k = 0; k < 8; ++k) {
-            const int column = Clip3(ix4 + x + k - 3, 0, source_width - 1);
+            // We assume the source frame has left and right borders of at
+            // least 13 pixels that extend the frame boundary pixels.
+            //
+            // Since -4 <= x <= 3 and 0 <= k <= 7, using the inequality on ix4
+            // above, we have -13 <= ix4 + x + k - 3 <= source_width + 12, or
+            // -13 <= column <= (source_width - 1) + 13. Therefore we may
+            // over-read up to 13 pixels before the source row, or up to 13
+            // pixels after the source row.
+            const int column = ix4 + x + k - 3;
             sum += kWarpedFilters[offset][k] * src_row[column];
           }
           assert(sum >= 0 && sum < (horizontal_offset << 2));

@@ -2,11 +2,12 @@
 #define LIBGAV1_SRC_UTILS_STACK_H_
 
 #include <cassert>
+#include <utility>
 
 namespace libgav1 {
 
-// A LIFO stack of a fixed capacity. The elements are copied, so the element
-// type T should be small.
+// A LIFO stack of a fixed capacity. The elements are moved using std::move, so
+// the element type T has to be movable.
 //
 // WARNING: No error checking is performed.
 template <typename T, int capacity>
@@ -17,14 +18,14 @@ class Stack {
   void Push(T value) {
     ++top_;
     assert(top_ < capacity);
-    elements_[top_] = value;
+    elements_[top_] = std::move(value);
   }
 
   // Returns the element at the top of the stack and removes it from the stack.
   // It is an error to call Pop() when the stack is empty.
   T Pop() {
     assert(top_ >= 0);
-    return elements_[top_--];
+    return std::move(elements_[top_--]);
   }
 
   // Returns true if the stack is empty.

@@ -383,15 +383,16 @@ template <int bitdepth>
 void FilmGrain<bitdepth>::ApplyAutoRegressiveFilterToLumaGrain(
     const FilmGrainParams& params, int grain_min, int grain_max,
     GrainType* luma_grain) {
+  assert(params.auto_regression_coeff_lag <= 3);
   const int shift = params.auto_regression_shift;
   for (int y = 3; y < kLumaHeight; ++y) {
     for (int x = 3; x < kLumaWidth - 3; ++x) {
       int sum = 0;
       int pos = 0;
-      for (int delta_row = -params.auto_regression_coeff_lag; delta_row <= 0;
-           ++delta_row) {
-        for (int delta_column = -params.auto_regression_coeff_lag;
-             delta_column <= params.auto_regression_coeff_lag; ++delta_column) {
+      int delta_row = -params.auto_regression_coeff_lag;
+      do {
+        int delta_column = -params.auto_regression_coeff_lag;
+        do {
           if (delta_row == 0 && delta_column == 0) {
             break;
           }
@@ -399,8 +400,8 @@ void FilmGrain<bitdepth>::ApplyAutoRegressiveFilterToLumaGrain(
           sum += luma_grain[(y + delta_row) * kLumaWidth + (x + delta_column)] *
                  coeff;
           ++pos;
-        }
-      }
+        } while (++delta_column <= params.auto_regression_coeff_lag);
+      } while (++delta_row <= 0);
       luma_grain[y * kLumaWidth + x] = Clip3(
           luma_grain[y * kLumaWidth + x] + RightShiftWithRounding(sum, shift),
           grain_min, grain_max);
@@ -420,26 +421,34 @@ void FilmGrain<bitdepth>::GenerateChromaGrains(const FilmGrainParams& params,
   } else {
     uint16_t seed = params.grain_seed ^ 0xb524;
     GrainType* u_grain_row = u_grain;
-    for (int y = 0; y < chroma_height; ++y) {
-      for (int x = 0; x < chroma_width; ++x) {
+    assert(chroma_width > 0);
+    assert(chroma_height > 0);
+    int y = 0;
+    do {
+      int x = 0;
+      do {
         u_grain_row[x] = RightShiftWithRounding(
             kGaussianSequence[GetRandomNumber(11, &seed)], shift);
-      }
+      } while (++x < chroma_width);
+
       u_grain_row += chroma_width;
-    }
+    } while (++y < chroma_height);
   }
   if (params.num_v_points == 0 && !params.chroma_scaling_from_luma) {
     memset(v_grain, 0, chroma_height * chroma_width * sizeof(*v_grain));
   } else {
     GrainType* v_grain_row = v_grain;
     uint16_t seed = params.grain_seed ^ 0x49d8;
-    for (int y = 0; y < chroma_height; ++y) {
-      for (int x = 0; x < chroma_width; ++x) {
+    int y = 0;
+    do {
+      int x = 0;
+      do {
         v_grain_row[x] = RightShiftWithRounding(
             kGaussianSequence[GetRandomNumber(11, &seed)], shift);
-      }
+      } while (++x < chroma_width);
+
       v_grain_row += chroma_width;
-    }
+    } while (++y < chroma_height);
   }
 }
 
@@ -449,16 +458,17 @@ void FilmGrain<bitdepth>::ApplyAutoRegressiveFilterToChromaGrains(
     const GrainType* luma_grain, int subsampling_x, int subsampling_y,
     int chroma_width, int chroma_height, GrainType* u_grain,
     GrainType* v_grain) {
+  assert(params.auto_regression_coeff_lag <= 3);
   const int shift = params.auto_regression_shift;
   for (int y = 3; y < chroma_height; ++y) {
     for (int x = 3; x < chroma_width - 3; ++x) {
       int sum_u = 0;
       int sum_v = 0;
       int pos = 0;
-      for (int delta_row = -params.auto_regression_coeff_lag; delta_row <= 0;
-           ++delta_row) {
-        for (int delta_column = -params.auto_regression_coeff_lag;
-             delta_column <= params.auto_regression_coeff_lag; ++delta_column) {
+      int delta_row = -params.auto_regression_coeff_lag;
+      do {
+        int delta_column = -params.auto_regression_coeff_lag;
+        do {
           const int coeff_u = params.auto_regression_coeff_u[pos];
           const int coeff_v = params.auto_regression_coeff_v[pos];
           if (delta_row == 0 && delta_column == 0) {
@@ -466,11 +476,13 @@ void FilmGrain<bitdepth>::ApplyAutoRegressiveFilterToChromaGrains(
               int luma = 0;
               const int luma_x = ((x - 3) << subsampling_x) + 3;
               const int luma_y = ((y - 3) << subsampling_y) + 3;
-              for (int i = 0; i <= subsampling_y; ++i) {
-                for (int j = 0; j <= subsampling_x; ++j) {
+              int i = 0;
+              do {
+                int j = 0;
+                do {
                   luma += luma_grain[(luma_y + i) * kLumaWidth + (luma_x + j)];
-                }
-              }
+                } while (++j <= subsampling_x);
+              } while (++i <= subsampling_y);
               luma =
                   RightShiftWithRounding(luma, subsampling_x + subsampling_y);
               sum_u += luma * coeff_u;
@@ -485,8 +497,8 @@ void FilmGrain<bitdepth>::ApplyAutoRegressiveFilterToChromaGrains(
               v_grain[(y + delta_row) * chroma_width + (x + delta_column)] *
               coeff_v;
           ++pos;
-        }
-      }
+        } while (++delta_column <= params.auto_regression_coeff_lag);
+      } while (++delta_row <= 0);
       u_grain[y * chroma_width + x] = Clip3(
           u_grain[y * chroma_width + x] + RightShiftWithRounding(sum_u, shift),
           grain_min, grain_max);
@@ -556,7 +568,9 @@ bool FilmGrain<bitdepth>::AllocateNoiseStripes() {
   if (noise_buffer_ == nullptr) return false;
   GrainType* noise_block = noise_buffer_.get();
   int luma_num = 0;
-  for (int y = 0; y < half_height; y += 16) {
+  assert(half_height > 0);
+  int y = 0;
+  do {
     noise_stripe_[luma_num][kPlaneY] = noise_block;
     noise_block += 34 * width_;
     if (!is_monochrome_) {
@@ -568,7 +582,8 @@ bool FilmGrain<bitdepth>::AllocateNoiseStripes() {
                      RightShiftWithRounding(width_, subsampling_x_);
     }
     ++luma_num;
-  }
+    y += 16;
+  } while (y < half_height);
   assert(noise_block == noise_buffer_.get() + noise_buffer_size);
   return true;
 }
@@ -579,11 +594,15 @@ void FilmGrain<bitdepth>::ConstructNoiseStripes() {
   const int half_width = DivideBy2(width_ + 1);
   const int half_height = DivideBy2(height_ + 1);
   int luma_num = 0;
-  for (int y = 0; y < half_height; y += 16) {
+  assert(half_width > 0);
+  assert(half_height > 0);
+  int y = 0;
+  do {
     uint16_t seed = params_.grain_seed;
     seed ^= ((luma_num * 37 + 178) & 255) << 8;
     seed ^= ((luma_num * 173 + 105) & 255);
-    for (int x = 0; x < half_width; x += 16) {
+    int x = 0;
+    do {
       const int rand = GetRandomNumber(8, &seed);
       const int offset_x = rand >> 4;
       const int offset_y = rand & 15;
@@ -596,8 +615,10 @@ void FilmGrain<bitdepth>::ConstructNoiseStripes() {
             (plane_sub_y != 0) ? 6 + offset_y : 9 + offset_y * 2;
         GrainType* const noise_block = noise_stripe_[luma_num][plane];
         const int noise_block_width = (width_ + plane_sub_x) >> plane_sub_x;
-        for (int i = 0; i < (34 >> plane_sub_y); ++i) {
-          for (int j = 0; j < (34 >> plane_sub_x); ++j) {
+        int i = 0;
+        do {
+          int j = 0;
+          do {
             int grain;
             if (plane == kPlaneY) {
               grain = luma_grain_[(plane_offset_y + i) * kLumaWidth +
@@ -644,12 +665,15 @@ void FilmGrain<bitdepth>::ConstructNoiseStripes() {
               }
               noise_block[i * noise_block_width + (x + j)] = grain;
             }
-          }
-        }
+          } while (++j < (34 >> plane_sub_x));
+        } while (++i < (34 >> plane_sub_y));
       }
-    }
+      x += 16;
+    } while (x < half_width);
+
     ++luma_num;
-  }
+    y += 16;
+  } while (y < half_height);
 }
 
 template <int bitdepth>
@@ -682,10 +706,12 @@ void FilmGrain<bitdepth>::ConstructNoiseImage() {
     const int plane_sub_x = (plane > kPlaneY) ? subsampling_x_ : 0;
     const int plane_sub_y = (plane > kPlaneY) ? subsampling_y_ : 0;
     const int noise_block_width = (width_ + plane_sub_x) >> plane_sub_x;
-    for (int y = 0; y < ((height_ + plane_sub_y) >> plane_sub_y); ++y) {
+    int y = 0;
+    do {
       const int luma_num = y >> (5 - plane_sub_y);
       const int i = y - (luma_num << (5 - plane_sub_y));
-      for (int x = 0; x < noise_block_width; ++x) {
+      int x = 0;
+      do {
         int grain = noise_stripe_[luma_num][plane][i * noise_block_width + x];
         if (plane_sub_y == 0) {
           if (i < 2 && luma_num > 0 && params_.overlap_flag) {
@@ -709,8 +735,8 @@ void FilmGrain<bitdepth>::ConstructNoiseImage() {
           }
         }
         noise_image_[plane][y][x] = grain;
-      }
-    }
+      } while (++x < noise_block_width);
+    } while (++y < ((height_ + plane_sub_y) >> plane_sub_y));
   }
 }
 
@@ -750,8 +776,10 @@ void FilmGrain<bitdepth>::BlendNoiseWithImage(
     max_chroma = max_luma;
   }
   const int scaling_shift = params_.chroma_scaling;
-  for (int y = 0; y < ((height_ + subsampling_y_) >> subsampling_y_); ++y) {
-    for (int x = 0; x < ((width_ + subsampling_x_) >> subsampling_x_); ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       const int luma_x = x << subsampling_x_;
       const int luma_y = y << subsampling_y_;
       const int luma_next_x = std::min(luma_x + 1, width_ - 1);
@@ -806,27 +834,30 @@ void FilmGrain<bitdepth>::BlendNoiseWithImage(
       } else {
         out_v[y * dest_stride_v + x] = in_v[y * source_stride_v + x];
       }
-    }
-  }
+    } while (++x < ((width_ + subsampling_x_) >> subsampling_x_));
+  } while (++y < ((height_ + subsampling_y_) >> subsampling_y_));
   if (params_.num_y_points > 0) {
-    for (int y = 0; y < height_; ++y) {
-      for (int x = 0; x < width_; ++x) {
+    int y = 0;
+    do {
+      int x = 0;
+      do {
         const int orig = in_y[y * source_stride_y + x];
         int noise = noise_image_[kPlaneY][y][x];
         noise = RightShiftWithRounding(
             ScaleLut<bitdepth>(scaling_lut_y_, orig) * noise, scaling_shift);
         out_y[y * dest_stride_y + x] = Clip3(orig + noise, min_value, max_luma);
-      }
-    }
+      } while (++x < width_);
+    } while (++y < height_);
   } else if (in_y != out_y) {  // If in_y and out_y point to the same buffer,
                                // then do nothing.
     const Pixel* in_y_row = in_y;
     Pixel* out_y_row = out_y;
-    for (int y = 0; y < height_; ++y) {
+    int y = 0;
+    do {
       memcpy(out_y_row, in_y_row, width_ * sizeof(*out_y_row));
       in_y_row += source_stride_y;
       out_y_row += dest_stride_y;
-    }
+    } while (++y < height_);
   }
 }
 

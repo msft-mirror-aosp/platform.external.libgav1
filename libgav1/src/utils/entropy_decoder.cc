@@ -25,6 +25,56 @@ uint32_t ScaleCdf(uint16_t values_in_range_shifted, const uint16_t* const cdf,
          (kMinimumProbabilityPerSymbol * (symbol_count - index));
 }
 
+void UpdateCdf(uint16_t* const cdf, int symbol_count, int symbol) {
+  const uint16_t count = cdf[symbol_count];
+  // rate is computed in the spec as:
+  //  3 + ( cdf[N] > 15 ) + ( cdf[N] > 31 ) + Min(FloorLog2(N), 2)
+  // In this case cdf[N] is |count|.
+  // Min(FloorLog2(N), 2) is 1 for symbol_count == {2, 3} and 2 for all
+  // symbol_count > 3. So the equation becomes:
+  //  4 + (count > 15) + (count > 31) + (symbol_count > 3).
+  // Note that the largest value for count is 32 (it is not incremented beyond
+  // 32). So using that information:
+  //  count >> 4 is 0 for count from 0 to 15.
+  //  count >> 4 is 1 for count from 16 to 31.
+  //  count >> 4 is 2 for count == 31.
+  // Now, the equation becomes:
+  //  4 + (count >> 4) + (symbol_count > 3).
+  // Since (count >> 4) can only be 0 or 1 or 2, the addition can be replaced
+  // with bitwise or. So the final equation is:
+  // (4 | (count >> 4)) + (symbol_count > 3).
+  const int rate = (4 | (count >> 4)) + static_cast<int>(symbol_count > 3);
+  // Hints for further optimizations:
+  //
+  // 1. clang can vectorize this for loop with width 4, even though the loop
+  // contains an if-else statement. Therefore, it may be advantageous to use
+  // "i < symbol_count" as the loop condition when symbol_count is 8, 12, or 16
+  // (a multiple of 4 that's not too small).
+  //
+  // 2. The for loop can be rewritten in the following form, which would enable
+  // clang to vectorize the loop with width 8:
+  //
+  //   const int mask = (1 << rate) - 1;
+  //   for (int i = 0; i < symbol_count - 1; ++i) {
+  //     const uint16_t a = (i < symbol) ? kCdfMaxProbability : mask;
+  //     cdf[i] += static_cast<int16_t>(a - cdf[i]) >> rate;
+  //   }
+  //
+  // The subtraction (a - cdf[i]) relies on the overflow semantics of unsigned
+  // integer arithmetic. The result of the unsigned subtraction is cast to a
+  // signed integer and right-shifted. This requires the right shift of a
+  // signed integer be an arithmetic shift, which is true for clang, gcc, and
+  // Visual C++.
+  for (int i = 0; i < symbol_count - 1; ++i) {
+    if (i < symbol) {
+      cdf[i] += (libgav1::kCdfMaxProbability - cdf[i]) >> rate;
+    } else {
+      cdf[i] -= cdf[i] >> rate;
+    }
+  }
+  cdf[symbol_count] += static_cast<uint16_t>(count < 32);
+}
+
 }  // namespace
 
 namespace libgav1 {
@@ -66,7 +116,7 @@ int DaalaBitReader::ReadBit() {
 }
 
 int64_t DaalaBitReader::ReadLiteral(int num_bits) {
-  if (num_bits > 32) return -1;
+  assert(num_bits <= 32);
   uint32_t literal = 0;
   for (int bit = num_bits - 1; bit >= 0; --bit) {
     literal |= static_cast<uint32_t>(ReadBit()) << bit;
@@ -100,7 +150,7 @@ bool DaalaBitReader::ReadSymbol(uint16_t* cdf) {
     // Since (count >> 4) can only be 0 or 1 or 2, the addition can be replaced
     // with bitwise or. So the final equation is:
     //  4 | (count >> 4).
-    const uint8_t rate = 4 | (count >> 4);
+    const int rate = 4 | (count >> 4);
     if (symbol) {
       cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
     } else {
@@ -113,6 +163,18 @@ bool DaalaBitReader::ReadSymbol(uint16_t* cdf) {
 
 bool DaalaBitReader::ReadSymbolWithoutCdfUpdate(uint16_t* cdf) {
   return ReadSymbolImpl(cdf) != 0;
+}
+
+template <int symbol_count>
+int DaalaBitReader::ReadSymbol(uint16_t* const cdf) {
+  static_assert(symbol_count >= 3 && symbol_count <= 16, "");
+  const int symbol = (symbol_count <= 13)
+                         ? ReadSymbolImpl(cdf, symbol_count)
+                         : ReadSymbolImplBinarySearch(cdf, symbol_count);
+  if (allow_update_cdf_) {
+    UpdateCdf(cdf, symbol_count, symbol);
+  }
+  return symbol;
 }
 
 int DaalaBitReader::ReadSymbolImpl(const uint16_t* const cdf,
@@ -218,55 +280,14 @@ void DaalaBitReader::NormalizeRange() {
   if (bits_ < 0) PopulateBits();
 }
 
-void DaalaBitReader::UpdateCdf(uint16_t* const cdf, int symbol_count,
-                               int symbol) {
-  const uint16_t count = cdf[symbol_count];
-  // rate is computed in the spec as:
-  //  3 + ( cdf[N] > 15 ) + ( cdf[N] > 31 ) + Min(FloorLog2(N), 2)
-  // In this case cdf[N] is |count|.
-  // Min(FloorLog2(N), 2) is 1 for symbol_count == {2, 3} and 2 for all
-  // symbol_count > 3. So the equation becomes:
-  //  4 + (count > 15) + (count > 31) + (symbol_count > 3).
-  // Note that the largest value for count is 32 (it is not incremented beyond
-  // 32). So using that information:
-  //  count >> 4 is 0 for count from 0 to 15.
-  //  count >> 4 is 1 for count from 16 to 31.
-  //  count >> 4 is 2 for count == 31.
-  // Now, the equation becomes:
-  //  4 + (count >> 4) + (symbol_count > 3).
-  // Since (count >> 4) can only be 0 or 1 or 2, the addition can be replaced
-  // with bitwise or. So the final equation is:
-  // (4 | (count >> 4)) + (symbol_count > 3).
-  const int rate = (4 | (count >> 4)) + static_cast<int>(symbol_count > 3);
-  // Hints for further optimizations:
-  //
-  // 1. clang can vectorize this for loop with width 4, even though the loop
-  // contains an if-else statement. Therefore, it may be advantageous to use
-  // "i < symbol_count" as the loop condition when symbol_count is 8, 12, or 16
-  // (a multiple of 4 that's not too small).
-  //
-  // 2. The for loop can be rewritten in the following form, which would enable
-  // clang to vectorize the loop with width 8:
-  //
-  //   const int mask = (1 << rate) - 1;
-  //   for (int i = 0; i < symbol_count - 1; ++i) {
-  //     const uint16_t a = (i < symbol) ? kCdfMaxProbability : mask;
-  //     cdf[i] += static_cast<int16_t>(a - cdf[i]) >> rate;
-  //   }
-  //
-  // The subtraction (a - cdf[i]) relies on the overflow semantics of unsigned
-  // integer arithmetic. The result of the unsigned subtraction is cast to a
-  // signed integer and right-shifted. This requires the right shift of a
-  // signed integer be an arithmetic shift, which is true for clang, gcc, and
-  // Visual C++.
-  for (int i = 0; i < symbol_count - 1; ++i) {
-    if (i < symbol) {
-      cdf[i] += (libgav1::kCdfMaxProbability - cdf[i]) >> rate;
-    } else {
-      cdf[i] -= cdf[i] >> rate;
-    }
-  }
-  cdf[symbol_count] += static_cast<uint16_t>(count < 32);
-}
+// Explicit instantiations.
+template int DaalaBitReader::ReadSymbol<3>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<4>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<5>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<7>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<8>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<11>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<13>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<16>(uint16_t* cdf);
 
 }  // namespace libgav1

@@ -374,10 +374,12 @@ void FilterIntraPredictor_C(void* const dest, ptrdiff_t stride,
   stride /= sizeof(Pixel);
   int row0 = 0, row2 = 2;
   int ystep = 1;
-  for (int y = 0; y < height; y += 2) {
+  int y = 0;
+  do {
     buffer[1][0] = left[y];
     buffer[row2][0] = left[y + 1];
-    for (int x = 1; x < width; x += 4) {
+    int x = 1;
+    do {
       const Pixel p0 = buffer[row0][x - 1];  // top-left
       const Pixel p1 = buffer[row0][x + 0];  // top 0
       const Pixel p2 = buffer[row0][x + 1];  // top 1
@@ -398,7 +400,8 @@ void FilterIntraPredictor_C(void* const dest, ptrdiff_t stride,
         buffer[1 + yoffset][x + xoffset] = static_cast<Pixel>(
             Clip3(RightShiftWithRounding(value, 4), 0, kMaxPixel));
       }
-    }
+      x += 4;
+    } while (x < width);
     memcpy(dst, &buffer[1][1], width * sizeof(dst[0]));
     dst += stride;
     memcpy(dst, &buffer[row2][1], width * sizeof(dst[0]));
@@ -408,7 +411,8 @@ void FilterIntraPredictor_C(void* const dest, ptrdiff_t stride,
     row0 ^= 2;
     row2 ^= 2;
     ystep = -ystep;
-  }
+    y += 2;
+  } while (y < height);
 }
 
 //------------------------------------------------------------------------------
@@ -444,6 +448,8 @@ template <int block_width, int block_height, int bitdepth, typename Pixel,
 void CflSubsampler_C(int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
                      const int max_luma_width, const int max_luma_height,
                      const void* const source, ptrdiff_t stride) {
+  assert(max_luma_width >= 4);
+  assert(max_luma_height >= 4);
   const auto* src = static_cast<const Pixel*>(source);
   stride /= sizeof(Pixel);
   int sum = 0;
@@ -506,8 +512,9 @@ void DirectionalIntraPredictorZone1_C(void* const dest, ptrdiff_t stride,
   const int max_base_x = ((width + height) - 1) << upsample_shift;
   const int scale_bits = 6 - upsample_shift;
   const int base_step = 1 << upsample_shift;
-  for (int y = 0, top_x = xstep; y < height;
-       ++y, dst += stride, top_x += xstep) {
+  int top_x = xstep;
+  int y = 0;
+  do {
     int top_base_x = top_x >> scale_bits;
 
     if (top_base_x >= max_base_x) {
@@ -519,7 +526,8 @@ void DirectionalIntraPredictorZone1_C(void* const dest, ptrdiff_t stride,
     }
 
     const int shift = ((top_x << upsample_shift) & 0x3F) >> 1;
-    for (int x = 0; x < width; ++x, top_base_x += base_step) {
+    int x = 0;
+    do {
       if (top_base_x >= max_base_x) {
         Memset(dst + x, top[max_base_x], width - x);
         break;
@@ -528,8 +536,12 @@ void DirectionalIntraPredictorZone1_C(void* const dest, ptrdiff_t stride,
       const int val =
           top[top_base_x] * (32 - shift) + top[top_base_x + 1] * shift;
       dst[x] = RightShiftWithRounding(val, 5);
-    }
-  }
+      top_base_x += base_step;
+    } while (++x < width);
+
+    dst += stride;
+    top_x += xstep;
+  } while (++y < height);
 }
 
 template <typename Pixel>
@@ -554,11 +566,13 @@ void DirectionalIntraPredictorZone2_C(void* const dest, ptrdiff_t stride,
   const int scale_bits_y = 6 - upsample_left_shift;
   const int min_base_x = -(1 << upsample_top_shift);
   const int base_step_x = 1 << upsample_top_shift;
-  for (int y = 0, top_x = -xstep; y < height;
-       ++y, top_x -= xstep, dst += stride) {
-    for (int x = 0, top_base_x = top_x >> scale_bits_x,
-             left_y = (y << 6) - ystep;
-         x < width; ++x, top_base_x += base_step_x, left_y -= ystep) {
+  int y = 0;
+  int top_x = -xstep;
+  do {
+    int top_base_x = top_x >> scale_bits_x;
+    int left_y = (y << 6) - ystep;
+    int x = 0;
+    do {
       int val;
       if (top_base_x >= min_base_x) {
         const int shift = ((top_x * (1 << upsample_top_shift)) & 0x3F) >> 1;
@@ -571,8 +585,13 @@ void DirectionalIntraPredictorZone2_C(void* const dest, ptrdiff_t stride,
         val = left[left_base_y] * (32 - shift) + left[left_base_y + 1] * shift;
       }
       dst[x] = RightShiftWithRounding(val, 5);
-    }
-  }
+      top_base_x += base_step_x;
+      left_y -= ystep;
+    } while (++x < width);
+
+    top_x -= xstep;
+    dst += stride;
+  } while (++y < height);
 }
 
 template <typename Pixel>
@@ -594,17 +613,24 @@ void DirectionalIntraPredictorZone3_C(void* const dest, ptrdiff_t stride,
          ((ystep * width) >> scale_bits) +
              base_step * (height - 1));  // left_base_y
 
-  for (int x = 0, left_y = ystep; x < width; ++x, left_y += ystep) {
+  int left_y = ystep;
+  int x = 0;
+  do {
     auto* dst = static_cast<Pixel*>(dest);
 
-    for (int y = 0, left_base_y = left_y >> scale_bits; y < height;
-         ++y, left_base_y += base_step, dst += stride) {
+    int left_base_y = left_y >> scale_bits;
+    int y = 0;
+    do {
       const int shift = ((left_y << upsample_shift) & 0x3F) >> 1;
       const int val =
           left[left_base_y] * (32 - shift) + left[left_base_y + 1] * shift;
       dst[x] = RightShiftWithRounding(val, 5);
-    }
-  }
+      dst += stride;
+      left_base_y += base_step;
+    } while (++y < height);
+
+    left_y += ystep;
+  } while (++x < width);
 }
 
 //------------------------------------------------------------------------------

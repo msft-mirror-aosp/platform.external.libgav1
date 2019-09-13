@@ -115,8 +115,10 @@ void CdefFilter_C(const void* const source, const ptrdiff_t source_stride,
   const auto* src = static_cast<const uint16_t*>(source);
   auto* dst = static_cast<Pixel*>(dest);
   const ptrdiff_t dst_stride = dest_stride / sizeof(Pixel);
-  for (int y = 0; y < block_height; ++y) {
-    for (int x = 0; x < block_width; ++x) {
+  int y = 0;
+  do {
+    int x = 0;
+    do {
       int16_t sum = 0;
       const uint16_t pixel_value = src[x];
       uint16_t max_value = pixel_value;
@@ -156,10 +158,11 @@ void CdefFilter_C(const void* const source, const ptrdiff_t source_stride,
 
       dst[x] = static_cast<Pixel>(Clip3(
           pixel_value + ((8 + sum - (sum < 0)) >> 4), min_value, max_value));
-    }
+    } while (++x < block_width);
+
     src += source_stride;
     dst += dst_stride;
-  }
+  } while (++y < block_height);
 }
 
 void Init8bpp() {

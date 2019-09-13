@@ -178,8 +178,6 @@ void IntraPredSmoothInit_SSE4_1();
 #define LIBGAV1_Dsp8bpp_TransformSize32x32_CflSubsampler420 LIBGAV1_DSP_SSE4_1
 #endif
 
-// TODO(b/137035169): enable these once test vector mismatches are fixed.
-#if 0
 #ifndef LIBGAV1_Dsp8bpp_TransformSize4x4_CflSubsampler444
 #define LIBGAV1_Dsp8bpp_TransformSize4x4_CflSubsampler444 LIBGAV1_DSP_SSE4_1
 #endif
@@ -234,7 +232,6 @@ void IntraPredSmoothInit_SSE4_1();
 
 #ifndef LIBGAV1_Dsp8bpp_TransformSize32x32_CflSubsampler444
 #define LIBGAV1_Dsp8bpp_TransformSize32x32_CflSubsampler444 LIBGAV1_DSP_SSE4_1
-#endif
 #endif
 
 #ifndef LIBGAV1_Dsp8bpp_TransformSize4x4_CflIntraPredictor

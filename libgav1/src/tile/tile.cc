@@ -200,6 +200,18 @@ constexpr TransformSize kAdjustedTransformSize[kNumTransformSizes] = {
     kTransformSize32x32, kTransformSize32x16, kTransformSize32x32,
     kTransformSize32x32};
 
+// This is the same as Max_Tx_Size_Rect array in the spec but with *x64 and 64*x
+// transforms replaced with *x32 and 32x* respectively.
+constexpr TransformSize kUVTransformSize[kMaxBlockSizes] = {
+    kTransformSize4x4,   kTransformSize4x8,   kTransformSize4x16,
+    kTransformSize8x4,   kTransformSize8x8,   kTransformSize8x16,
+    kTransformSize8x32,  kTransformSize16x4,  kTransformSize16x8,
+    kTransformSize16x16, kTransformSize16x32, kTransformSize16x32,
+    kTransformSize32x8,  kTransformSize32x16, kTransformSize32x32,
+    kTransformSize32x32, kTransformSize32x16, kTransformSize32x32,
+    kTransformSize32x32, kTransformSize32x32, kTransformSize32x32,
+    kTransformSize32x32};
+
 // ith entry of this array is computed as:
 // DivideBy2(TransformSizeToSquareTransformIndex(kTransformSizeSquareMin[i]) +
 //           TransformSizeToSquareTransformIndex(kTransformSizeSquareMax[i]) +
@@ -270,32 +282,6 @@ int GetNumElements(int length, int start, int max) {
   return std::min(length, max - start);
 }
 
-// This is the same as Max_Tx_Size_Rect array in the spec but with *x64 and 64*x
-// transforms replaced with *x32 and 32x* respectively.
-constexpr TransformSize kUVTransformSize[kMaxBlockSizes] = {
-    kTransformSize4x4,   kTransformSize4x8,   kTransformSize4x16,
-    kTransformSize8x4,   kTransformSize8x8,   kTransformSize8x16,
-    kTransformSize8x32,  kTransformSize16x4,  kTransformSize16x8,
-    kTransformSize16x16, kTransformSize16x32, kTransformSize16x32,
-    kTransformSize32x8,  kTransformSize32x16, kTransformSize32x32,
-    kTransformSize32x32, kTransformSize32x16, kTransformSize32x32,
-    kTransformSize32x32, kTransformSize32x32, kTransformSize32x32,
-    kTransformSize32x32};
-
-// 5.11.37.
-TransformSize GetTransformSize(bool lossless, BlockSize block_size, Plane plane,
-                               TransformSize tx_size, int subsampling_x,
-                               int subsampling_y) {
-  if (plane == kPlaneY) return tx_size;
-  // For Y Plane, |tx_size| is always kTransformSize4x4. So it is sufficient to
-  // have this special case for |lossless| only for U and V planes.
-  if (lossless) return kTransformSize4x4;
-  const BlockSize plane_size =
-      kPlaneResidualSize[block_size][subsampling_x][subsampling_y];
-  assert(plane_size != kBlockInvalid);
-  return kUVTransformSize[plane_size];
-}
-
 void SetTransformType(const Tile::Block& block, int x4, int y4, int w4, int h4,
                       TransformType tx_type,
                       TransformType transform_types[32][32]) {
@@ -327,6 +313,7 @@ Tile::Tile(
     Array2D<TransformSize>* const inter_transform_sizes,
     const dsp::Dsp* const dsp, ThreadPool* const thread_pool,
     ResidualBufferPool* const residual_buffer_pool,
+    DecoderScratchBufferPool* const decoder_scratch_buffer_pool,
     BlockingCounterWithStatus* const pending_tiles)
     : number_(tile_number),
       data_(data),
@@ -365,6 +352,7 @@ Tile::Tile(
       inter_transform_sizes_(*inter_transform_sizes),
       thread_pool_(thread_pool),
       residual_buffer_pool_(residual_buffer_pool),
+      decoder_scratch_buffer_pool_(decoder_scratch_buffer_pool),
       pending_tiles_(pending_tiles),
       build_bit_mask_when_parsing_(false) {
   row_ = number_ / frame_header.tile_info.tile_columns;
@@ -449,12 +437,19 @@ bool Tile::Decode(bool is_main_thread) {
     if (!ThreadedDecode()) return false;
   } else {
     const int block_width4x4 = kNum4x4BlocksWide[SuperBlockSize()];
-    SuperBlockBuffer sb_buffer;
+    std::unique_ptr<DecoderScratchBuffer> scratch_buffer =
+        decoder_scratch_buffer_pool_->Get();
+    if (scratch_buffer == nullptr) {
+      pending_tiles_->Decrement(false);
+      LIBGAV1_DLOG(ERROR, "Failed to get scratch buffer.");
+      return false;
+    }
     for (int row4x4 = row4x4_start_; row4x4 < row4x4_end_;
          row4x4 += block_width4x4) {
       for (int column4x4 = column4x4_start_; column4x4 < column4x4_end_;
            column4x4 += block_width4x4) {
-        if (!ProcessSuperBlock(row4x4, column4x4, block_width4x4, &sb_buffer,
+        if (!ProcessSuperBlock(row4x4, column4x4, block_width4x4,
+                               scratch_buffer.get(),
                                kProcessingModeParseAndDecode)) {
           pending_tiles_->Decrement(false);
           LIBGAV1_DLOG(ERROR, "Error decoding super block row: %d column: %d",
@@ -463,6 +458,7 @@ bool Tile::Decode(bool is_main_thread) {
         }
       }
     }
+    decoder_scratch_buffer_pool_->Release(std::move(scratch_buffer));
   }
   if (frame_header_.enable_frame_end_update_cdf &&
       number_ == frame_header_.tile_info.context_update_id) {
@@ -489,14 +485,20 @@ bool Tile::ThreadedDecode() {
   const int block_width4x4 = kNum4x4BlocksWide[SuperBlockSize()];
 
   // Begin parsing.
-  SuperBlockBuffer sb_buffer;
+  std::unique_ptr<DecoderScratchBuffer> scratch_buffer =
+      decoder_scratch_buffer_pool_->Get();
+  if (scratch_buffer == nullptr) {
+    pending_tiles_->Decrement(false);
+    LIBGAV1_DLOG(ERROR, "Failed to get scratch buffer.");
+    return false;
+  }
   for (int row4x4 = row4x4_start_, row_index = 0; row4x4 < row4x4_end_;
        row4x4 += block_width4x4, ++row_index) {
     for (int column4x4 = column4x4_start_, column_index = 0;
          column4x4 < column4x4_end_;
          column4x4 += block_width4x4, ++column_index) {
-      if (!ProcessSuperBlock(row4x4, column4x4, block_width4x4, &sb_buffer,
-                             kProcessingModeParseOnly)) {
+      if (!ProcessSuperBlock(row4x4, column4x4, block_width4x4,
+                             scratch_buffer.get(), kProcessingModeParseOnly)) {
         std::lock_guard<std::mutex> lock(threading_.mutex);
         threading_.abort = true;
         break;
@@ -519,6 +521,7 @@ bool Tile::ThreadedDecode() {
     std::lock_guard<std::mutex> lock(threading_.mutex);
     if (threading_.abort) break;
   }
+  decoder_scratch_buffer_pool_->Release(std::move(scratch_buffer));
 
   // We are done parsing. We can return here since the calling thread will make
   // sure that it waits for all the superblocks to be decoded.
@@ -574,11 +577,16 @@ bool Tile::CanDecode(int row_index, int column_index) const {
 
 void Tile::DecodeSuperBlock(int row_index, int column_index,
                             int block_width4x4) {
-  SuperBlockBuffer sb_buffer;
   const int row4x4 = row4x4_start_ + (row_index * block_width4x4);
   const int column4x4 = column4x4_start_ + (column_index * block_width4x4);
-  const bool ok = ProcessSuperBlock(row4x4, column4x4, block_width4x4,
-                                    &sb_buffer, kProcessingModeDecodeOnly);
+  std::unique_ptr<DecoderScratchBuffer> scratch_buffer =
+      decoder_scratch_buffer_pool_->Get();
+  bool ok = scratch_buffer != nullptr;
+  if (ok) {
+    ok = ProcessSuperBlock(row4x4, column4x4, block_width4x4,
+                           scratch_buffer.get(), kProcessingModeDecodeOnly);
+    decoder_scratch_buffer_pool_->Release(std::move(scratch_buffer));
+  }
   std::unique_lock<std::mutex> lock(threading_.mutex);
   if (ok) {
     threading_.sb_state[row_index][column_index] = kSuperBlockStateDecoded;
@@ -613,12 +621,15 @@ void Tile::DecodeSuperBlock(int row_index, int column_index,
   } else {
     threading_.abort = true;
   }
-  if (--threading_.pending_jobs == 0) {
-    // The lock needs to be unlocked here in this case because the Tile object
-    // could go out of scope as soon as |pending_tiles_->Decrement()| is called.
-    lock.unlock();
+  // Finish using |threading_| before |pending_tiles_->Decrement()| because the
+  // Tile object could go out of scope as soon as |pending_tiles_->Decrement()|
+  // is called.
+  const bool no_pending_jobs = (--threading_.pending_jobs == 0);
+  const bool job_succeeded = !threading_.abort;
+  lock.unlock();
+  if (no_pending_jobs) {
     // We are done parsing and decoding this tile.
-    pending_tiles_->Decrement(!threading_.abort);
+    pending_tiles_->Decrement(job_succeeded);
   }
 }
 
@@ -635,12 +646,9 @@ int Tile::GetTransformAllZeroContext(const Block& block, Plane plane,
 
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
-  const BlockSize plane_block_size =
-      kPlaneResidualSize[block.size][subsampling_x_[plane]]
-                        [subsampling_y_[plane]];
-  assert(plane_block_size != kBlockInvalid);
-  const int block_width = kBlockWidthPixels[plane_block_size];
-  const int block_height = kBlockHeightPixels[plane_block_size];
+  const BlockSize plane_size = block.residual_size[GetPlaneType(plane)];
+  const int block_width = kBlockWidthPixels[plane_size];
+  const int block_height = kBlockHeightPixels[plane_size];
 
   int top = 0;
   int left = 0;
@@ -775,13 +783,14 @@ int Tile::GetCoeffBaseContextEob(TransformSize tx_size, int index) {
 }
 
 // Section 8.3.2 in the spec, under coeff_base.
-int Tile::GetCoeffBaseContext2D(TransformSize tx_size,
+int Tile::GetCoeffBaseContext2D(const int32_t* const quantized_buffer,
+                                TransformSize tx_size,
                                 int adjusted_tx_width_log2, uint16_t pos) {
   if (pos == 0) return 0;
   const int tx_width = 1 << adjusted_tx_width_log2;
   const int padded_tx_width = tx_width + kQuantizedCoefficientBufferPadding;
-  int32_t* const quantized =
-      &quantized_[PaddedIndex(pos, adjusted_tx_width_log2)];
+  const int32_t* const quantized =
+      &quantized_buffer[PaddedIndex(pos, adjusted_tx_width_log2)];
   const int context = std::min(
       4, DivideBy2(1 + (std::min(quantized[1], 3) +                    // {0, 1}
                         std::min(quantized[padded_tx_width], 3) +      // {1, 0}
@@ -796,13 +805,14 @@ int Tile::GetCoeffBaseContext2D(TransformSize tx_size,
 }
 
 // Section 8.3.2 in the spec, under coeff_base.
-int Tile::GetCoeffBaseContextHorizontal(TransformSize /*tx_size*/,
+int Tile::GetCoeffBaseContextHorizontal(const int32_t* const quantized_buffer,
+                                        TransformSize /*tx_size*/,
                                         int adjusted_tx_width_log2,
                                         uint16_t pos) {
   const int tx_width = 1 << adjusted_tx_width_log2;
   const int padded_tx_width = tx_width + kQuantizedCoefficientBufferPadding;
-  int32_t* const quantized =
-      &quantized_[PaddedIndex(pos, adjusted_tx_width_log2)];
+  const int32_t* const quantized =
+      &quantized_buffer[PaddedIndex(pos, adjusted_tx_width_log2)];
   const int context = std::min(
       4, DivideBy2(1 + (std::min(quantized[1], 3) +                // {0, 1}
                         std::min(quantized[padded_tx_width], 3) +  // {1, 0}
@@ -814,13 +824,14 @@ int Tile::GetCoeffBaseContextHorizontal(TransformSize /*tx_size*/,
 }
 
 // Section 8.3.2 in the spec, under coeff_base.
-int Tile::GetCoeffBaseContextVertical(TransformSize /*tx_size*/,
+int Tile::GetCoeffBaseContextVertical(const int32_t* const quantized_buffer,
+                                      TransformSize /*tx_size*/,
                                       int adjusted_tx_width_log2,
                                       uint16_t pos) {
   const int tx_width = 1 << adjusted_tx_width_log2;
   const int padded_tx_width = tx_width + kQuantizedCoefficientBufferPadding;
-  int32_t* const quantized =
-      &quantized_[PaddedIndex(pos, adjusted_tx_width_log2)];
+  const int32_t* const quantized =
+      &quantized_buffer[PaddedIndex(pos, adjusted_tx_width_log2)];
   const int context = std::min(
       4, DivideBy2(1 + (std::min(quantized[1], 3) +                // {0, 1}
                         std::min(quantized[padded_tx_width], 3) +  // {1, 0}
@@ -835,11 +846,12 @@ int Tile::GetCoeffBaseContextVertical(TransformSize /*tx_size*/,
 }
 
 // Section 8.3.2 in the spec, under coeff_br.
-int Tile::GetCoeffBaseRangeContext2D(int adjusted_tx_width_log2, int pos) {
+int Tile::GetCoeffBaseRangeContext2D(const int32_t* const quantized_buffer,
+                                     int adjusted_tx_width_log2, int pos) {
   const uint8_t tx_width = 1 << adjusted_tx_width_log2;
   const int padded_tx_width = tx_width + kQuantizedCoefficientBufferPadding;
-  int32_t* const quantized =
-      &quantized_[PaddedIndex(pos, adjusted_tx_width_log2)];
+  const int32_t* const quantized =
+      &quantized_buffer[PaddedIndex(pos, adjusted_tx_width_log2)];
   const int context = std::min(
       6, DivideBy2(
              1 +
@@ -856,12 +868,13 @@ int Tile::GetCoeffBaseRangeContext2D(int adjusted_tx_width_log2, int pos) {
 }
 
 // Section 8.3.2 in the spec, under coeff_br.
-int Tile::GetCoeffBaseRangeContextHorizontal(int adjusted_tx_width_log2,
-                                             int pos) {
+int Tile::GetCoeffBaseRangeContextHorizontal(
+    const int32_t* const quantized_buffer, int adjusted_tx_width_log2,
+    int pos) {
   const uint8_t tx_width = 1 << adjusted_tx_width_log2;
   const int padded_tx_width = tx_width + kQuantizedCoefficientBufferPadding;
-  int32_t* const quantized =
-      &quantized_[PaddedIndex(pos, adjusted_tx_width_log2)];
+  const int32_t* const quantized =
+      &quantized_buffer[PaddedIndex(pos, adjusted_tx_width_log2)];
   const int context = std::min(
       6, DivideBy2(
              1 +
@@ -877,12 +890,13 @@ int Tile::GetCoeffBaseRangeContextHorizontal(int adjusted_tx_width_log2,
 }
 
 // Section 8.3.2 in the spec, under coeff_br.
-int Tile::GetCoeffBaseRangeContextVertical(int adjusted_tx_width_log2,
-                                           int pos) {
+int Tile::GetCoeffBaseRangeContextVertical(
+    const int32_t* const quantized_buffer, int adjusted_tx_width_log2,
+    int pos) {
   const uint8_t tx_width = 1 << adjusted_tx_width_log2;
   const int padded_tx_width = tx_width + kQuantizedCoefficientBufferPadding;
-  int32_t* const quantized =
-      &quantized_[PaddedIndex(pos, adjusted_tx_width_log2)];
+  const int32_t* const quantized =
+      &quantized_buffer[PaddedIndex(pos, adjusted_tx_width_log2)];
   const int context = std::min(
       6, DivideBy2(
              1 +
@@ -994,18 +1008,20 @@ void Tile::ScaleMotionVector(const MotionVector& mv, const Plane plane,
 
 template <bool is_dc_coefficient>
 bool Tile::ReadSignAndApplyDequantization(
-    const Block& block, const uint16_t* const scan, int i,
-    int adjusted_tx_width_log2, int tx_width, int q_value,
-    const uint8_t* const quantizer_matrix, int shift, int min_value,
-    int max_value, uint16_t* const dc_sign_cdf, int8_t* const dc_category,
-    int* const coefficient_level) {
+    const Block& block, int32_t* const quantized_buffer,
+    const uint16_t* const scan, int i, int adjusted_tx_width_log2, int tx_width,
+    int q_value, const uint8_t* const quantizer_matrix, int shift,
+    int min_value, int max_value, uint16_t* const dc_sign_cdf,
+    int8_t* const dc_category, int* const coefficient_level) {
   int pos = is_dc_coefficient ? 0 : scan[i];
   const int pos_index =
       is_dc_coefficient ? 0 : PaddedIndex(pos, adjusted_tx_width_log2);
-  const bool sign = quantized_[pos_index] != 0 &&
-                    (is_dc_coefficient ? reader_.ReadSymbol(dc_sign_cdf)
-                                       : static_cast<bool>(reader_.ReadBit()));
-  if (quantized_[pos_index] >
+  // If quantized_buffer[pos_index] is zero, then the rest of the function has
+  // no effect.
+  if (quantized_buffer[pos_index] == 0) return true;
+  const bool sign = is_dc_coefficient ? reader_.ReadSymbol(dc_sign_cdf)
+                                      : static_cast<bool>(reader_.ReadBit());
+  if (quantized_buffer[pos_index] >
       kNumQuantizerBaseLevels + kQuantizerCoefficientBaseRange) {
     int length = 0;
     bool golomb_length_bit = false;
@@ -1021,13 +1037,13 @@ bool Tile::ReadSignAndApplyDequantization(
     for (int i = length - 2; i >= 0; --i) {
       x = (x << 1) | reader_.ReadBit();
     }
-    quantized_[pos_index] += x - 1;
+    quantized_buffer[pos_index] += x - 1;
   }
-  if (is_dc_coefficient && quantized_[0] > 0) {
+  if (is_dc_coefficient && quantized_buffer[0] > 0) {
     *dc_category = sign ? -1 : 1;
   }
-  quantized_[pos_index] &= 0xfffff;
-  *coefficient_level += quantized_[pos_index];
+  quantized_buffer[pos_index] &= 0xfffff;
+  *coefficient_level += quantized_buffer[pos_index];
   // Apply dequantization. Step 1 of section 7.12.3 in the spec.
   int q = q_value;
   if (quantizer_matrix != nullptr) {
@@ -1036,7 +1052,7 @@ bool Tile::ReadSignAndApplyDequantization(
   // The intermediate multiplication can exceed 32 bits, so it has to be
   // performed by promoting one of the values to int64_t.
   int32_t dequantized_value =
-      (static_cast<int64_t>(q) * quantized_[pos_index]) & 0xffffff;
+      (static_cast<int64_t>(q) * quantized_buffer[pos_index]) & 0xffffff;
   dequantized_value >>= shift;
   if (sign) {
     dequantized_value = -dequantized_value;
@@ -1055,13 +1071,11 @@ bool Tile::ReadSignAndApplyDequantization(
     pos = MultiplyBy64(row_index) + column_index;
   }
   if (sequence_header_.color_config.bitdepth == 8) {
-    auto* const residual_buffer =
-        reinterpret_cast<int16_t*>(block.sb_buffer->residual);
+    auto* const residual_buffer = reinterpret_cast<int16_t*>(*block.residual);
     residual_buffer[pos] = Clip3(dequantized_value, min_value, max_value);
 #if LIBGAV1_MAX_BITDEPTH >= 10
   } else {
-    auto* const residual_buffer =
-        reinterpret_cast<int32_t*>(block.sb_buffer->residual);
+    auto* const residual_buffer = reinterpret_cast<int32_t*>(*block.residual);
     residual_buffer[pos] = Clip3(dequantized_value, min_value, max_value);
 #endif
   }
@@ -1106,18 +1120,19 @@ int16_t Tile::ReadTransformCoefficients(const Block& block, Plane plane,
   }
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
-  memset(block.sb_buffer->residual, 0, tx_width * tx_height * residual_size_);
+  memset(*block.residual, 0, tx_width * tx_height * residual_size_);
   const int clamped_tx_width = std::min(tx_width, 32);
   const int clamped_tx_height = std::min(tx_height, 32);
   const int padded_tx_width =
       clamped_tx_width + kQuantizedCoefficientBufferPadding;
   const int padded_tx_height =
       clamped_tx_height + kQuantizedCoefficientBufferPadding;
-  // Only the first |padded_tx_width| * |padded_tx_height| values of
-  // |quantized_| will be used by this function. So we simply need to zero out
-  // those values before it is being used (instead of zeroing the entire array).
-  memset(quantized_, 0,
-         padded_tx_width * padded_tx_height * sizeof(quantized_[0]));
+  int32_t* const quantized = block.scratch_buffer->quantized_buffer;
+  // Only the first |padded_tx_width| * |padded_tx_height| values of |quantized|
+  // will be used by this function and the functions to which it is passed into.
+  // So we simply need to zero out those values before it is being used.
+  memset(quantized, 0,
+         padded_tx_width * padded_tx_height * sizeof(quantized[0]));
   if (plane == kPlaneY) {
     ReadTransformType(block, x4, y4, tx_size);
   }
@@ -1125,7 +1140,8 @@ int16_t Tile::ReadTransformCoefficients(const Block& block, Plane plane,
   *tx_type = ComputeTransformType(block, plane, tx_size, x4, y4);
   const int eob_multi_size = kEobMultiSizeLookup[tx_size];
   const PlaneType plane_type = GetPlaneType(plane);
-  context = static_cast<int>(GetTransformClass(*tx_type) != kTransformClass2D);
+  const TransformClass tx_class = GetTransformClass(*tx_type);
+  context = static_cast<int>(tx_class != kTransformClass2D);
   uint16_t* cdf;
   switch (eob_multi_size) {
     case 0:
@@ -1168,23 +1184,22 @@ int16_t Tile::ReadTransformCoefficients(const Block& block, Plane plane,
       }
     }
   }
-  const TransformClass tx_class = GetTransformClass(*tx_type);
   const uint16_t* scan = kScan[tx_class][tx_size];
   const TransformSize adjusted_tx_size = kAdjustedTransformSize[tx_size];
   const int adjusted_tx_width_log2 = kTransformWidthLog2[adjusted_tx_size];
   // Lookup used to call the right variant of GetCoeffBaseContext*() based on
   // the transform class.
   static constexpr int (Tile::*kGetCoeffBaseContextFunc[])(
-      TransformSize, int, uint16_t) = {&Tile::GetCoeffBaseContext2D,
-                                       &Tile::GetCoeffBaseContextHorizontal,
-                                       &Tile::GetCoeffBaseContextVertical};
+      const int32_t*, TransformSize, int, uint16_t) = {
+      &Tile::GetCoeffBaseContext2D, &Tile::GetCoeffBaseContextHorizontal,
+      &Tile::GetCoeffBaseContextVertical};
   auto get_coeff_base_context_func = kGetCoeffBaseContextFunc[tx_class];
   // Lookup used to call the right variant of GetCoeffBaseRangeContext*() based
   // on the transform class.
-  static constexpr int (Tile::*kGetCoeffBaseRangeContextFunc[])(int, int) = {
-      &Tile::GetCoeffBaseRangeContext2D,
-      &Tile::GetCoeffBaseRangeContextHorizontal,
-      &Tile::GetCoeffBaseRangeContextVertical};
+  static constexpr int (Tile::*kGetCoeffBaseRangeContextFunc[])(
+      const int32_t*, int, int) = {&Tile::GetCoeffBaseRangeContext2D,
+                                   &Tile::GetCoeffBaseRangeContextHorizontal,
+                                   &Tile::GetCoeffBaseRangeContextVertical};
   auto get_coeff_base_range_context_func =
       kGetCoeffBaseRangeContextFunc[tx_class];
   const int clamped_tx_size_context = std::min(tx_size_context, 3);
@@ -1200,15 +1215,15 @@ int16_t Tile::ReadTransformCoefficients(const Block& block, Plane plane,
     if (level > kNumQuantizerBaseLevels) {
       level += ReadCoeffBaseRange(clamped_tx_size_context,
                                   (this->*get_coeff_base_range_context_func)(
-                                      adjusted_tx_width_log2, pos),
+                                      quantized, adjusted_tx_width_log2, pos),
                                   plane_type);
     }
-    quantized_[PaddedIndex(pos, adjusted_tx_width_log2)] = level;
+    quantized[PaddedIndex(pos, adjusted_tx_width_log2)] = level;
   }
   // Read all the other coefficients.
   for (int i = eob - 2; i >= 0; --i) {
     const uint16_t pos = scan[i];
-    context = (this->*get_coeff_base_context_func)(tx_size,
+    context = (this->*get_coeff_base_context_func)(quantized, tx_size,
                                                    adjusted_tx_width_log2, pos);
     int level = reader_.ReadSymbol<kCoeffBaseSymbolCount>(
         symbol_decoder_context_
@@ -1216,10 +1231,10 @@ int16_t Tile::ReadTransformCoefficients(const Block& block, Plane plane,
     if (level > kNumQuantizerBaseLevels) {
       level += ReadCoeffBaseRange(clamped_tx_size_context,
                                   (this->*get_coeff_base_range_context_func)(
-                                      adjusted_tx_width_log2, pos),
+                                      quantized, adjusted_tx_width_log2, pos),
                                   plane_type);
     }
-    quantized_[PaddedIndex(pos, adjusted_tx_width_log2)] = level;
+    quantized[PaddedIndex(pos, adjusted_tx_width_log2)] = level;
   }
   const int min_value = -(1 << (7 + sequence_header_.color_config.bitdepth));
   const int max_value = (1 << (7 + sequence_header_.color_config.bitdepth)) - 1;
@@ -1239,29 +1254,29 @@ int16_t Tile::ReadTransformCoefficients(const Block& block, Plane plane,
   int coefficient_level = 0;
   int8_t dc_category = 0;
   uint16_t* const dc_sign_cdf =
-      (quantized_[0] != 0)
+      (quantized[0] != 0)
           ? symbol_decoder_context_.dc_sign_cdf[plane_type][GetDcSignContext(
                 x4, y4, w4, h4, plane)]
           : nullptr;
   assert(scan[0] == 0);
   if (!ReadSignAndApplyDequantization</*is_dc_coefficient=*/true>(
-          block, scan, 0, adjusted_tx_width_log2, tx_width, dc_q_value,
-          quantizer_matrix, shift, min_value, max_value, dc_sign_cdf,
-          &dc_category, &coefficient_level)) {
+          block, quantized, scan, 0, adjusted_tx_width_log2, tx_width,
+          dc_q_value, quantizer_matrix, shift, min_value, max_value,
+          dc_sign_cdf, &dc_category, &coefficient_level)) {
     return -1;
   }
   for (int i = 1; i < eob; ++i) {
     if (!ReadSignAndApplyDequantization</*is_dc_coefficient=*/false>(
-            block, scan, i, adjusted_tx_width_log2, tx_width, ac_q_value,
-            quantizer_matrix, shift, min_value, max_value, nullptr, nullptr,
-            &coefficient_level)) {
+            block, quantized, scan, i, adjusted_tx_width_log2, tx_width,
+            ac_q_value, quantizer_matrix, shift, min_value, max_value, nullptr,
+            nullptr, &coefficient_level)) {
       return -1;
     }
   }
   SetEntropyContexts(x4, y4, w4, h4, plane, std::min(4, coefficient_level),
                      dc_category);
   if (split_parse_and_decode_) {
-    block.sb_buffer->residual += tx_width * tx_height * residual_size_;
+    *block.residual += tx_width * tx_height * residual_size_;
   }
   return eob;
 }
@@ -1317,15 +1332,15 @@ bool Tile::TransformBlock(const Block& block, Plane plane, int base_x,
       if (sequence_header_.color_config.bitdepth == 8) {
         IntraPrediction<uint8_t>(
             block, plane, start_x, start_y, has_left, has_top,
-            block.sb_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
-            block.sb_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
+            block.scratch_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
+            block.scratch_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
             mode, tx_size);
 #if LIBGAV1_MAX_BITDEPTH >= 10
       } else {
         IntraPrediction<uint16_t>(
             block, plane, start_x, start_y, has_left, has_top,
-            block.sb_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
-            block.sb_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
+            block.scratch_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
+            block.scratch_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
             mode, tx_size);
 #endif
       }
@@ -1346,10 +1361,12 @@ bool Tile::TransformBlock(const Block& block, Plane plane, int base_x,
           start_x + MultiplyBy4(step_x);
       block.bp->prediction_parameters->max_luma_height =
           start_y + MultiplyBy4(step_y);
-      block.sb_buffer->cfl_luma_buffer_valid = false;
+      block.scratch_buffer->cfl_luma_buffer_valid = false;
     }
   }
   if (!bp.skip) {
+    const int sb_row_index = SuperBlockRowIndex(block.row4x4);
+    const int sb_column_index = SuperBlockColumnIndex(block.column4x4);
     switch (mode) {
       case kProcessingModeParseAndDecode: {
         TransformType tx_type;
@@ -1365,29 +1382,31 @@ bool Tile::TransformBlock(const Block& block, Plane plane, int base_x,
         const int16_t non_zero_coeff_count = ReadTransformCoefficients(
             block, plane, start_x, start_y, tx_size, &tx_type);
         if (non_zero_coeff_count < 0) return false;
-        block.sb_buffer->transform_parameters->Push(non_zero_coeff_count,
-                                                    tx_type);
+        residual_buffer_threaded_[sb_row_index][sb_column_index]
+            ->transform_parameters()
+            ->Push(non_zero_coeff_count, tx_type);
         break;
       }
       case kProcessingModeDecodeOnly: {
-        ReconstructBlock(
-            block, plane, start_x, start_y, tx_size,
-            block.sb_buffer->transform_parameters->Type(),
-            block.sb_buffer->transform_parameters->NonZeroCoeffCount());
-        block.sb_buffer->transform_parameters->Pop();
+        TransformParameterQueue& tx_params =
+            *residual_buffer_threaded_[sb_row_index][sb_column_index]
+                 ->transform_parameters();
+        ReconstructBlock(block, plane, start_x, start_y, tx_size,
+                         tx_params.Type(), tx_params.NonZeroCoeffCount());
+        tx_params.Pop();
         break;
       }
     }
   }
   if (do_decode) {
     bool* block_decoded =
-        &block.sb_buffer
+        &block.scratch_buffer
              ->block_decoded[plane][(sub_block_row4x4 >> subsampling_y) + 1]
                             [(sub_block_column4x4 >> subsampling_x) + 1];
     for (int i = 0; i < step_y; ++i) {
       static_assert(sizeof(bool) == 1, "");
       memset(block_decoded, 1, step_x);
-      block_decoded += kBlockDecodedStride;
+      block_decoded += DecoderScratchBuffer::kBlockDecodedStride;
     }
   }
   return true;
@@ -1460,8 +1479,8 @@ void Tile::ReconstructBlock(const Block& block, Plane plane, int start_x,
   if (sequence_header_.color_config.bitdepth == 8) {
     Reconstruct(dsp_, tx_type, tx_size,
                 frame_header_.segmentation.lossless[block.bp->segment_id],
-                reinterpret_cast<int16_t*>(block.sb_buffer->residual), start_x,
-                start_y, &buffer_[plane], non_zero_coeff_count);
+                reinterpret_cast<int16_t*>(*block.residual), start_x, start_y,
+                &buffer_[plane], non_zero_coeff_count);
 #if LIBGAV1_MAX_BITDEPTH >= 10
   } else {
     Array2DView<uint16_t> buffer(
@@ -1469,12 +1488,12 @@ void Tile::ReconstructBlock(const Block& block, Plane plane, int start_x,
         reinterpret_cast<uint16_t*>(&buffer_[plane][0][0]));
     Reconstruct(dsp_, tx_type, tx_size,
                 frame_header_.segmentation.lossless[block.bp->segment_id],
-                reinterpret_cast<int32_t*>(block.sb_buffer->residual), start_x,
-                start_y, &buffer, non_zero_coeff_count);
+                reinterpret_cast<int32_t*>(*block.residual), start_x, start_y,
+                &buffer, non_zero_coeff_count);
 #endif
   }
   if (split_parse_and_decode_) {
-    block.sb_buffer->residual +=
+    *block.residual +=
         kTransformWidth[tx_size] * kTransformHeight[tx_size] * residual_size_;
   }
 }
@@ -1485,17 +1504,17 @@ bool Tile::Residual(const Block& block, ProcessingMode mode) {
   const BlockSize size_chunk4x4 =
       (width_chunks > 1 || height_chunks > 1) ? kBlock64x64 : block.size;
   const BlockParameters& bp = *block.bp;
-  const TransformSize y_tx_size =
-      GetTransformSize(frame_header_.segmentation.lossless[bp.segment_id],
-                       block.size, kPlaneY, bp.transform_size, 0, 0);
   for (int chunk_y = 0; chunk_y < height_chunks; ++chunk_y) {
     for (int chunk_x = 0; chunk_x < width_chunks; ++chunk_x) {
       for (int plane = 0; plane < (block.HasChroma() ? PlaneCount() : 1);
            ++plane) {
         const int subsampling_x = subsampling_x_[plane];
         const int subsampling_y = subsampling_y_[plane];
+        // For Y Plane, when lossless is true |bp.transform_size| is always
+        // kTransformSize4x4. So we can simply use |bp.transform_size| here as
+        // the Y plane's transform size (part of Section 5.11.37 in the spec).
         const TransformSize tx_size =
-            (plane == kPlaneY) ? y_tx_size : bp.uv_transform_size;
+            (plane == kPlaneY) ? bp.transform_size : bp.uv_transform_size;
         const BlockSize plane_size =
             kPlaneResidualSize[size_chunk4x4][subsampling_x][subsampling_y];
         assert(plane_size != kBlockInvalid);
@@ -1672,7 +1691,7 @@ void Tile::ResetEntropyContext(const Block& block) {
   }
 }
 
-bool Tile::ComputePrediction(const Block& block) {
+void Tile::ComputePrediction(const Block& block) {
   const int mask =
       (1 << (4 + static_cast<int>(sequence_header_.use_128x128_superblock))) -
       1;
@@ -1689,8 +1708,7 @@ bool Tile::ComputePrediction(const Block& block) {
     const int8_t subsampling_x = subsampling_x_[plane];
     const int8_t subsampling_y = subsampling_y_[plane];
     const BlockSize plane_size =
-        kPlaneResidualSize[block.size][subsampling_x][subsampling_y];
-    assert(plane_size != kBlockInvalid);
+        block.residual_size[GetPlaneType(static_cast<Plane>(plane))];
     const int block_width4x4 = kNum4x4BlocksWide[plane_size];
     const int block_height4x4 = kNum4x4BlocksHigh[plane_size];
     const int block_width = MultiplyBy4(block_width4x4);
@@ -1715,8 +1733,8 @@ bool Tile::ComputePrediction(const Block& block) {
       if (sequence_header_.color_config.bitdepth == 8) {
         IntraPrediction<uint8_t>(
             block, static_cast<Plane>(plane), base_x, base_y, has_left, has_top,
-            block.sb_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
-            block.sb_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
+            block.scratch_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
+            block.scratch_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
             kInterIntraToIntraMode[block.bp->prediction_parameters
                                        ->inter_intra_mode],
             tx_size);
@@ -1724,8 +1742,8 @@ bool Tile::ComputePrediction(const Block& block) {
       } else {
         IntraPrediction<uint16_t>(
             block, static_cast<Plane>(plane), base_x, base_y, has_left, has_top,
-            block.sb_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
-            block.sb_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
+            block.scratch_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
+            block.scratch_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
             kInterIntraToIntraMode[block.bp->prediction_parameters
                                        ->inter_intra_mode],
             tx_size);
@@ -1761,17 +1779,14 @@ bool Tile::ComputePrediction(const Block& block) {
       }
       for (int r = 0, y = 0; y < block_height; y += prediction_height, ++r) {
         for (int c = 0, x = 0; x < block_width; x += prediction_width, ++c) {
-          if (!InterPrediction(block, static_cast<Plane>(plane), base_x + x,
-                               base_y + y, prediction_width, prediction_height,
-                               candidate_row + r, candidate_column + c,
-                               &is_local_valid, &local_warp_params)) {
-            return false;
-          }
+          InterPrediction(block, static_cast<Plane>(plane), base_x + x,
+                          base_y + y, prediction_width, prediction_height,
+                          candidate_row + r, candidate_column + c,
+                          &is_local_valid, &local_warp_params);
         }
       }
     }
   }
-  return true;
 }
 
 void Tile::PopulateDeblockFilterLevel(const Block& block) {
@@ -1792,7 +1807,8 @@ void Tile::PopulateDeblockFilterLevel(const Block& block) {
 
 bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
                         ParameterTree* const tree,
-                        SuperBlockBuffer* const sb_buffer) {
+                        DecoderScratchBuffer* const scratch_buffer,
+                        ResidualPtr* residual) {
   // Do not process the block if the starting point is beyond the visible frame.
   // This is equivalent to the has_row/has_column check in the
   // decode_partition() section of the spec when partition equals
@@ -1801,7 +1817,7 @@ bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
       column4x4 >= frame_header_.columns4x4) {
     return true;
   }
-  Block block(*this, row4x4, column4x4, block_size, sb_buffer,
+  Block block(*this, row4x4, column4x4, block_size, scratch_buffer, residual,
               tree->parameters());
   block.bp->size = block_size;
   block_parameters_holder_.FillCache(row4x4, column4x4, block_size,
@@ -1816,19 +1832,19 @@ bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
   if (!ReadPaletteTokens(block)) return false;
   DecodeTransformSize(block);
   BlockParameters& bp = *block.bp;
-  bp.uv_transform_size = GetTransformSize(
-      frame_header_.segmentation.lossless[bp.segment_id], block.size, kPlaneU,
-      bp.transform_size, subsampling_x_[kPlaneU], subsampling_y_[kPlaneU]);
+  // Part of Section 5.11.37 in the spec (implemented as a simple lookup).
+  bp.uv_transform_size =
+      frame_header_.segmentation.lossless[bp.segment_id]
+          ? kTransformSize4x4
+          : kUVTransformSize[block.residual_size[kPlaneTypeUV]];
   if (bp.skip) ResetEntropyContext(block);
   const int block_width4x4 = kNum4x4BlocksWide[block_size];
   const int block_height4x4 = kNum4x4BlocksHigh[block_size];
   if (split_parse_and_decode_) {
     if (!Residual(block, kProcessingModeParseOnly)) return false;
   } else {
-    if (!ComputePrediction(block) ||
-        !Residual(block, kProcessingModeParseAndDecode)) {
-      return false;
-    }
+    ComputePrediction(block);
+    if (!Residual(block, kProcessingModeParseAndDecode)) return false;
   }
   // If frame_header_.segmentation.enabled is false, bp.segment_id is 0 for all
   // blocks. We don't need to call save bp.segment_id in the current frame
@@ -1858,7 +1874,8 @@ bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
 }
 
 bool Tile::DecodeBlock(ParameterTree* const tree,
-                       SuperBlockBuffer* const sb_buffer) {
+                       DecoderScratchBuffer* const scratch_buffer,
+                       ResidualPtr* residual) {
   const int row4x4 = tree->row4x4();
   const int column4x4 = tree->column4x4();
   if (row4x4 >= frame_header_.rows4x4 ||
@@ -1866,12 +1883,10 @@ bool Tile::DecodeBlock(ParameterTree* const tree,
     return true;
   }
   const BlockSize block_size = tree->block_size();
-  Block block(*this, row4x4, column4x4, block_size, sb_buffer,
+  Block block(*this, row4x4, column4x4, block_size, scratch_buffer, residual,
               tree->parameters());
-  if (!ComputePrediction(block) ||
-      !Residual(block, kProcessingModeDecodeOnly)) {
-    return false;
-  }
+  ComputePrediction(block);
+  if (!Residual(block, kProcessingModeDecodeOnly)) return false;
   if (!build_bit_mask_when_parsing_) {
     BuildBitMask(row4x4, column4x4, block_size);
   }
@@ -1882,7 +1897,8 @@ bool Tile::DecodeBlock(ParameterTree* const tree,
 
 bool Tile::ProcessPartition(int row4x4_start, int column4x4_start,
                             ParameterTree* const root,
-                            SuperBlockBuffer* const sb_buffer) {
+                            DecoderScratchBuffer* const scratch_buffer,
+                            ResidualPtr* residual) {
   Stack<ParameterTree*, kDfsStackSize> stack;
 
   // Set up the first iteration.
@@ -1942,7 +1958,8 @@ bool Tile::ProcessPartition(int row4x4_start, int column4x4_start,
     }
     switch (partition) {
       case kPartitionNone:
-        if (!ProcessBlock(row4x4, column4x4, sub_size, node, sb_buffer)) {
+        if (!ProcessBlock(row4x4, column4x4, sub_size, node, scratch_buffer,
+                          residual)) {
           return false;
         }
         break;
@@ -1969,7 +1986,8 @@ bool Tile::ProcessPartition(int row4x4_start, int column4x4_start,
           // null.
           if (child == nullptr) break;
           if (!ProcessBlock(child->row4x4(), child->column4x4(),
-                            child->block_size(), child, sb_buffer)) {
+                            child->block_size(), child, scratch_buffer,
+                            residual)) {
             return false;
           }
         }
@@ -2007,10 +2025,11 @@ void Tile::ResetCdef(const int row4x4, const int column4x4) {
   }
 }
 
-void Tile::ClearBlockDecoded(SuperBlockBuffer* const sb_buffer, int row4x4,
-                             int column4x4) {
+void Tile::ClearBlockDecoded(DecoderScratchBuffer* const scratch_buffer,
+                             int row4x4, int column4x4) {
   // Set everything to false.
-  memset(sb_buffer->block_decoded, 0, sizeof(sb_buffer->block_decoded));
+  memset(scratch_buffer->block_decoded, 0,
+         sizeof(scratch_buffer->block_decoded));
   // Set specific edge cases to true.
   const int sb_size4 = sequence_header_.use_128x128_superblock ? 32 : 16;
   for (int plane = 0; plane < PlaneCount(); ++plane) {
@@ -2026,7 +2045,7 @@ void Tile::ClearBlockDecoded(SuperBlockBuffer* const sb_buffer, int row4x4,
     // }
     const int num_elements =
         std::min((sb_size4 >> subsampling_x_[plane]) + 1, sb_width4) + 1;
-    memset(&sb_buffer->block_decoded[plane][0][0], 1, num_elements);
+    memset(&scratch_buffer->block_decoded[plane][0][0], 1, num_elements);
     // The for loop is equivalent to the following lines in the spec:
     // for ( y = -1; y <= ( sbSize4 >> subY ); y++ )
     //   if ( x < 0 && y < sbHeight4 )
@@ -2036,13 +2055,13 @@ void Tile::ClearBlockDecoded(SuperBlockBuffer* const sb_buffer, int row4x4,
     // BlockDecoded[plane][sbSize4 >> subY][-1] = 0
     for (int y = -1; y < std::min((sb_size4 >> subsampling_y), sb_height4);
          ++y) {
-      sb_buffer->block_decoded[plane][y + 1][0] = true;
+      scratch_buffer->block_decoded[plane][y + 1][0] = true;
     }
   }
 }
 
 bool Tile::ProcessSuperBlock(int row4x4, int column4x4, int block_width4x4,
-                             SuperBlockBuffer* const sb_buffer,
+                             DecoderScratchBuffer* const scratch_buffer,
                              ProcessingMode mode) {
   const bool parsing =
       mode == kProcessingModeParseOnly || mode == kProcessingModeParseAndDecode;
@@ -2053,7 +2072,7 @@ bool Tile::ProcessSuperBlock(int row4x4, int column4x4, int block_width4x4,
     ResetCdef(row4x4, column4x4);
   }
   if (decoding) {
-    ClearBlockDecoded(sb_buffer, row4x4, column4x4);
+    ClearBlockDecoded(scratch_buffer, row4x4, column4x4);
   }
   const BlockSize block_size = SuperBlockSize();
   if (parsing) {
@@ -2062,18 +2081,18 @@ bool Tile::ProcessSuperBlock(int row4x4, int column4x4, int block_width4x4,
   const int row = row4x4 / block_width4x4;
   const int column = column4x4 / block_width4x4;
   if (parsing && decoding) {
-    sb_buffer->residual = residual_buffer_.get();
+    uint8_t* residual_buffer = residual_buffer_.get();
     if (!ProcessPartition(row4x4, column4x4,
                           block_parameters_holder_.Tree(row, column),
-                          sb_buffer)) {
+                          scratch_buffer, &residual_buffer)) {
       LIBGAV1_DLOG(ERROR, "Error decoding partition row: %d column: %d", row4x4,
                    column4x4);
       return false;
     }
     return true;
   }
-  const int sb_row_index = (row4x4 - row4x4_start_) / block_width4x4;
-  const int sb_column_index = (column4x4 - column4x4_start_) / block_width4x4;
+  const int sb_row_index = SuperBlockRowIndex(row4x4);
+  const int sb_column_index = SuperBlockColumnIndex(column4x4);
   if (parsing) {
     residual_buffer_threaded_[sb_row_index][sb_column_index] =
         residual_buffer_pool_->Get();
@@ -2081,26 +2100,20 @@ bool Tile::ProcessSuperBlock(int row4x4, int column4x4, int block_width4x4,
       LIBGAV1_DLOG(ERROR, "Failed to get residual buffer.");
       return false;
     }
-    sb_buffer->residual =
+    uint8_t* residual_buffer =
         residual_buffer_threaded_[sb_row_index][sb_column_index]->buffer();
-    sb_buffer->transform_parameters =
-        residual_buffer_threaded_[sb_row_index][sb_column_index]
-            ->transform_parameters();
     if (!ProcessPartition(row4x4, column4x4,
                           block_parameters_holder_.Tree(row, column),
-                          sb_buffer)) {
+                          scratch_buffer, &residual_buffer)) {
       LIBGAV1_DLOG(ERROR, "Error parsing partition row: %d column: %d", row4x4,
                    column4x4);
       return false;
     }
   } else {
-    sb_buffer->residual =
+    uint8_t* residual_buffer =
         residual_buffer_threaded_[sb_row_index][sb_column_index]->buffer();
-    sb_buffer->transform_parameters =
-        residual_buffer_threaded_[sb_row_index][sb_column_index]
-            ->transform_parameters();
     if (!DecodeSuperBlock(block_parameters_holder_.Tree(row, column),
-                          sb_buffer)) {
+                          scratch_buffer, &residual_buffer)) {
       LIBGAV1_DLOG(ERROR, "Error decoding superblock row: %d column: %d",
                    row4x4, column4x4);
       return false;
@@ -2112,7 +2125,8 @@ bool Tile::ProcessSuperBlock(int row4x4, int column4x4, int block_width4x4,
 }
 
 bool Tile::DecodeSuperBlock(ParameterTree* const tree,
-                            SuperBlockBuffer* const sb_buffer) {
+                            DecoderScratchBuffer* const scratch_buffer,
+                            ResidualPtr* residual) {
   Stack<ParameterTree*, kDfsStackSize> stack;
   stack.Push(tree);
   while (!stack.Empty()) {
@@ -2124,7 +2138,7 @@ bool Tile::DecodeSuperBlock(ParameterTree* const tree,
       }
       continue;
     }
-    if (!DecodeBlock(node, sb_buffer)) {
+    if (!DecodeBlock(node, scratch_buffer, residual)) {
       LIBGAV1_DLOG(ERROR, "Error decoding block row: %d column: %d",
                    node->row4x4(), node->column4x4());
       return false;
