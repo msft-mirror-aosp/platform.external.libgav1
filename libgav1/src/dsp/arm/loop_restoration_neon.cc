@@ -64,17 +64,17 @@ inline int16x8_t HorizontalSum(const uint8x8_t a[7], int16_t filter[7]) {
   sum = vaddq_s16(sum, vreinterpretq_s16_u16(vshll_n_u8(a[3], 4)));
 
   // Saturate to
-  // [0, (1 << (bitdepth + 1 + kWienerFilterBits - kInterRoundBitsHorizontal)) -
-  //  1)]
-  //     (1 << (       8 + 1 +                 7 -                   3)) - 1)
+  // [0,
+  // (1 << (bitdepth + 1 + kWienerFilterBits - kInterRoundBitsHorizontal)) - 1)]
+  // (1 << (       8 + 1 +                 7 -                         3)) - 1)
   sum = vminq_s16(sum, vdupq_n_s16((1 << 13) - 1));
   sum = vmaxq_s16(sum, vdupq_n_s16(0));
   return sum;
 }
 
 template <int min_width>
-inline void VerticalSum(const int16_t* src_base, const int src_stride,
-                        uint8_t* dst_base, const int dst_stride,
+inline void VerticalSum(const int16_t* src_base, const ptrdiff_t src_stride,
+                        uint8_t* dst_base, const ptrdiff_t dst_stride,
                         const int16x4_t filter[7], const int width,
                         const int height) {
   static_assert(min_width == 4 || min_width == 8, "");
@@ -202,76 +202,31 @@ void WienerFilter_NEON(const void* const source, void* const dest,
   // left value.
   const int center_tap = 3;
   src -= center_tap * source_stride + center_tap;
-  // This writes out 2 more rows than we need. It always writes out at least
-  // width 8 for the intermediate buffer.
-  // TODO(johannkoenig): Investigate a 4x specific first pass. May be possible
-  // to do it in half the passes.
   int y = 0;
   do {
     int x = 0;
     do {
-      const uint8_t* src_v = src + x;
-      const uint8x16_t a0 = vld1q_u8(src_v);
-      src_v += source_stride;
-      const uint8x16_t a1 = vld1q_u8(src_v);
-      src_v += source_stride;
-      const uint8x16_t a2 = vld1q_u8(src_v);
-      src_v += source_stride;
-      const uint8x16_t a3 = vld1q_u8(src_v);
-      src_v += source_stride;
-      const uint8x16_t a4 = vld1q_u8(src_v);
-      src_v += source_stride;
-      const uint8x16_t a5 = vld1q_u8(src_v);
-      src_v += source_stride;
-      const uint8x16_t a6 = vld1q_u8(src_v);
-      src_v += source_stride;
-      const uint8x16_t a7 = vld1q_u8(src_v);
+      // This is just as fast as an 8x8 transpose but avoids over-reading extra
+      // rows. It always over-reads by at least 1 value. On small widths (4xH)
+      // it over-reads by 9 values.
+      const uint8x16_t src_v = vld1q_u8(src + x);
+      uint8x8_t b[7];
+      b[0] = vget_low_u8(src_v);
+      b[1] = vget_low_u8(vextq_u8(src_v, src_v, 1));
+      b[2] = vget_low_u8(vextq_u8(src_v, src_v, 2));
+      b[3] = vget_low_u8(vextq_u8(src_v, src_v, 3));
+      b[4] = vget_low_u8(vextq_u8(src_v, src_v, 4));
+      b[5] = vget_low_u8(vextq_u8(src_v, src_v, 5));
+      b[6] = vget_low_u8(vextq_u8(src_v, src_v, 6));
 
-      uint8x8_t b[16];
+      int16x8_t sum = HorizontalSum(b, filter);
 
-      // This could load and transpose one 8x8 block to prime the loop, then
-      // load and transpose a second block in the loop. The second block could
-      // be passed to subsequent iterations.
-      // TODO(johannkoenig): convert these to arrays.
-      Transpose16x8(a0, a1, a2, a3, a4, a5, a6, a7, b, b + 1, b + 2, b + 3,
-                    b + 4, b + 5, b + 6, b + 7, b + 8, b + 9, b + 10, b + 11,
-                    b + 12, b + 13, b + 14, b + 15);
-
-      int16x8_t sum_0 = HorizontalSum(b, filter);
-      int16x8_t sum_1 = HorizontalSum(b + 1, filter);
-      int16x8_t sum_2 = HorizontalSum(b + 2, filter);
-      int16x8_t sum_3 = HorizontalSum(b + 3, filter);
-      int16x8_t sum_4 = HorizontalSum(b + 4, filter);
-      int16x8_t sum_5 = HorizontalSum(b + 5, filter);
-      int16x8_t sum_6 = HorizontalSum(b + 6, filter);
-      int16x8_t sum_7 = HorizontalSum(b + 7, filter);
-
-      // TODO(johannkoenig): convert this to an array.
-      Transpose8x8(&sum_0, &sum_1, &sum_2, &sum_3, &sum_4, &sum_5, &sum_6,
-                   &sum_7);
-
-      int16_t* wiener_buffer_v = wiener_buffer + x;
-      vst1q_s16(wiener_buffer_v, sum_0);
-      wiener_buffer_v += buffer_stride;
-      vst1q_s16(wiener_buffer_v, sum_1);
-      wiener_buffer_v += buffer_stride;
-      vst1q_s16(wiener_buffer_v, sum_2);
-      wiener_buffer_v += buffer_stride;
-      vst1q_s16(wiener_buffer_v, sum_3);
-      wiener_buffer_v += buffer_stride;
-      vst1q_s16(wiener_buffer_v, sum_4);
-      wiener_buffer_v += buffer_stride;
-      vst1q_s16(wiener_buffer_v, sum_5);
-      wiener_buffer_v += buffer_stride;
-      vst1q_s16(wiener_buffer_v, sum_6);
-      wiener_buffer_v += buffer_stride;
-      vst1q_s16(wiener_buffer_v, sum_7);
+      vst1q_s16(wiener_buffer + x, sum);
       x += 8;
     } while (x < width);
-    src += 8 * source_stride;
-    wiener_buffer += 8 * buffer_stride;
-    y += 8;
-  } while (y < height + kSubPixelTaps - 2);
+    src += source_stride;
+    wiener_buffer += buffer_stride;
+  } while (++y < height + kSubPixelTaps - 2);
 
   // Vertical filtering.
   wiener_buffer = reinterpret_cast<int16_t*>(buffer->wiener_buffer);

@@ -10,6 +10,8 @@ class BitReader {
   virtual ~BitReader() = default;
 
   virtual int ReadBit() = 0;
+  // |num_bits| has to be <= 32. The function returns a value in the range [0,
+  // 2^num_bits - 1] (inclusive) on success and -1 on failure.
   virtual int64_t ReadLiteral(int num_bits) = 0;
 
   bool DecodeSignedSubexpWithReference(int low, int high, int reference,

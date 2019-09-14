@@ -385,10 +385,10 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 using ConvolveFunc = void (*)(const void* reference, ptrdiff_t reference_stride,
                               int vertical_filter_index,
                               int horizontal_filter_index,
-                              const uint8_t inter_round_bits_vertical,
-                              int subpixel_x, int subpixel_y, int step_x,
-                              int step_y, int width, int height,
-                              void* prediction, ptrdiff_t pred_stride);
+                              int inter_round_bits_vertical, int subpixel_x,
+                              int subpixel_y, int step_x, int step_y, int width,
+                              int height, void* prediction,
+                              ptrdiff_t pred_stride);
 
 // Convolve functions signature. Each points to one convolve function with
 // a specific setting:
@@ -533,14 +533,15 @@ using ObmcBlendFuncs = ObmcBlendFunc[kNumObmcDirections];
 // |dest| is the output buffer. It is a predictor, whose type is int16_t.
 // |dest_stride| is the stride, in units of int16_t.
 //
-// NOTE: The ARM NEON implementation of WarpFunc may read up to 13 bytes before
-// the |source| buffer or up to 14 bytes after the |source| buffer. Therefore,
-// there must be enough padding before and after the |source| buffer.
+// NOTE: WarpFunc assumes the source frame has left and right borders that
+// extend the frame boundary pixels. The left and right borders must be at
+// least 13 pixels wide. In addition, Warp_NEON() may read up to 14 bytes after
+// a row in the |source| buffer. Therefore, there must be at least one extra
+// padding byte after the right border of the last row in the source buffer.
 using WarpFunc = void (*)(const void* source, ptrdiff_t source_stride,
                           int source_width, int source_height,
                           const int* warp_params, int subsampling_x,
-                          int subsampling_y,
-                          const uint8_t inter_round_bits_vertical,
+                          int subsampling_y, int inter_round_bits_vertical,
                           int block_start_x, int block_start_y, int block_width,
                           int block_height, int16_t alpha, int16_t beta,
                           int16_t gamma, int16_t delta, uint16_t* dest,
