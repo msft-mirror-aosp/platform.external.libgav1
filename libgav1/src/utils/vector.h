@@ -82,7 +82,12 @@ class VectorBase {
       if (new_items == nullptr) return false;
       if (num_items_ > 0) {
         if (std::is_trivial<T>::value) {
-          memcpy(new_items, items_, num_items_ * sizeof(T));
+          // Cast |new_items| and |items_| to void* to avoid the GCC
+          // -Wclass-memaccess warning and additionally the
+          // bugprone-undefined-memory-manipulation clang-tidy warning. The
+          // memcpy is safe because T is a trivial type.
+          memcpy(static_cast<void*>(new_items),
+                 static_cast<const void*>(items_), num_items_ * sizeof(T));
         } else {
           for (size_t i = 0; i < num_items_; ++i) {
             new (&new_items[i]) T(std::move(items_[i]));
@@ -188,7 +193,12 @@ class VectorBase {
     for (iterator it = first; it != last; ++it) it->~T();
     if (last != end()) {
       if (std::is_trivial<T>::value) {
-        memmove(first, last, (end() - last) * sizeof(T));
+        // Cast |first| and |last| to void* to avoid the GCC
+        // -Wclass-memaccess warning and additionally the
+        // bugprone-undefined-memory-manipulation clang-tidy warning. The
+        // memmove is safe because T is a trivial type.
+        memmove(static_cast<void*>(first), static_cast<const void*>(last),
+                (end() - last) * sizeof(T));
       } else {
         for (iterator it_src = last, it_dst = first; it_src != end();
              ++it_src, ++it_dst) {

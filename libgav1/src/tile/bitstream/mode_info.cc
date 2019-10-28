@@ -48,6 +48,19 @@ enum CflSign : uint8_t {
   kCflSignPositive = 2
 };
 
+// For each possible value of the combined signs (which is read from the
+// bitstream), this array stores the following: sign_u, sign_v, alpha_u_context,
+// alpha_v_context. Only positive entries are used. Entry at index i is computed
+// as follows:
+// sign_u = i / 3
+// sign_v = i % 3
+// alpha_u_context = i - 2
+// alpha_v_context = (sign_v - 1) * 3 + sign_u
+constexpr int8_t kCflAlphaLookup[kCflAlphaSignsSymbolCount][4] = {
+    {0, 1, -2, 0}, {0, 2, -1, 3}, {1, 0, 0, -2}, {1, 1, 1, 1},
+    {1, 2, 2, 4},  {2, 0, 3, -1}, {2, 1, 4, 2},  {2, 2, 5, 5},
+};
+
 constexpr BitMaskSet kPredictionModeHasNearMvMask(kPredictionModeNearMv,
                                                   kPredictionModeNearNearMv,
                                                   kPredictionModeNearNewMv,
@@ -342,24 +355,26 @@ void Tile::ReadIntraAngleInfo(const Block& block, PlaneType plane_type) {
 void Tile::ReadCflAlpha(const Block& block) {
   const int signs = reader_.ReadSymbol<kCflAlphaSignsSymbolCount>(
       symbol_decoder_context_.cfl_alpha_signs_cdf);
-  const auto sign_u = static_cast<CflSign>((signs + 1) / 3);
-  const auto sign_v = static_cast<CflSign>((signs + 1) % 3);
+  const int8_t* const cfl_lookup = kCflAlphaLookup[signs];
+  const auto sign_u = static_cast<CflSign>(cfl_lookup[0]);
+  const auto sign_v = static_cast<CflSign>(cfl_lookup[1]);
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
   prediction_parameters.cfl_alpha_u = 0;
   if (sign_u != kCflSignZero) {
+    assert(cfl_lookup[2] >= 0);
     prediction_parameters.cfl_alpha_u =
         reader_.ReadSymbol<kCflAlphaSymbolCount>(
-            symbol_decoder_context_.cfl_alpha_cdf[signs - 2]) +
+            symbol_decoder_context_.cfl_alpha_cdf[cfl_lookup[2]]) +
         1;
     if (sign_u == kCflSignNegative) prediction_parameters.cfl_alpha_u *= -1;
   }
   prediction_parameters.cfl_alpha_v = 0;
   if (sign_v != kCflSignZero) {
-    const int context = (sign_v - 1) * 3 + sign_u;
+    assert(cfl_lookup[3] >= 0);
     prediction_parameters.cfl_alpha_v =
         reader_.ReadSymbol<kCflAlphaSymbolCount>(
-            symbol_decoder_context_.cfl_alpha_cdf[context]) +
+            symbol_decoder_context_.cfl_alpha_cdf[cfl_lookup[3]]) +
         1;
     if (sign_v == kCflSignNegative) prediction_parameters.cfl_alpha_v *= -1;
   }
@@ -369,9 +384,7 @@ void Tile::ReadPredictionModeUV(const Block& block) {
   BlockParameters& bp = *block.bp;
   bool chroma_from_luma_allowed;
   if (frame_header_.segmentation.lossless[bp.segment_id]) {
-    chroma_from_luma_allowed =
-        kPlaneResidualSize[block.size][subsampling_x_[kPlaneU]]
-                          [subsampling_y_[kPlaneU]] == kBlock4x4;
+    chroma_from_luma_allowed = block.residual_size[kPlaneTypeUV] == kBlock4x4;
   } else {
     chroma_from_luma_allowed = IsBlockDimensionLessThan64(block.size);
   }
@@ -1148,12 +1161,11 @@ void Tile::ReadCompoundType(const Block& block, bool is_compound) {
       prediction_parameters.wedge_index =
           reader_.ReadSymbol<kWedgeIndexSymbolCount>(
               symbol_decoder_context_.wedge_index_cdf[block.size]);
-      prediction_parameters.wedge_sign =
-          static_cast<int>(reader_.ReadLiteral(1));
+      prediction_parameters.wedge_sign = static_cast<int>(reader_.ReadBit());
     } else if (prediction_parameters.compound_prediction_type ==
                kCompoundPredictionTypeDiffWeighted) {
       prediction_parameters.mask_is_inverse =
-          static_cast<bool>(reader_.ReadLiteral(1));
+          static_cast<bool>(reader_.ReadBit());
     }
     return;
   }
