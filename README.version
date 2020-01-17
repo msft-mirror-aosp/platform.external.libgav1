@@ -4,3 +4,4 @@ BugComponent: 324837
 Local Modifications:
 - ab3390a external/libgav1,cosmetics: add license headers
 - backport cl/281117442: Fully use the frame border for reference block.
+- backport cl/289984918: convolve: Use the correct subsampling for ref frames
