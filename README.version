@@ -1,0 +1,5 @@
+URL: https://chromium.googlesource.com/codecs/libgav1
+Version: cl/267700628
+BugComponent: 324837
+Local Modifications:
+- ab3390a external/libgav1,cosmetics: add license headers
