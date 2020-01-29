@@ -18,6 +18,7 @@
 #include <array>
 #include <cassert>
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
@@ -73,6 +74,15 @@ bool InSpatialLayer(int operating_point_idc, int spatial_id) {
 }
 
 }  // namespace
+
+bool ObuSequenceHeader::ParametersChanged(const ObuSequenceHeader& old) const {
+  // Note that the operating_parameters field is not compared per Section 7.5:
+  //   Within a particular coded video sequence, the contents of
+  //   sequence_header_obu must be bit-identical each time the sequence header
+  //   appears except for the contents of operating_parameters_info.
+  return memcmp(this, &old,
+                offsetof(ObuSequenceHeader, operating_parameters)) != 0;
+}
 
 // Macros to avoid repeated error checks in the parser code.
 #define OBU_LOG_AND_RETURN_FALSE                                            \
@@ -261,7 +271,7 @@ bool ObuParser::ParseOperatingParameters(ObuSequenceHeader* sequence_header,
   return true;
 }
 
-bool ObuParser::ParseSequenceHeader() {
+bool ObuParser::ParseSequenceHeader(bool seen_frame_header) {
   ObuSequenceHeader sequence_header = {};
   int64_t scratch;
   OBU_READ_LITERAL_OR_FAIL(3);
@@ -321,8 +331,7 @@ bool ObuParser::ParseSequenceHeader() {
         OBU_READ_BIT_OR_FAIL;
         if (static_cast<bool>(scratch)) {
           OBU_READ_LITERAL_OR_FAIL(4);
-          sequence_header.operating_parameters.initial_display_delay[i] =
-              1 + scratch;
+          sequence_header.initial_display_delay[i] = 1 + scratch;
         }
       }
     }
@@ -414,7 +423,17 @@ bool ObuParser::ParseSequenceHeader() {
   if (!ParseColorConfig(&sequence_header)) return false;
   OBU_READ_BIT_OR_FAIL;
   sequence_header.film_grain_params_present = static_cast<bool>(scratch);
-  // TODO(wtc): Compare new sequence header with old sequence header.
+  // Compare new sequence header with old sequence header.
+  if (has_sequence_header_ &&
+      sequence_header.ParametersChanged(sequence_header_)) {
+    // Between the frame header OBU and the last tile group OBU of the frame,
+    // do not allow the sequence header to change.
+    if (seen_frame_header) {
+      LIBGAV1_DLOG(ERROR, "Sequence header changed in the middle of a frame.");
+      return false;
+    }
+    decoder_state_.ClearReferenceFrames();
+  }
   sequence_header_ = sequence_header;
   has_sequence_header_ = true;
   // Section 6.4.1: It is a requirement of bitstream conformance that if
@@ -1958,6 +1977,20 @@ bool ObuParser::ParseFrameParameters() {
         }
       }
     }
+    // Validate frame_header_.primary_reference_frame.
+    if (frame_header_.primary_reference_frame != kPrimaryReferenceNone) {
+      const int index =
+          frame_header_
+              .reference_frame_index[frame_header_.primary_reference_frame];
+      if (decoder_state_.reference_frame[index] == nullptr) {
+        LIBGAV1_DLOG(ERROR,
+                     "primary_ref_frame is %d but ref_frame_idx[%d] (%d) is "
+                     "not a decoded frame.",
+                     frame_header_.primary_reference_frame,
+                     frame_header_.primary_reference_frame, index);
+        return false;
+      }
+    }
     if (frame_header_.frame_size_override_flag &&
         !frame_header_.error_resilient_mode) {
       // Section 5.9.7.
@@ -2310,7 +2343,7 @@ bool ObuParser::ParseOneFrame() {
       case kObuTemporalDelimiter:
         break;
       case kObuSequenceHeader:
-        if (!ParseSequenceHeader()) {
+        if (!ParseSequenceHeader(seen_frame_header)) {
           LIBGAV1_DLOG(ERROR, "Failed to parse SequenceHeader OBU.");
           return false;
         }
