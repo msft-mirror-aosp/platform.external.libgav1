@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 
 #include "src/decoder_buffer.h"
 #include "src/dsp/common.h"
@@ -182,13 +183,25 @@ struct DecoderModelInfo {
 };
 
 struct OperatingParameters {
-  uint8_t initial_display_delay[kMaxOperatingPoints];
   uint32_t decoder_buffer_delay[kMaxOperatingPoints];
   uint32_t encoder_buffer_delay[kMaxOperatingPoints];
   bool low_delay_mode_flag[kMaxOperatingPoints];
 };
 
 struct ObuSequenceHeader {
+  // Section 7.5:
+  //   Within a particular coded video sequence, the contents of
+  //   sequence_header_obu must be bit-identical each time the sequence header
+  //   appears except for the contents of operating_parameters_info. A new
+  //   coded video sequence is required if the sequence header parameters
+  //   change.
+  //
+  // IMPORTANT: ParametersChanged() is implemented with a memcmp() call. For
+  // this to work, this object and the |old| object must be initialized with
+  // an empty brace-enclosed list, which initializes any padding to zero bits.
+  // See https://en.cppreference.com/w/cpp/language/zero_initialization.
+  bool ParametersChanged(const ObuSequenceHeader& old) const;
+
   BitstreamProfile profile;
   bool still_picture;
   bool reduced_still_picture_header;
@@ -229,10 +242,29 @@ struct ObuSequenceHeader {
   bool decoder_model_info_present_flag;
   DecoderModelInfo decoder_model_info;
   bool decoder_model_present_for_operating_point[kMaxOperatingPoints];
-  OperatingParameters operating_parameters;
   bool initial_display_delay_present_flag;
+  uint8_t initial_display_delay[kMaxOperatingPoints];
   bool film_grain_params_present;
+
+  // IMPORTANT: the operating_parameters member must be at the end of the
+  // struct so that ParametersChanged() can be implemented with a memcmp()
+  // call.
+  OperatingParameters operating_parameters;
 };
+
+// Verify it is safe to use offsetof with ObuSequenceHeader and to use memcmp
+// to compare two ObuSequenceHeader objects.
+static_assert(std::is_standard_layout<ObuSequenceHeader>::value, "");
+// Verify operating_parameters is the last member of ObuSequenceHeader. The
+// second assertion assumes that ObuSequenceHeader has no padding after the
+// operating_parameters field. The first assertion is a sufficient condition
+// for ObuSequenceHeader to have no padding after the operating_parameters
+// field.
+static_assert(alignof(ObuSequenceHeader) == alignof(OperatingParameters), "");
+static_assert(sizeof(ObuSequenceHeader) ==
+                  offsetof(ObuSequenceHeader, operating_parameters) +
+                      sizeof(OperatingParameters),
+              "");
 
 // Loop filter parameters:
 //
@@ -493,7 +525,7 @@ class ObuParser : public Allocable {
   bool ParseDecoderModelInfo(ObuSequenceHeader* sequence_header);  // 5.5.4.
   bool ParseOperatingParameters(ObuSequenceHeader* sequence_header,
                                 int index);  // 5.5.5.
-  bool ParseSequenceHeader();                // 5.5.1.
+  bool ParseSequenceHeader(bool seen_frame_header);  // 5.5.1.
   bool ParseFrameParameters();               // 5.9.2, 5.9.7 and 5.9.10.
   void MarkInvalidReferenceFrames();         // 5.9.4.
   bool ParseFrameSizeAndRenderSize();        // 5.9.5 and 5.9.6.
