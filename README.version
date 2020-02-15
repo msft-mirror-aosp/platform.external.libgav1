@@ -8,3 +8,4 @@ Local Modifications:
 - backport cl/289966078: Move initial_display_delay out of OperatingParamet
 - backport cl/290784565: Handle a change of sequence header parameters.
 - backport cl/291222461: Disallow change of sequence header during a frame.
+- backport cl/289910031: obu: Check for size validity in SetTileDataOffset
