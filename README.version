@@ -3,3 +3,4 @@ Version: cl/267700628
 BugComponent: 324837
 Local Modifications:
 - ab3390a external/libgav1,cosmetics: add license headers
+- backport cl/281117442: Fully use the frame border for reference block.
