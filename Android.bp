@@ -121,4 +121,5 @@ cc_library_static {
             instruction_set: "arm",
         },
     },
+    min_sdk_version: "29",
 }
