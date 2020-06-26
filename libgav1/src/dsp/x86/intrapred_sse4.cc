@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/intrapred.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -26,6 +26,7 @@
 #include <cstring>  // memcpy
 
 #include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/dsp/x86/transpose_sse4.h"
 #include "src/utils/common.h"
@@ -1022,7 +1023,7 @@ void Paeth16x4_SSE4_1(void* const dest, ptrdiff_t stride,
 
   const auto* const top_ptr = static_cast<const uint8_t*>(top_row);
   const __m128i top_lefts16 = _mm_set1_epi16(top_ptr[-1]);
-  const __m128i top_lefts8 = _mm_set1_epi8(top_ptr[-1]);
+  const __m128i top_lefts8 = _mm_set1_epi8(static_cast<int8_t>(top_ptr[-1]));
 
   // Given that the spec defines "base" as top[x] + left[y] - top[-1],
   // pLeft = abs(base - left[y]) = abs(top[x] - top[-1])
@@ -1066,7 +1067,7 @@ inline void WritePaeth16x8(void* const dest, ptrdiff_t stride,
   const __m128i top_hi = _mm_cvtepu8_epi16(_mm_srli_si128(top, 8));
 
   const __m128i top_lefts16 = _mm_set1_epi16(top_left);
-  const __m128i top_lefts8 = _mm_set1_epi8(top_left);
+  const __m128i top_lefts8 = _mm_set1_epi8(static_cast<int8_t>(top_left));
 
   // Given that the spec defines "base" as top[x] + left[y] - top_left,
   // pLeft = abs(base - left[y]) = abs(top[x] - top[-1])
@@ -1132,7 +1133,7 @@ void WritePaeth16x16(void* const dest, ptrdiff_t stride, const uint8_t top_left,
   const __m128i top_hi = _mm_cvtepu8_epi16(_mm_srli_si128(top, 8));
 
   const __m128i top_lefts16 = _mm_set1_epi16(top_left);
-  const __m128i top_lefts8 = _mm_set1_epi8(top_left);
+  const __m128i top_lefts8 = _mm_set1_epi8(static_cast<int8_t>(top_left));
 
   // Given that the spec defines "base" as top[x] + left[y] - top[-1],
   // pLeft = abs(base - left[y]) = abs(top[x] - top[-1])
@@ -1994,7 +1995,7 @@ inline void DirectionalZone2FromLeftCol_4x4_SSE4_1(
 // time. The values are found by inspection. By coincidence, all angles that
 // satisfy (ystep >> 6) == 2 map to the same value, so it is enough to look up
 // by ystep >> 6. The largest index for this lookup is 1023 >> 6 == 15.
-const int kDirectionalZone2ShuffleInvalidHeight[16] = {
+constexpr int kDirectionalZone2ShuffleInvalidHeight[16] = {
     1024, 1024, 16, 16, 16, 16, 0, 0, 18, 0, 0, 0, 0, 0, 0, 40};
 
 template <bool upsampled>
@@ -2688,7 +2689,6 @@ void FilterIntraPredictor_SSE4_1(void* const dest, ptrdiff_t stride,
     dst += 4;
   }
 
-  left = _mm_setzero_si128();
   // Now we handle heights that reference previous blocks rather than top_row.
   for (int y = 4; y < height; y += 4) {
     // Leftmost 4x4 block for this height.
@@ -2740,7 +2740,7 @@ void FilterIntraPredictor_SSE4_1(void* const dest, ptrdiff_t stride,
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   static_cast<void>(dsp);
 // These guards check if this version of the function was not superseded by
@@ -3524,7 +3524,7 @@ void IntraPredInit_SSE4_1() {
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 namespace libgav1 {
 namespace dsp {
 

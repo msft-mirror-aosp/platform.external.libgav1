@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "src/dsp/average_blend.h"
-#include "src/dsp/dsp.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -23,6 +23,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/utils/common.h"
 
@@ -30,73 +32,65 @@ namespace libgav1 {
 namespace dsp {
 namespace {
 
-constexpr int kBitdepth8 = 8;
 constexpr int kInterPostRoundBit = 4;
-// An offset to cancel offsets used in compound predictor generation that
-// make intermediate computations non negative.
-const __m128i kCompoundRoundOffset =
-    _mm_set1_epi16((2 << (kBitdepth8 + 4)) + (2 << (kBitdepth8 + 3)));
 
-inline void AverageBlend4Row(const uint16_t* prediction_0,
-                             const uint16_t* prediction_1, uint8_t* dest) {
+inline void AverageBlend4Row(const int16_t* prediction_0,
+                             const int16_t* prediction_1, uint8_t* dest) {
   const __m128i pred_0 = LoadLo8(prediction_0);
   const __m128i pred_1 = LoadLo8(prediction_1);
   __m128i res = _mm_add_epi16(pred_0, pred_1);
-  res = _mm_sub_epi16(res, kCompoundRoundOffset);
   res = RightShiftWithRounding_S16(res, kInterPostRoundBit + 1);
   Store4(dest, _mm_packus_epi16(res, res));
 }
 
-inline void AverageBlend8Row(const uint16_t* prediction_0,
-                             const uint16_t* prediction_1, uint8_t* dest) {
-  const __m128i pred_0 = LoadUnaligned16(prediction_0);
-  const __m128i pred_1 = LoadUnaligned16(prediction_1);
+inline void AverageBlend8Row(const int16_t* prediction_0,
+                             const int16_t* prediction_1, uint8_t* dest) {
+  const __m128i pred_0 = LoadAligned16(prediction_0);
+  const __m128i pred_1 = LoadAligned16(prediction_1);
   __m128i res = _mm_add_epi16(pred_0, pred_1);
-  res = _mm_sub_epi16(res, kCompoundRoundOffset);
   res = RightShiftWithRounding_S16(res, kInterPostRoundBit + 1);
   StoreLo8(dest, _mm_packus_epi16(res, res));
 }
 
-inline void AverageBlendLargeRow(const uint16_t* prediction_0,
-                                 const uint16_t* prediction_1, const int width,
+inline void AverageBlendLargeRow(const int16_t* prediction_0,
+                                 const int16_t* prediction_1, const int width,
                                  uint8_t* dest) {
   int x = 0;
   do {
-    const __m128i pred_00 = LoadUnaligned16(&prediction_0[x]);
-    const __m128i pred_01 = LoadUnaligned16(&prediction_1[x]);
+    const __m128i pred_00 = LoadAligned16(&prediction_0[x]);
+    const __m128i pred_01 = LoadAligned16(&prediction_1[x]);
     __m128i res0 = _mm_add_epi16(pred_00, pred_01);
-    res0 = _mm_sub_epi16(res0, kCompoundRoundOffset);
     res0 = RightShiftWithRounding_S16(res0, kInterPostRoundBit + 1);
-    const __m128i pred_10 = LoadUnaligned16(&prediction_0[x + 8]);
-    const __m128i pred_11 = LoadUnaligned16(&prediction_1[x + 8]);
+    const __m128i pred_10 = LoadAligned16(&prediction_0[x + 8]);
+    const __m128i pred_11 = LoadAligned16(&prediction_1[x + 8]);
     __m128i res1 = _mm_add_epi16(pred_10, pred_11);
-    res1 = _mm_sub_epi16(res1, kCompoundRoundOffset);
     res1 = RightShiftWithRounding_S16(res1, kInterPostRoundBit + 1);
     StoreUnaligned16(dest + x, _mm_packus_epi16(res0, res1));
     x += 16;
   } while (x < width);
 }
 
-void AverageBlend_SSE4_1(const uint16_t* prediction_0,
-                         const ptrdiff_t prediction_stride_0,
-                         const uint16_t* prediction_1,
-                         const ptrdiff_t prediction_stride_1, const int width,
-                         const int height, void* const dest,
+void AverageBlend_SSE4_1(const void* prediction_0, const void* prediction_1,
+                         const int width, const int height, void* const dest,
                          const ptrdiff_t dest_stride) {
   auto* dst = static_cast<uint8_t*>(dest);
+  const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
+  const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y = height;
 
   if (width == 4) {
     do {
-      AverageBlend4Row(prediction_0, prediction_1, dst);
+      // TODO(b/150326556): |prediction_[01]| values are packed. It is possible
+      // to load 8 values at a time.
+      AverageBlend4Row(pred_0, pred_1, dst);
       dst += dest_stride;
-      prediction_0 += prediction_stride_0;
-      prediction_1 += prediction_stride_1;
+      pred_0 += width;
+      pred_1 += width;
 
-      AverageBlend4Row(prediction_0, prediction_1, dst);
+      AverageBlend4Row(pred_0, pred_1, dst);
       dst += dest_stride;
-      prediction_0 += prediction_stride_0;
-      prediction_1 += prediction_stride_1;
+      pred_0 += width;
+      pred_1 += width;
 
       y -= 2;
     } while (y != 0);
@@ -105,15 +99,15 @@ void AverageBlend_SSE4_1(const uint16_t* prediction_0,
 
   if (width == 8) {
     do {
-      AverageBlend8Row(prediction_0, prediction_1, dst);
+      AverageBlend8Row(pred_0, pred_1, dst);
       dst += dest_stride;
-      prediction_0 += prediction_stride_0;
-      prediction_1 += prediction_stride_1;
+      pred_0 += width;
+      pred_1 += width;
 
-      AverageBlend8Row(prediction_0, prediction_1, dst);
+      AverageBlend8Row(pred_0, pred_1, dst);
       dst += dest_stride;
-      prediction_0 += prediction_stride_0;
-      prediction_1 += prediction_stride_1;
+      pred_0 += width;
+      pred_1 += width;
 
       y -= 2;
     } while (y != 0);
@@ -121,22 +115,22 @@ void AverageBlend_SSE4_1(const uint16_t* prediction_0,
   }
 
   do {
-    AverageBlendLargeRow(prediction_0, prediction_1, width, dst);
+    AverageBlendLargeRow(pred_0, pred_1, width, dst);
     dst += dest_stride;
-    prediction_0 += prediction_stride_0;
-    prediction_1 += prediction_stride_1;
+    pred_0 += width;
+    pred_1 += width;
 
-    AverageBlendLargeRow(prediction_0, prediction_1, width, dst);
+    AverageBlendLargeRow(pred_0, pred_1, width, dst);
     dst += dest_stride;
-    prediction_0 += prediction_stride_0;
-    prediction_1 += prediction_stride_1;
+    pred_0 += width;
+    pred_1 += width;
 
     y -= 2;
   } while (y != 0);
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
 #if DSP_ENABLED_8BPP_SSE4_1(AverageBlend)
   dsp->average_blend = AverageBlend_SSE4_1;
@@ -150,7 +144,7 @@ void AverageBlendInit_SSE4_1() { Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 
 namespace libgav1 {
 namespace dsp {
