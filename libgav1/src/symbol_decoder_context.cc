@@ -98,7 +98,8 @@ void ResetUVModeCounters(SymbolDecoderContext* const context) {
 
 }  // namespace
 
-#define CDF_COPY(source, destination) \
+#define CDF_COPY(source, destination)                       \
+  static_assert(sizeof(source) == sizeof(destination), ""); \
   memcpy(destination, source, sizeof(source))
 
 void SymbolDecoderContext::Initialize(int base_quantizer_index) {
@@ -191,7 +192,7 @@ void SymbolDecoderContext::ResetIntraFrameYModeCdf() {
 
 #undef CDF_COPY
 
-// These macros set the last element in the inner-most dimesion of the array to
+// These macros set the last element in the inner-most dimension of the array to
 // zero.
 #define RESET_COUNTER_1D(array)                              \
   do {                                                       \

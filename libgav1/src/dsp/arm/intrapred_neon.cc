@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/intrapred.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -25,6 +25,7 @@
 
 #include "src/dsp/arm/common_neon.h"
 #include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 
 namespace libgav1 {
 namespace dsp {
@@ -158,11 +159,10 @@ inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
   const auto* const ref_0_u8 = static_cast<const uint8_t*>(ref_0);
   const auto* const ref_1_u8 = static_cast<const uint8_t*>(ref_1);
   if (ref_0_size_log2 == 2) {
-    uint8x8_t val = vdup_n_u8(0);
-    val = LoadLo4(ref_0_u8, val);
+    uint8x8_t val = Load4(ref_0_u8);
     if (use_ref_1) {
       if (ref_1_size_log2 == 2) {  // 4x4
-        val = LoadHi4(ref_1_u8, val);
+        val = Load4<1>(ref_1_u8, val);
         return Sum(vpaddl_u8(val));
       } else if (ref_1_size_log2 == 3) {  // 4x8
         const uint8x8_t val_1 = vld1_u8(ref_1_u8);
@@ -171,9 +171,7 @@ inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
         return Sum(vadd_u16(sum_0, sum_1));
       } else if (ref_1_size_log2 == 4) {  // 4x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
-        const uint16x8_t sum_0 = vmovl_u8(val);
-        const uint16x8_t sum_1 = vpaddlq_u8(val_1);
-        return Sum(vaddq_u16(sum_0, sum_1));
+        return Sum(vaddw_u8(vpaddlq_u8(val_1), val));
       }
     }
     // 4x1
@@ -183,8 +181,7 @@ inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
     const uint8x8_t val_0 = vld1_u8(ref_0_u8);
     if (use_ref_1) {
       if (ref_1_size_log2 == 2) {  // 8x4
-        uint8x8_t val_1 = vdup_n_u8(0);
-        val_1 = LoadLo4(ref_1_u8, val_1);
+        const uint8x8_t val_1 = Load4(ref_1_u8);
         const uint16x4_t sum_0 = vpaddl_u8(val_0);
         const uint16x4_t sum_1 = vpaddl_u8(val_1);
         return Sum(vadd_u16(sum_0, sum_1));
@@ -195,12 +192,9 @@ inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
         return Sum(vadd_u16(sum_0, sum_1));
       } else if (ref_1_size_log2 == 4) {  // 8x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
-        const uint16x8_t sum_0 = vmovl_u8(val_0);
-        const uint16x8_t sum_1 = vpaddlq_u8(val_1);
-        return Sum(vaddq_u16(sum_0, sum_1));
+        return Sum(vaddw_u8(vpaddlq_u8(val_1), val_0));
       } else if (ref_1_size_log2 == 5) {  // 8x32
-        const uint16x8_t sum_0 = vmovl_u8(val_0);
-        return Sum(vaddq_u16(sum_0, LoadAndAdd32(ref_1_u8)));
+        return Sum(vaddw_u8(LoadAndAdd32(ref_1_u8), val_0));
       }
     }
     // 8x1
@@ -209,16 +203,11 @@ inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
     const uint8x16_t val_0 = vld1q_u8(ref_0_u8);
     if (use_ref_1) {
       if (ref_1_size_log2 == 2) {  // 16x4
-        uint8x8_t val_1 = vdup_n_u8(0);
-        val_1 = LoadLo4(ref_1_u8, val_1);
-        const uint16x8_t sum_0 = vmovl_u8(val_1);
-        const uint16x8_t sum_u16 = vpaddlq_u8(val_0);
-        return Sum(vaddq_u16(sum_0, sum_u16));
+        const uint8x8_t val_1 = Load4(ref_1_u8);
+        return Sum(vaddw_u8(vpaddlq_u8(val_0), val_1));
       } else if (ref_1_size_log2 == 3) {  // 16x8
         const uint8x8_t val_1 = vld1_u8(ref_1_u8);
-        const uint16x8_t sum_0 = vpaddlq_u8(val_0);
-        const uint16x8_t sum_1 = vmovl_u8(val_1);
-        return Sum(vaddq_u16(sum_0, sum_1));
+        return Sum(vaddw_u8(vpaddlq_u8(val_0), val_1));
       } else if (ref_1_size_log2 == 4) {  // 16x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
         return Sum(Add(val_0, val_1));
@@ -239,8 +228,7 @@ inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
     if (use_ref_1) {
       if (ref_1_size_log2 == 3) {  // 32x8
         const uint8x8_t val_1 = vld1_u8(ref_1_u8);
-        const uint16x8_t sum_1 = vmovl_u8(val_1);
-        return Sum(vaddq_u16(sum_0, sum_1));
+        return Sum(vaddw_u8(sum_0, val_1));
       } else if (ref_1_size_log2 == 4) {  // 32x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
         const uint16x8_t sum_1 = vpaddlq_u8(val_1);
@@ -340,8 +328,7 @@ inline void Paeth4Or8xN_NEON(void* const dest, ptrdiff_t stride,
   const uint16x8_t top_left_x2 = vdupq_n_u16(top_row_u8[-1] + top_row_u8[-1]);
   uint8x8_t top;
   if (width == 4) {
-    top = vdup_n_u8(0);
-    top = LoadLo4(top_row_u8, top);
+    top = Load4(top_row_u8);
   } else {  // width == 8
     top = vld1_u8(top_row_u8);
   }
@@ -388,6 +375,8 @@ inline void Paeth4Or8xN_NEON(void* const dest, ptrdiff_t stride,
 inline uint8x16_t XLeTopLeft(const uint8x16_t x_dist,
                              const uint16x8_t top_left_dist_low,
                              const uint16x8_t top_left_dist_high) {
+  // TODO(johannkoenig): cle() should work with vmovn(top_left_dist) instead of
+  // using movl(x_dist).
   const uint8x8_t x_le_top_left_low =
       vmovn_u16(vcleq_u16(vmovl_u8(vget_low_u8(x_dist)), top_left_dist_low));
   const uint8x8_t x_le_top_left_high =
@@ -536,7 +525,7 @@ struct DcDefs {
 };
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   // 4x4
   dsp->intra_predictors[kTransformSize4x4][kIntraPredictorDcTop] =
@@ -976,7 +965,7 @@ struct DcDefs {
 };
 
 void Init10bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(10);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
   dsp->intra_predictors[kTransformSize4x4][kIntraPredictorDcTop] =
       DcDefs::_4x4::DcTop;
@@ -1144,7 +1133,7 @@ void IntraPredInit_NEON() {
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_NEON
+#else  // !LIBGAV1_ENABLE_NEON
 namespace libgav1 {
 namespace dsp {
 
