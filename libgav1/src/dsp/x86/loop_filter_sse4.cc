@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/loop_filter.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -24,6 +24,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 
 namespace libgav1 {
@@ -49,7 +51,7 @@ inline __m128i AbsDiff(const __m128i& a, const __m128i& b) {
 
 inline __m128i CheckOuterThreshF4(const __m128i& q1q0, const __m128i& p1p0,
                                   const __m128i& outer_thresh) {
-  const __m128i fe = _mm_set1_epi8(0xfe);
+  const __m128i fe = _mm_set1_epi8(static_cast<int8_t>(0xfe));
   //  abs(p0 - q0) * 2 + abs(p1 - q1) / 2 <= outer_thresh;
   const __m128i abs_pmq = AbsDiff(p1p0, q1q0);
   const __m128i a = _mm_adds_epu8(abs_pmq, abs_pmq);
@@ -103,7 +105,7 @@ inline __m128i NeedsFilter4(const __m128i& q1q0, const __m128i& p1p0,
 
 inline void Filter4(const __m128i& qp1, const __m128i& qp0, __m128i* oqp1,
                     __m128i* oqp0, const __m128i& mask, const __m128i& hev) {
-  const __m128i t80 = _mm_set1_epi8(0x80);
+  const __m128i t80 = _mm_set1_epi8(static_cast<int8_t>(0x80));
   const __m128i t1 = _mm_set1_epi8(0x1);
   const __m128i qp1qp0 = _mm_unpacklo_epi64(qp0, qp1);
   const __m128i qps1qps0 = _mm_xor_si128(qp1qp0, t80);
@@ -1099,7 +1101,7 @@ void Vertical14(void* dest, ptrdiff_t stride, int outer_thresh,
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   static_cast<void>(dsp);
 #if DSP_ENABLED_8BPP_SSE4_1(LoopFilterSize4_LoopFilterTypeHorizontal)
@@ -1141,7 +1143,7 @@ template <int bitdepth>
 struct LoopFilterFuncs_SSE4_1 {
   LoopFilterFuncs_SSE4_1() = delete;
 
-  static const int kThreshShift = bitdepth - 8;
+  static constexpr int kThreshShift = bitdepth - 8;
 
   static void Vertical4(void* dest, ptrdiff_t stride, int outer_thresh,
                         int inner_thresh, int hev_thresh);
@@ -2190,10 +2192,10 @@ void LoopFilterFuncs_SSE4_1<bitdepth>::Vertical14(void* dest, ptrdiff_t stride8,
   StoreUnaligned16(dst - 8 + 8 + 3 * stride, x3);
 }
 
-using Defs10bpp = LoopFilterFuncs_SSE4_1<10>;
+using Defs10bpp = LoopFilterFuncs_SSE4_1<kBitdepth10>;
 
 void Init10bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(10);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
   static_cast<void>(dsp);
 #if DSP_ENABLED_10BPP_SSE4_1(LoopFilterSize4_LoopFilterTypeHorizontal)
@@ -2243,7 +2245,7 @@ void LoopFilterInit_SSE4_1() {
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 namespace libgav1 {
 namespace dsp {
 
