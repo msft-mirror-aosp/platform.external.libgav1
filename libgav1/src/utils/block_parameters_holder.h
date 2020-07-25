@@ -31,17 +31,16 @@ namespace libgav1 {
 // corresponding to a superblock.
 class BlockParametersHolder {
  public:
-  // If |use_128x128_superblock| is true, 128x128 superblocks will be used,
-  // otherwise 64x64 superblocks will be used.
-  BlockParametersHolder(int rows4x4, int columns4x4,
-                        bool use_128x128_superblock);
+  BlockParametersHolder() = default;
 
   // Not copyable or movable.
   BlockParametersHolder(const BlockParametersHolder&) = delete;
   BlockParametersHolder& operator=(const BlockParametersHolder&) = delete;
 
-  // Must be called first.
-  LIBGAV1_MUST_USE_RESULT bool Init();
+  // If |use_128x128_superblock| is true, 128x128 superblocks will be used,
+  // otherwise 64x64 superblocks will be used.
+  LIBGAV1_MUST_USE_RESULT bool Reset(int rows4x4, int columns4x4,
+                                     bool use_128x128_superblock);
 
   // Finds the BlockParameters corresponding to |row4x4| and |column4x4|. This
   // is done as a simple look up of the |block_parameters_cache_| matrix.
@@ -49,6 +48,16 @@ class BlockParametersHolder {
   BlockParameters* Find(int row4x4, int column4x4) const {
     return block_parameters_cache_[row4x4][column4x4];
   }
+
+  BlockParameters** Address(int row4x4, int column4x4) {
+    return block_parameters_cache_.data() + row4x4 * columns4x4_ + column4x4;
+  }
+
+  BlockParameters* const* Address(int row4x4, int column4x4) const {
+    return block_parameters_cache_.data() + row4x4 * columns4x4_ + column4x4;
+  }
+
+  int columns4x4() const { return columns4x4_; }
 
   // Returns the ParameterTree corresponding to superblock starting at (|row|,
   // |column|).
@@ -60,12 +69,12 @@ class BlockParametersHolder {
                  BlockParameters* bp);
 
  private:
-  const int rows4x4_;
-  const int columns4x4_;
-  const bool use_128x128_superblock_;
+  int rows4x4_ = 0;
+  int columns4x4_ = 0;
+  bool use_128x128_superblock_ = false;
   Array2D<std::unique_ptr<ParameterTree>> trees_;
 
-  // This is a 2d array of size |rows4x4_| * |columns4x4_|.This is filled in by
+  // This is a 2d array of size |rows4x4_| * |columns4x4_|. This is filled in by
   // FillCache() and used by Find() to perform look ups using exactly one look
   // up (instead of traversing the entire tree).
   Array2D<BlockParameters*> block_parameters_cache_;

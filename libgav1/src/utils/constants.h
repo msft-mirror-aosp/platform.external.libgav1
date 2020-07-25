@@ -28,6 +28,16 @@ namespace libgav1 {
 constexpr int EnumRangeLength(int begin, int end) { return end - begin + 1; }
 
 enum {
+// Maximum number of threads that the library will ever create.
+#if defined(LIBGAV1_MAX_THREADS) && LIBGAV1_MAX_THREADS > 0
+  kMaxThreads = LIBGAV1_MAX_THREADS
+#else
+  kMaxThreads = 128
+#endif
+};  // anonymous enum
+
+enum {
+  kInvalidMvValue = -32768,
   kCdfMaxProbability = 32768,
   kBlockWidthCount = 5,
   kMaxSegments = 8,
@@ -37,7 +47,6 @@ enum {
   kFrameLfCount = 4,
   kMaxLoopFilterValue = 63,
   kNum4x4In64x64 = 256,
-  kNumLoopFilterMasks = 4,
   kMaxAngleDelta = 3,
   kDirectionalIntraModes = 8,
   kMaxSuperBlockSizeLog2 = 7,
@@ -48,56 +57,80 @@ enum {
   kRestorationTypeSymbolCount = 3,
   kSgrProjParamsBits = 4,
   kSgrProjPrecisionBits = 7,
-  kRestorationBorder = 3,      // Padding on each side of a restoration block.
+  // Padding on left and right side of a restoration block.
+  // 3 is enough, but padding to 4 is more efficient, and makes the temporary
+  // source buffer 8-pixel aligned.
+  kRestorationHorizontalBorder = 4,
+  // Padding on top and bottom side of a restoration block.
+  kRestorationVerticalBorder = 2,
   kCdefBorder = 2,             // Padding on each side of a cdef block.
   kConvolveBorderLeftTop = 3,  // Left/top padding of a convolve block.
-  kConvolveBorderRightBottom = 4,  // Right/bottom padding of a convolve block.
+  // Right/bottom padding of a convolve block. This needs to be 4 at minimum,
+  // but was increased to simplify the SIMD loads in
+  // ConvolveCompoundScale2D_NEON() and ConvolveScale2D_NEON().
+  kConvolveBorderRight = 8,
+  kConvolveBorderBottom = 4,
   kSubPixelTaps = 8,
   kWienerFilterBits = 7,
+  kWienerFilterTaps = 7,
   kMaxPaletteSize = 8,
   kMinPaletteSize = 2,
   kMaxPaletteSquare = 64,
   kBorderPixels = 64,
-  // Although the left and right borders of a frame start with kBorderPixels,
-  // they may change if YuvBuffer::ShiftBuffer() is called. These constants
-  // are the minimum left and right border sizes in pixels as an extension of
-  // the frame boundary. The minimum border sizes are derived from the
-  // following requirements:
+  // The final blending process for film grain needs room to overwrite and read
+  // with SIMD instructions. The maximum overwrite is 7 pixels, but the border
+  // is required to be a multiple of 32 by YuvBuffer::Realloc, so that
+  // subsampled chroma borders are 16-aligned.
+  kBorderPixelsFilmGrain = 32,
+  // These constants are the minimum left, right, top, and bottom border sizes
+  // in pixels as an extension of the frame boundary. The minimum border sizes
+  // are derived from the following requirements:
   // - Warp_C() may read up to 13 pixels before or after a row.
   // - Warp_NEON() may read up to 13 pixels before a row. It may read up to 14
   //   pixels after a row, but the value of the last read pixel is not used.
+  // - Warp_C() and Warp_NEON() may read up to 13 pixels above the top row and
+  //   13 pixels below the bottom row.
   kMinLeftBorderPixels = 13,
   kMinRightBorderPixels = 13,
+  kMinTopBorderPixels = 13,
+  kMinBottomBorderPixels = 13,
   kWarpedModelPrecisionBits = 16,
   kMaxRefMvStackSize = 8,
-  kExtraWeightForNearestMvs = 640,
   kMaxLeastSquaresSamples = 8,
+  kMaxTemporalMvCandidates = 19,
+  // The SIMD implementations of motion vection projection functions always
+  // process 2 or 4 elements together, so we pad the corresponding buffers to
+  // size 20.
+  kMaxTemporalMvCandidatesWithPadding = 20,
   kMaxSuperBlockSizeInPixels = 128,
+  kMaxScaledSuperBlockSizeInPixels = 128 * 2,
   kMaxSuperBlockSizeSquareInPixels = 128 * 128,
-  kNum4x4InLoopFilterMaskUnit = 16,
+  kNum4x4InLoopFilterUnit = 16,
+  kProjectionMvClamp = (1 << 14) - 1,  // == 16383
+  kProjectionMvMaxHorizontalOffset = 8,
+  kCdefUnitSize = 64,
+  kCdefUnitSizeWithBorders = kCdefUnitSize + 2 * kCdefBorder,
   kRestorationUnitOffset = 8,
-  // 2 pixel padding for 5x5 box sum on each side.
-  kRestorationPadding = 4,
   // Loop restoration's processing unit size is fixed as 64x64.
-  kRestorationProcessingUnitSize = 64,
-  kRestorationProcessingUnitSizeWithBorders =
-      kRestorationProcessingUnitSize + 2 * kRestorationBorder,
-  // The max size of a box filter process output buffer.
-  kMaxBoxFilterProcessOutputPixels = kRestorationProcessingUnitSize *
-                                     kRestorationProcessingUnitSize,  // == 4096
-  // The max size of a box filter process intermediate buffer.
-  kBoxFilterProcessIntermediatePixels =
-      (kRestorationProcessingUnitSizeWithBorders + kRestorationPadding) *
-      (kRestorationProcessingUnitSizeWithBorders +
-       kRestorationPadding),  // == 5476
+  kRestorationUnitHeight = 64,
+  kRestorationUnitWidth = 256,
+  kRestorationUnitHeightWithBorders =
+      kRestorationUnitHeight + 2 * kRestorationVerticalBorder,
+  kRestorationUnitWidthWithBorders =
+      kRestorationUnitWidth + 2 * kRestorationHorizontalBorder,
   kSuperResFilterBits = 6,
   kSuperResFilterShifts = 1 << kSuperResFilterBits,
   kSuperResFilterTaps = 8,
   kSuperResScaleBits = 14,
   kSuperResExtraBits = kSuperResScaleBits - kSuperResFilterBits,
   kSuperResScaleMask = (1 << 14) - 1,
+  kSuperResHorizontalBorder = 8,
+  kSuperResVerticalBorder = 1,
+  // The SIMD implementations of superres calculate up to 4 extra upscaled
+  // pixels which will over-read 2 downscaled pixels in the end of each row.
+  kSuperResHorizontalPadding = 2,
   // TODO(chengchen): consider merging these constants:
-  // kFilterbits, kWienerFilterBits, and kSgrProjPrecisionBits, which are all 7,
+  // kFilterBits, kWienerFilterBits, and kSgrProjPrecisionBits, which are all 7,
   // They are designed to match AV1 convolution, which increases coeff
   // values up to 7 bits. We could consider to combine them and use kFilterBits
   // only.
@@ -107,6 +140,7 @@ enum {
   // integer pixel. Sub pixel values are interpolated using adjacent integer
   // pixel values. The interpolation is a filtering process.
   kSubPixelBits = 4,
+  kSubPixelMask = (1 << kSubPixelBits) - 1,
   // Precision bits when computing inter prediction locations.
   kScaleSubPixelBits = 10,
   kWarpParamRoundingBits = 6,
@@ -116,22 +150,28 @@ enum {
   kDivisorLookupPrecisionBits = 14,
   // Number of phases used in warped filtering.
   kWarpedPixelPrecisionShifts = 1 << 6,
-  kQuantizedCoefficientBufferPadding = 4,
-  // Maximum number of quantized coefficients that can be read from the
-  // bitstream. This comes from the definition of segEob in section 5.11.39.
-  // Size of the quantized coefficients buffer. This comes from the definition
-  // of segEob in section 5.11.39 (with 4 bytes padded to each row and 4 rows
-  // padded in the end to avoid boundary checks).
-  kQuantizedCoefficientBufferSize = (32 + kQuantizedCoefficientBufferPadding) *
-                                    (32 + kQuantizedCoefficientBufferPadding),
+  kResidualPaddingVertical = 4,
   kWedgeMaskMasterSize = 64,
-  kMaxMaskBlockSize = kWedgeMaskMasterSize * kWedgeMaskMasterSize,
-  kWedgeMaskSize = 9 * 2 * 16 * kWedgeMaskMasterSize * kWedgeMaskMasterSize,
   kMaxFrameDistance = 31,
   kReferenceFrameScalePrecision = 14,
   kNumWienerCoefficients = 3,
-  // Maximum number of threads that the library will ever create.
-  kMaxThreads = 32,
+  kLoopFilterMaxModeDeltas = 2,
+  kMaxCdefStrengths = 8,
+  kCdefLargeValue = 0x4000,  // Used to indicate where CDEF is not available.
+  kMaxTileColumns = 64,
+  kMaxTileRows = 64,
+  kMaxOperatingPoints = 32,
+  // There can be a maximum of 4 spatial layers and 8 temporal layers.
+  kMaxLayers = 32,
+  // The cache line size should ideally be queried at run time. 64 is a common
+  // cache line size of x86 CPUs. Web searches showed the cache line size of ARM
+  // CPUs is 32 or 64 bytes. So aligning to 64-byte boundary will work for all
+  // CPUs that we care about, even though it is excessive for some ARM
+  // CPUs.
+  //
+  // On Linux, the cache line size can be looked up with the command:
+  //   getconf LEVEL1_DCACHE_LINESIZE
+  kCacheLineSize = 64,
 };  // anonymous enum
 
 enum FrameType : uint8_t {
@@ -385,6 +425,7 @@ enum TransformClass : uint8_t {
   kTransformClass2D,
   kTransformClassHorizontal,
   kTransformClassVertical,
+  kNumTransformClasses
 };
 
 enum FilterIntraPredictor : uint8_t {
@@ -643,6 +684,8 @@ extern const BlockSize kSubSize[kMaxPartitionTypes][kMaxBlockSizes];
 
 extern const BlockSize kPlaneResidualSize[kMaxBlockSizes][2][2];
 
+extern const int16_t kProjectionMvDivisionLookup[kMaxFrameDistance + 1];
+
 extern const uint8_t kTransformWidth[kNumTransformSizes];
 
 extern const uint8_t kTransformHeight[kNumTransformSizes];
@@ -675,11 +718,18 @@ extern const int8_t kWienerTapsMin[3];
 
 extern const int8_t kWienerTapsMax[3];
 
-extern const int16_t kUpscaleFilter[kSuperResFilterShifts][kSuperResFilterTaps];
+extern const uint8_t kUpscaleFilterUnsigned[kSuperResFilterShifts]
+                                           [kSuperResFilterTaps];
+
+// An int8_t version of the kWarpedFilters array.
+// Note: The array could be removed with a performance penalty.
+extern const int8_t kWarpedFilters8[3 * kWarpedPixelPrecisionShifts + 1][8];
 
 extern const int16_t kWarpedFilters[3 * kWarpedPixelPrecisionShifts + 1][8];
 
-extern const int16_t kSubPixelFilters[6][16][8];
+extern const int8_t kHalfSubPixelFilters[6][16][8];
+
+extern const uint8_t kAbsHalfSubPixelFilters[6][16][8];
 
 extern const int16_t kDirectionalIntraPredictorDerivative[44];
 

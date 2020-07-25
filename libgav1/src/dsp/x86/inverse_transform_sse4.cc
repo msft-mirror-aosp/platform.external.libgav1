@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/inverse_transform.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -24,6 +24,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/dsp/x86/transpose_sse4.h"
 #include "src/utils/array_2d.h"
@@ -199,8 +201,103 @@ LIBGAV1_ALWAYS_INLINE void HadamardRotation(__m128i* a, __m128i* b, bool flip) {
 using ButterflyRotationFunc = void (*)(__m128i* a, __m128i* b, int angle,
                                        bool flip);
 
+LIBGAV1_ALWAYS_INLINE __m128i ShiftResidual(const __m128i residual,
+                                            const __m128i v_row_shift_add,
+                                            const __m128i v_row_shift) {
+  const __m128i k7ffd = _mm_set1_epi16(0x7ffd);
+  // The max row_shift is 2, so int16_t values greater than 0x7ffd may
+  // overflow.  Generate a mask for this case.
+  const __m128i mask = _mm_cmpgt_epi16(residual, k7ffd);
+  const __m128i x = _mm_add_epi16(residual, v_row_shift_add);
+  // Assume int16_t values.
+  const __m128i a = _mm_sra_epi16(x, v_row_shift);
+  // Assume uint16_t values.
+  const __m128i b = _mm_srl_epi16(x, v_row_shift);
+  // Select the correct shifted value.
+  return _mm_blendv_epi8(a, b, mask);
+}
+
 //------------------------------------------------------------------------------
 // Discrete Cosine Transforms (DCT).
+
+template <int width>
+LIBGAV1_ALWAYS_INLINE bool DctDcOnly(void* dest, const void* source,
+                                     int non_zero_coeff_count,
+                                     bool should_round, int row_shift) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  const __m128i v_src_lo = _mm_shufflelo_epi16(_mm_cvtsi32_si128(src[0]), 0);
+  const __m128i v_src =
+      (width == 4) ? v_src_lo : _mm_shuffle_epi32(v_src_lo, 0);
+  const __m128i v_mask = _mm_set1_epi16(should_round ? 0xffff : 0);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src_round =
+      _mm_mulhrs_epi16(v_src, v_kTransformRowMultiplier);
+  const __m128i s0 = _mm_blendv_epi8(v_src, v_src_round, v_mask);
+  const int16_t cos128 = Cos128(32);
+  const __m128i xy = _mm_mulhrs_epi16(s0, _mm_set1_epi16(cos128 << 3));
+
+  // Expand to 32 bits to prevent int16_t overflows during the shift add.
+  const __m128i v_row_shift_add = _mm_set1_epi32(row_shift);
+  const __m128i v_row_shift = _mm_cvtepu32_epi64(v_row_shift_add);
+  const __m128i a = _mm_cvtepi16_epi32(xy);
+  const __m128i a1 = _mm_cvtepi16_epi32(_mm_srli_si128(xy, 8));
+  const __m128i b = _mm_add_epi32(a, v_row_shift_add);
+  const __m128i b1 = _mm_add_epi32(a1, v_row_shift_add);
+  const __m128i c = _mm_sra_epi32(b, v_row_shift);
+  const __m128i c1 = _mm_sra_epi32(b1, v_row_shift);
+  const __m128i xy_shifted = _mm_packs_epi32(c, c1);
+
+  if (width == 4) {
+    StoreLo8(dst, xy_shifted);
+  } else {
+    for (int i = 0; i < width; i += 8) {
+      StoreUnaligned16(dst, xy_shifted);
+      dst += 8;
+    }
+  }
+  return true;
+}
+
+template <int height>
+LIBGAV1_ALWAYS_INLINE bool DctDcOnlyColumn(void* dest, const void* source,
+                                           int non_zero_coeff_count,
+                                           int width) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+  const int16_t cos128 = Cos128(32);
+
+  // Calculate dc values for first row.
+  if (width == 4) {
+    const __m128i v_src = LoadLo8(src);
+    const __m128i xy = _mm_mulhrs_epi16(v_src, _mm_set1_epi16(cos128 << 3));
+    StoreLo8(dst, xy);
+  } else {
+    int i = 0;
+    do {
+      const __m128i v_src = LoadUnaligned16(&src[i]);
+      const __m128i xy = _mm_mulhrs_epi16(v_src, _mm_set1_epi16(cos128 << 3));
+      StoreUnaligned16(&dst[i], xy);
+      i += 8;
+    } while (i < width);
+  }
+
+  // Copy first row to the rest of the block.
+  for (int y = 1; y < height; ++y) {
+    memcpy(&dst[y * width], &src[(y - 1) * width], width * sizeof(dst[0]));
+  }
+  return true;
+}
 
 template <ButterflyRotationFunc bufferfly_rotation,
           bool is_fast_bufferfly = false>
@@ -949,6 +1046,82 @@ LIBGAV1_ALWAYS_INLINE void Adst4_SSE4_1(void* dest, const void* source,
   }
 }
 
+constexpr int16_t kAdst4DcOnlyMultiplier[8] = {1321, 0, 2482, 0,
+                                               3344, 0, 2482, 1321};
+
+LIBGAV1_ALWAYS_INLINE bool Adst4DcOnly(void* dest, const void* source,
+                                       int non_zero_coeff_count,
+                                       bool should_round, int row_shift) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+  const __m128i v_src =
+      _mm_shuffle_epi32(_mm_shufflelo_epi16(_mm_cvtsi32_si128(src[0]), 0), 0);
+  const __m128i v_mask = _mm_set1_epi16(should_round ? 0xffff : 0);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src_round =
+      _mm_mulhrs_epi16(v_src, v_kTransformRowMultiplier);
+  const __m128i s0 = _mm_blendv_epi8(v_src, v_src_round, v_mask);
+  const __m128i v_kAdst4DcOnlyMultipliers =
+      LoadUnaligned16(kAdst4DcOnlyMultiplier);
+  // s0*k0 s0*k1 s0*k2 s0*k1
+  // +
+  // s0*0  s0*0  s0*0  s0*k0
+  const __m128i x3 = _mm_madd_epi16(s0, v_kAdst4DcOnlyMultipliers);
+  const __m128i dst_0 = RightShiftWithRounding_S32(x3, 12);
+  const __m128i v_row_shift_add = _mm_set1_epi32(row_shift);
+  const __m128i v_row_shift = _mm_cvtepu32_epi64(v_row_shift_add);
+  const __m128i a = _mm_add_epi32(dst_0, v_row_shift_add);
+  const __m128i b = _mm_sra_epi32(a, v_row_shift);
+  const __m128i c = _mm_packs_epi32(b, b);
+  StoreLo8(dst, c);
+
+  return true;
+}
+
+LIBGAV1_ALWAYS_INLINE bool Adst4DcOnlyColumn(void* dest, const void* source,
+                                             int non_zero_coeff_count,
+                                             int width) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  int i = 0;
+  do {
+    const __m128i v_src = _mm_cvtepi16_epi32(LoadLo8(&src[i]));
+    const __m128i kAdst4Multiplier_0 = _mm_set1_epi32(kAdst4Multiplier[0]);
+    const __m128i kAdst4Multiplier_1 = _mm_set1_epi32(kAdst4Multiplier[1]);
+    const __m128i kAdst4Multiplier_2 = _mm_set1_epi32(kAdst4Multiplier[2]);
+    const __m128i s0 = _mm_mullo_epi32(kAdst4Multiplier_0, v_src);
+    const __m128i s1 = _mm_mullo_epi32(kAdst4Multiplier_1, v_src);
+    const __m128i s2 = _mm_mullo_epi32(kAdst4Multiplier_2, v_src);
+    const __m128i x0 = s0;
+    const __m128i x1 = s1;
+    const __m128i x2 = s2;
+    const __m128i x3 = _mm_add_epi32(s0, s1);
+    const __m128i dst_0 = RightShiftWithRounding_S32(x0, 12);
+    const __m128i dst_1 = RightShiftWithRounding_S32(x1, 12);
+    const __m128i dst_2 = RightShiftWithRounding_S32(x2, 12);
+    const __m128i dst_3 = RightShiftWithRounding_S32(x3, 12);
+    const __m128i dst_0_1 = _mm_packs_epi32(dst_0, dst_1);
+    const __m128i dst_2_3 = _mm_packs_epi32(dst_2, dst_3);
+    StoreLo8(&dst[i], dst_0_1);
+    StoreHi8(&dst[i + width * 1], dst_0_1);
+    StoreLo8(&dst[i + width * 2], dst_2_3);
+    StoreHi8(&dst[i + width * 3], dst_2_3);
+    i += 4;
+  } while (i < width);
+
+  return true;
+}
+
 template <ButterflyRotationFunc bufferfly_rotation, bool stage_is_rectangular>
 LIBGAV1_ALWAYS_INLINE void Adst8_SSE4_1(void* dest, const void* source,
                                         int32_t step, bool transpose) {
@@ -1038,6 +1211,135 @@ LIBGAV1_ALWAYS_INLINE void Adst8_SSE4_1(void* dest, const void* source,
       StoreDst<16, 8>(dst, step, 0, x);
     }
   }
+}
+
+LIBGAV1_ALWAYS_INLINE bool Adst8DcOnly(void* dest, const void* source,
+                                       int non_zero_coeff_count,
+                                       bool should_round, int row_shift) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+  __m128i s[8];
+
+  const __m128i v_src = _mm_shufflelo_epi16(_mm_cvtsi32_si128(src[0]), 0);
+  const __m128i v_mask = _mm_set1_epi16(should_round ? 0xffff : 0);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src_round =
+      _mm_mulhrs_epi16(v_src, v_kTransformRowMultiplier);
+  // stage 1.
+  s[1] = _mm_blendv_epi8(v_src, v_src_round, v_mask);
+
+  // stage 2.
+  ButterflyRotation_FirstIsZero(&s[0], &s[1], 60, true);
+
+  // stage 3.
+  s[4] = s[0];
+  s[5] = s[1];
+
+  // stage 4.
+  ButterflyRotation_4(&s[4], &s[5], 48, true);
+
+  // stage 5.
+  s[2] = s[0];
+  s[3] = s[1];
+  s[6] = s[4];
+  s[7] = s[5];
+
+  // stage 6.
+  ButterflyRotation_4(&s[2], &s[3], 32, true);
+  ButterflyRotation_4(&s[6], &s[7], 32, true);
+
+  // stage 7.
+  __m128i x[8];
+  const __m128i v_zero = _mm_setzero_si128();
+  x[0] = s[0];
+  x[1] = _mm_subs_epi16(v_zero, s[4]);
+  x[2] = s[6];
+  x[3] = _mm_subs_epi16(v_zero, s[2]);
+  x[4] = s[3];
+  x[5] = _mm_subs_epi16(v_zero, s[7]);
+  x[6] = s[5];
+  x[7] = _mm_subs_epi16(v_zero, s[1]);
+
+  const __m128i x1_x0 = _mm_unpacklo_epi16(x[0], x[1]);
+  const __m128i x3_x2 = _mm_unpacklo_epi16(x[2], x[3]);
+  const __m128i x5_x4 = _mm_unpacklo_epi16(x[4], x[5]);
+  const __m128i x7_x6 = _mm_unpacklo_epi16(x[6], x[7]);
+  const __m128i x3_x0 = _mm_unpacklo_epi32(x1_x0, x3_x2);
+  const __m128i x7_x4 = _mm_unpacklo_epi32(x5_x4, x7_x6);
+
+  const __m128i v_row_shift_add = _mm_set1_epi32(row_shift);
+  const __m128i v_row_shift = _mm_cvtepu32_epi64(v_row_shift_add);
+  const __m128i a = _mm_add_epi32(_mm_cvtepi16_epi32(x3_x0), v_row_shift_add);
+  const __m128i a1 = _mm_add_epi32(_mm_cvtepi16_epi32(x7_x4), v_row_shift_add);
+  const __m128i b = _mm_sra_epi32(a, v_row_shift);
+  const __m128i b1 = _mm_sra_epi32(a1, v_row_shift);
+  StoreUnaligned16(dst, _mm_packs_epi32(b, b1));
+
+  return true;
+}
+
+LIBGAV1_ALWAYS_INLINE bool Adst8DcOnlyColumn(void* dest, const void* source,
+                                             int non_zero_coeff_count,
+                                             int width) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+  __m128i s[8];
+
+  int i = 0;
+  do {
+    const __m128i v_src = LoadLo8(&src[i]);
+    // stage 1.
+    s[1] = v_src;
+
+    // stage 2.
+    ButterflyRotation_FirstIsZero(&s[0], &s[1], 60, true);
+
+    // stage 3.
+    s[4] = s[0];
+    s[5] = s[1];
+
+    // stage 4.
+    ButterflyRotation_4(&s[4], &s[5], 48, true);
+
+    // stage 5.
+    s[2] = s[0];
+    s[3] = s[1];
+    s[6] = s[4];
+    s[7] = s[5];
+
+    // stage 6.
+    ButterflyRotation_4(&s[2], &s[3], 32, true);
+    ButterflyRotation_4(&s[6], &s[7], 32, true);
+
+    // stage 7.
+    __m128i x[8];
+    const __m128i v_zero = _mm_setzero_si128();
+    x[0] = s[0];
+    x[1] = _mm_subs_epi16(v_zero, s[4]);
+    x[2] = s[6];
+    x[3] = _mm_subs_epi16(v_zero, s[2]);
+    x[4] = s[3];
+    x[5] = _mm_subs_epi16(v_zero, s[7]);
+    x[6] = s[5];
+    x[7] = _mm_subs_epi16(v_zero, s[1]);
+
+    for (int j = 0; j < 8; ++j) {
+      StoreLo8(&dst[j * width], x[j]);
+    }
+    i += 4;
+    dst += 4;
+  } while (i < width);
+
+  return true;
 }
 
 template <ButterflyRotationFunc bufferfly_rotation, bool stage_is_rectangular>
@@ -1187,6 +1489,136 @@ LIBGAV1_ALWAYS_INLINE void Adst16_SSE4_1(void* dest, const void* source,
   }
 }
 
+LIBGAV1_ALWAYS_INLINE void Adst16DcOnlyInternal(__m128i* s, __m128i* x) {
+  // stage 2.
+  ButterflyRotation_FirstIsZero(&s[0], &s[1], 62, true);
+
+  // stage 3.
+  s[8] = s[0];
+  s[9] = s[1];
+
+  // stage 4.
+  ButterflyRotation_4(&s[8], &s[9], 56, true);
+
+  // stage 5.
+  s[4] = s[0];
+  s[12] = s[8];
+  s[5] = s[1];
+  s[13] = s[9];
+
+  // stage 6.
+  ButterflyRotation_4(&s[4], &s[5], 48, true);
+  ButterflyRotation_4(&s[12], &s[13], 48, true);
+
+  // stage 7.
+  s[2] = s[0];
+  s[6] = s[4];
+  s[10] = s[8];
+  s[14] = s[12];
+  s[3] = s[1];
+  s[7] = s[5];
+  s[11] = s[9];
+  s[15] = s[13];
+
+  // stage 8.
+  ButterflyRotation_4(&s[2], &s[3], 32, true);
+  ButterflyRotation_4(&s[6], &s[7], 32, true);
+  ButterflyRotation_4(&s[10], &s[11], 32, true);
+  ButterflyRotation_4(&s[14], &s[15], 32, true);
+
+  // stage 9.
+  const __m128i v_zero = _mm_setzero_si128();
+  x[0] = s[0];
+  x[1] = _mm_subs_epi16(v_zero, s[8]);
+  x[2] = s[12];
+  x[3] = _mm_subs_epi16(v_zero, s[4]);
+  x[4] = s[6];
+  x[5] = _mm_subs_epi16(v_zero, s[14]);
+  x[6] = s[10];
+  x[7] = _mm_subs_epi16(v_zero, s[2]);
+  x[8] = s[3];
+  x[9] = _mm_subs_epi16(v_zero, s[11]);
+  x[10] = s[15];
+  x[11] = _mm_subs_epi16(v_zero, s[7]);
+  x[12] = s[5];
+  x[13] = _mm_subs_epi16(v_zero, s[13]);
+  x[14] = s[9];
+  x[15] = _mm_subs_epi16(v_zero, s[1]);
+}
+
+LIBGAV1_ALWAYS_INLINE bool Adst16DcOnly(void* dest, const void* source,
+                                        int non_zero_coeff_count,
+                                        bool should_round, int row_shift) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+  __m128i s[16];
+  __m128i x[16];
+
+  const __m128i v_src = _mm_shufflelo_epi16(_mm_cvtsi32_si128(src[0]), 0);
+  const __m128i v_mask = _mm_set1_epi16(should_round ? 0xffff : 0);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src_round =
+      _mm_mulhrs_epi16(v_src, v_kTransformRowMultiplier);
+  // stage 1.
+  s[1] = _mm_blendv_epi8(v_src, v_src_round, v_mask);
+
+  Adst16DcOnlyInternal(s, x);
+
+  for (int i = 0; i < 2; ++i) {
+    const __m128i x1_x0 = _mm_unpacklo_epi16(x[0 + i * 8], x[1 + i * 8]);
+    const __m128i x3_x2 = _mm_unpacklo_epi16(x[2 + i * 8], x[3 + i * 8]);
+    const __m128i x5_x4 = _mm_unpacklo_epi16(x[4 + i * 8], x[5 + i * 8]);
+    const __m128i x7_x6 = _mm_unpacklo_epi16(x[6 + i * 8], x[7 + i * 8]);
+    const __m128i x3_x0 = _mm_unpacklo_epi32(x1_x0, x3_x2);
+    const __m128i x7_x4 = _mm_unpacklo_epi32(x5_x4, x7_x6);
+
+    const __m128i v_row_shift_add = _mm_set1_epi32(row_shift);
+    const __m128i v_row_shift = _mm_cvtepu32_epi64(v_row_shift_add);
+    const __m128i a = _mm_add_epi32(_mm_cvtepi16_epi32(x3_x0), v_row_shift_add);
+    const __m128i a1 =
+        _mm_add_epi32(_mm_cvtepi16_epi32(x7_x4), v_row_shift_add);
+    const __m128i b = _mm_sra_epi32(a, v_row_shift);
+    const __m128i b1 = _mm_sra_epi32(a1, v_row_shift);
+    StoreUnaligned16(&dst[i * 8], _mm_packs_epi32(b, b1));
+  }
+  return true;
+}
+
+LIBGAV1_ALWAYS_INLINE bool Adst16DcOnlyColumn(void* dest, const void* source,
+                                              int non_zero_coeff_count,
+                                              int width) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  int i = 0;
+  do {
+    __m128i s[16];
+    __m128i x[16];
+    const __m128i v_src = LoadUnaligned16(&src[i]);
+    // stage 1.
+    s[1] = v_src;
+
+    Adst16DcOnlyInternal(s, x);
+
+    for (int j = 0; j < 16; ++j) {
+      StoreLo8(&dst[j * width], x[j]);
+    }
+    i += 4;
+    dst += 4;
+  } while (i < width);
+
+  return true;
+}
+
 //------------------------------------------------------------------------------
 // Identity Transforms.
 
@@ -1223,6 +1655,35 @@ LIBGAV1_ALWAYS_INLINE void Identity4_SSE4_1(void* dest, const void* source,
   }
 }
 
+LIBGAV1_ALWAYS_INLINE bool Identity4DcOnly(void* dest, const void* source,
+                                           int non_zero_coeff_count,
+                                           bool should_round, int tx_height) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  const __m128i v_src0 = _mm_cvtsi32_si128(src[0]);
+  const __m128i v_mask = _mm_set1_epi16(should_round ? 0xffff : 0);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src_round =
+      _mm_mulhrs_epi16(v_src0, v_kTransformRowMultiplier);
+  const __m128i v_src = _mm_blendv_epi8(v_src0, v_src_round, v_mask);
+
+  const int shift = (tx_height < 16) ? 0 : 1;
+  const __m128i v_dual_round = _mm_set1_epi16((1 + (shift << 1)) << 11);
+  const __m128i v_multiplier_one =
+      _mm_set1_epi32((kIdentity4Multiplier << 16) | 0x0001);
+  const __m128i v_src_round_lo = _mm_unpacklo_epi16(v_dual_round, v_src);
+  const __m128i a = _mm_madd_epi16(v_src_round_lo, v_multiplier_one);
+  const __m128i b = _mm_srai_epi32(a, 12 + shift);
+  dst[0] = _mm_extract_epi16(_mm_packs_epi32(b, b), 0);
+  return true;
+}
+
 LIBGAV1_ALWAYS_INLINE void Identity4ColumnStoreToFrame(
     Array2DView<uint8_t> frame, const int start_x, const int start_y,
     const int tx_width, const int tx_height, const int16_t* source) {
@@ -1234,7 +1695,8 @@ LIBGAV1_ALWAYS_INLINE void Identity4ColumnStoreToFrame(
   const __m128i v_eight = _mm_set1_epi16(8);
 
   if (tx_width == 4) {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const __m128i v_src = LoadLo8(&source[i * tx_width]);
       const __m128i v_src_mult = _mm_mulhrs_epi16(v_src, v_multiplier_fraction);
       const __m128i frame_data = Load4(dst);
@@ -1245,9 +1707,10 @@ LIBGAV1_ALWAYS_INLINE void Identity4ColumnStoreToFrame(
       const __m128i d = _mm_adds_epi16(c, b);
       Store4(dst, _mm_packus_epi16(d, d));
       dst += stride;
-    }
+    } while (++i < tx_height);
   } else {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const int row = i * tx_width;
       int j = 0;
       do {
@@ -1264,7 +1727,7 @@ LIBGAV1_ALWAYS_INLINE void Identity4ColumnStoreToFrame(
         j += 8;
       } while (j < tx_width);
       dst += stride;
-    }
+    } while (++i < tx_height);
   }
 }
 
@@ -1281,7 +1744,8 @@ LIBGAV1_ALWAYS_INLINE void Identity4RowColumnStoreToFrame(
       _mm_set1_epi16(kTransformRowMultiplier << 3);
 
   if (tx_width == 4) {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const __m128i v_src = LoadLo8(&source[i * tx_width]);
       const __m128i v_src_mult = _mm_mulhrs_epi16(v_src, v_multiplier_fraction);
       const __m128i frame_data = Load4(dst);
@@ -1295,9 +1759,10 @@ LIBGAV1_ALWAYS_INLINE void Identity4RowColumnStoreToFrame(
       const __m128i c = _mm_adds_epi16(frame_data16, b);
       Store4(dst, _mm_packus_epi16(c, c));
       dst += stride;
-    }
+    } while (++i < tx_height);
   } else {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const int row = i * tx_width;
       int j = 0;
       do {
@@ -1317,7 +1782,7 @@ LIBGAV1_ALWAYS_INLINE void Identity4RowColumnStoreToFrame(
         j += 8;
       } while (j < tx_width);
       dst += stride;
-    }
+    } while (++i < tx_height);
   }
 }
 
@@ -1351,6 +1816,33 @@ LIBGAV1_ALWAYS_INLINE void Identity8Row4_SSE4_1(void* dest, const void* source,
   }
 }
 
+LIBGAV1_ALWAYS_INLINE bool Identity8DcOnly(void* dest, const void* source,
+                                           int non_zero_coeff_count,
+                                           bool should_round, int row_shift) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  const __m128i v_src0 = _mm_cvtsi32_si128(src[0]);
+  const __m128i v_mask = _mm_set1_epi16(should_round ? 0xffff : 0);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src_round =
+      _mm_mulhrs_epi16(v_src0, v_kTransformRowMultiplier);
+  const __m128i v_src =
+      _mm_cvtepi16_epi32(_mm_blendv_epi8(v_src0, v_src_round, v_mask));
+  const __m128i v_srcx2 = _mm_add_epi32(v_src, v_src);
+  const __m128i v_row_shift_add = _mm_set1_epi32(row_shift);
+  const __m128i v_row_shift = _mm_cvtepu32_epi64(v_row_shift_add);
+  const __m128i a = _mm_add_epi32(v_srcx2, v_row_shift_add);
+  const __m128i b = _mm_sra_epi32(a, v_row_shift);
+  dst[0] = _mm_extract_epi16(_mm_packs_epi32(b, b), 0);
+  return true;
+}
+
 LIBGAV1_ALWAYS_INLINE void Identity8ColumnStoreToFrame_SSE4_1(
     Array2DView<uint8_t> frame, const int start_x, const int start_y,
     const int tx_width, const int tx_height, const int16_t* source) {
@@ -1358,7 +1850,8 @@ LIBGAV1_ALWAYS_INLINE void Identity8ColumnStoreToFrame_SSE4_1(
   uint8_t* dst = frame[start_y] + start_x;
   const __m128i v_eight = _mm_set1_epi16(8);
   if (tx_width == 4) {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const int row = i * tx_width;
       const __m128i v_src = LoadLo8(&source[row]);
       const __m128i v_dst_i = _mm_adds_epi16(v_src, v_src);
@@ -1369,9 +1862,10 @@ LIBGAV1_ALWAYS_INLINE void Identity8ColumnStoreToFrame_SSE4_1(
       const __m128i d = _mm_adds_epi16(c, b);
       Store4(dst, _mm_packus_epi16(d, d));
       dst += stride;
-    }
+    } while (++i < tx_height);
   } else {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const int row = i * tx_width;
       int j = 0;
       do {
@@ -1386,7 +1880,7 @@ LIBGAV1_ALWAYS_INLINE void Identity8ColumnStoreToFrame_SSE4_1(
         j += 8;
       } while (j < tx_width);
       dst += stride;
-    }
+    } while (++i < tx_height);
   }
 }
 
@@ -1420,6 +1914,34 @@ LIBGAV1_ALWAYS_INLINE void Identity16Row_SSE4_1(void* dest, const void* source,
   }
 }
 
+LIBGAV1_ALWAYS_INLINE bool Identity16DcOnly(void* dest, const void* source,
+                                            int non_zero_coeff_count,
+                                            bool should_round, int shift) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  const __m128i v_src0 = _mm_cvtsi32_si128(src[0]);
+  const __m128i v_mask = _mm_set1_epi16(should_round ? 0xffff : 0);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src_round0 =
+      _mm_mulhrs_epi16(v_src0, v_kTransformRowMultiplier);
+  const __m128i v_src = _mm_blendv_epi8(v_src0, v_src_round0, v_mask);
+  const __m128i v_dual_round = _mm_set1_epi16((1 + (shift << 1)) << 11);
+  const __m128i v_multiplier_one =
+      _mm_set1_epi32((kIdentity16Multiplier << 16) | 0x0001);
+  const __m128i v_shift = _mm_set_epi64x(0, 12 + shift);
+  const __m128i v_src_round = _mm_unpacklo_epi16(v_dual_round, v_src);
+  const __m128i a = _mm_madd_epi16(v_src_round, v_multiplier_one);
+  const __m128i b = _mm_sra_epi32(a, v_shift);
+  dst[0] = _mm_extract_epi16(_mm_packs_epi32(b, b), 0);
+  return true;
+}
+
 LIBGAV1_ALWAYS_INLINE void Identity16ColumnStoreToFrame_SSE4_1(
     Array2DView<uint8_t> frame, const int start_x, const int start_y,
     const int tx_width, const int tx_height, const int16_t* source) {
@@ -1430,7 +1952,8 @@ LIBGAV1_ALWAYS_INLINE void Identity16ColumnStoreToFrame_SSE4_1(
       _mm_set1_epi16(static_cast<int16_t>(kIdentity4MultiplierFraction << 4));
 
   if (tx_width == 4) {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const __m128i v_src = LoadLo8(&source[i * tx_width]);
       const __m128i v_src_mult = _mm_mulhrs_epi16(v_src, v_multiplier);
       const __m128i frame_data = Load4(dst);
@@ -1442,9 +1965,10 @@ LIBGAV1_ALWAYS_INLINE void Identity16ColumnStoreToFrame_SSE4_1(
       const __m128i d = _mm_adds_epi16(c, b);
       Store4(dst, _mm_packus_epi16(d, d));
       dst += stride;
-    }
+    } while (++i < tx_height);
   } else {
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       const int row = i * tx_width;
       int j = 0;
       do {
@@ -1461,7 +1985,7 @@ LIBGAV1_ALWAYS_INLINE void Identity16ColumnStoreToFrame_SSE4_1(
         j += 8;
       } while (j < tx_width);
       dst += stride;
-    }
+    } while (++i < tx_height);
   }
 }
 
@@ -1485,6 +2009,28 @@ LIBGAV1_ALWAYS_INLINE void Identity32Row16_SSE4_1(void* dest,
   }
 }
 
+LIBGAV1_ALWAYS_INLINE bool Identity32DcOnly(void* dest, const void* source,
+                                            int non_zero_coeff_count) {
+  if (non_zero_coeff_count > 1) {
+    return false;
+  }
+
+  auto* dst = static_cast<int16_t*>(dest);
+  const auto* const src = static_cast<const int16_t*>(source);
+
+  const __m128i v_src0 = _mm_cvtsi32_si128(src[0]);
+  const __m128i v_kTransformRowMultiplier =
+      _mm_set1_epi16(kTransformRowMultiplier << 3);
+  const __m128i v_src = _mm_mulhrs_epi16(v_src0, v_kTransformRowMultiplier);
+
+  // When combining the identity32 multiplier with the row shift, the
+  // calculation for tx_height equal to 16 can be simplified from
+  // ((A * 4) + 1) >> 1) to (A * 2).
+  const __m128i v_dst_0 = _mm_adds_epi16(v_src, v_src);
+  dst[0] = _mm_extract_epi16(v_dst_0, 0);
+  return true;
+}
+
 LIBGAV1_ALWAYS_INLINE void Identity32ColumnStoreToFrame(
     Array2DView<uint8_t> frame, const int start_x, const int start_y,
     const int tx_width, const int tx_height, const int16_t* source) {
@@ -1492,7 +2038,8 @@ LIBGAV1_ALWAYS_INLINE void Identity32ColumnStoreToFrame(
   uint8_t* dst = frame[start_y] + start_x;
   const __m128i v_two = _mm_set1_epi16(2);
 
-  for (int i = 0; i < tx_height; ++i) {
+  int i = 0;
+  do {
     const int row = i * tx_width;
     int j = 0;
     do {
@@ -1506,7 +2053,7 @@ LIBGAV1_ALWAYS_INLINE void Identity32ColumnStoreToFrame(
       j += 8;
     } while (j < tx_width);
     dst += stride;
-  }
+  } while (++i < tx_height);
 }
 
 //------------------------------------------------------------------------------
@@ -1720,36 +2267,26 @@ LIBGAV1_ALWAYS_INLINE void ApplyRounding(int16_t* source, int num_rows) {
 template <int tx_width>
 LIBGAV1_ALWAYS_INLINE void RowShift(int16_t* source, int num_rows,
                                     int row_shift) {
-  const __m128i v_row_shift_add = _mm_set1_epi32(row_shift);
-  const __m128i v_row_shift = _mm_cvtepu32_epi64(v_row_shift_add);
+  const __m128i v_row_shift_add = _mm_set1_epi16(row_shift);
+  const __m128i v_row_shift = _mm_cvtepu16_epi64(v_row_shift_add);
   if (tx_width == 4) {
     // Process two rows per iteration.
     int i = 0;
     do {
-      // Expand to 32 bits to prevent int16_t overflows during the shift add.
       const __m128i residual = LoadUnaligned16(&source[i]);
-      const __m128i a = _mm_cvtepi16_epi32(residual);
-      const __m128i a1 = _mm_cvtepi16_epi32(_mm_srli_si128(residual, 8));
-      const __m128i b = _mm_add_epi32(a, v_row_shift_add);
-      const __m128i b1 = _mm_add_epi32(a1, v_row_shift_add);
-      const __m128i c = _mm_sra_epi32(b, v_row_shift);
-      const __m128i c1 = _mm_sra_epi32(b1, v_row_shift);
-      StoreUnaligned16(&source[i], _mm_packs_epi32(c, c1));
+      const __m128i shifted_residual =
+          ShiftResidual(residual, v_row_shift_add, v_row_shift);
+      StoreUnaligned16(&source[i], shifted_residual);
       i += 8;
     } while (i < tx_width * num_rows);
   } else {
     int i = 0;
     do {
       for (int j = 0; j < tx_width; j += 8) {
-        // Expand to 32 bits to prevent int16_t overflows during the shift add.
         const __m128i residual = LoadUnaligned16(&source[i * tx_width + j]);
-        const __m128i a = _mm_cvtepi16_epi32(residual);
-        const __m128i a1 = _mm_cvtepi16_epi32(_mm_srli_si128(residual, 8));
-        const __m128i b = _mm_add_epi32(a, v_row_shift_add);
-        const __m128i b1 = _mm_add_epi32(a1, v_row_shift_add);
-        const __m128i c = _mm_sra_epi32(b, v_row_shift);
-        const __m128i c1 = _mm_sra_epi32(b1, v_row_shift);
-        StoreUnaligned16(&source[i * tx_width + j], _mm_packs_epi32(c, c1));
+        const __m128i shifted_residual =
+            ShiftResidual(residual, v_row_shift_add, v_row_shift);
+        StoreUnaligned16(&source[i * tx_width + j], shifted_residual);
       }
     } while (++i < num_rows);
   }
@@ -1759,14 +2296,22 @@ void Dct4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                               void* src_buffer, int start_x, int start_y,
                               void* dst_frame, bool is_row,
                               int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
     const bool should_round = (tx_height == 8);
+    const int row_shift = static_cast<int>(tx_height == 16);
+
+    if (DctDcOnly<4>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                     row_shift)) {
+      return;
+    }
+
+    const int num_rows =
+        GetNumRows<4>(tx_type, tx_height, non_zero_coeff_count);
     if (should_round) {
       ApplyRounding<4>(src, num_rows);
     }
@@ -1795,18 +2340,20 @@ void Dct4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<4>(src, tx_width);
   }
 
-  if (tx_width == 4) {
-    // Process 4 1d dct4 columns in parallel.
-    Dct4_SSE4_1<ButterflyRotation_4, false>(&src[0], &src[0], tx_width,
-                                            /*transpose=*/false);
-  } else {
-    // Process 8 1d dct4 columns in parallel per iteration.
-    int i = 0;
-    do {
-      Dct4_SSE4_1<ButterflyRotation_8, true>(&src[i], &src[i], tx_width,
-                                             /*transpose=*/false);
-      i += 8;
-    } while (i < tx_width);
+  if (!DctDcOnlyColumn<4>(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    if (tx_width == 4) {
+      // Process 4 1d dct4 columns in parallel.
+      Dct4_SSE4_1<ButterflyRotation_4, false>(&src[0], &src[0], tx_width,
+                                              /*transpose=*/false);
+    } else {
+      // Process 8 1d dct4 columns in parallel per iteration.
+      int i = 0;
+      do {
+        Dct4_SSE4_1<ButterflyRotation_8, true>(&src[i], &src[i], tx_width,
+                                               /*transpose=*/false);
+        i += 8;
+      } while (i < tx_width);
+    }
   }
   StoreToFrameWithRound(frame, start_x, start_y, tx_width, 4, src, tx_type);
 }
@@ -1815,14 +2362,23 @@ void Dct8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                               void* src_buffer, int start_x, int start_y,
                               void* dst_frame, bool is_row,
                               int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
-    if (kShouldRound[tx_size]) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<8>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                     row_shift)) {
+      return;
+    }
+
+    const int num_rows =
+        GetNumRows<8>(tx_type, tx_height, non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<8>(src, num_rows);
     }
 
@@ -1839,7 +2395,6 @@ void Dct8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
         i += 8;
       } while (i < num_rows);
     }
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     if (row_shift > 0) {
       RowShift<8>(src, num_rows, row_shift);
     }
@@ -1851,18 +2406,20 @@ void Dct8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<8>(src, tx_width);
   }
 
-  if (tx_width == 4) {
-    // Process 4 1d dct8 columns in parallel.
-    Dct8_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
-                                           /*transpose=*/false);
-  } else {
-    // Process 8 1d dct8 columns in parallel per iteration.
-    int i = 0;
-    do {
-      Dct8_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
-                                              /*transpose=*/false);
-      i += 8;
-    } while (i < tx_width);
+  if (!DctDcOnlyColumn<8>(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    if (tx_width == 4) {
+      // Process 4 1d dct8 columns in parallel.
+      Dct8_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
+                                             /*transpose=*/false);
+    } else {
+      // Process 8 1d dct8 columns in parallel per iteration.
+      int i = 0;
+      do {
+        Dct8_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
+                                                /*transpose=*/false);
+        i += 8;
+      } while (i < tx_width);
+    }
   }
   StoreToFrameWithRound(frame, start_x, start_y, tx_width, 8, src, tx_type);
 }
@@ -1871,15 +2428,23 @@ void Dct16TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                void* src_buffer, int start_x, int start_y,
                                void* dst_frame, bool is_row,
                                int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<16>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                      row_shift)) {
+      return;
+    }
+
     const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+        GetNumRows<16>(tx_type, std::min(tx_height, 32), non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<16>(src, num_rows);
     }
 
@@ -1896,7 +2461,6 @@ void Dct16TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
         i += 8;
       } while (i < num_rows);
     }
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     // row_shift is always non zero here.
     RowShift<16>(src, num_rows, row_shift);
 
@@ -1908,18 +2472,20 @@ void Dct16TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<16>(src, tx_width);
   }
 
-  if (tx_width == 4) {
-    // Process 4 1d dct16 columns in parallel.
-    Dct16_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
-                                            /*transpose=*/false);
-  } else {
-    int i = 0;
-    do {
-      // Process 8 1d dct16 columns in parallel per iteration.
-      Dct16_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
-                                               /*transpose=*/false);
-      i += 8;
-    } while (i < tx_width);
+  if (!DctDcOnlyColumn<16>(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    if (tx_width == 4) {
+      // Process 4 1d dct16 columns in parallel.
+      Dct16_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
+                                              /*transpose=*/false);
+    } else {
+      int i = 0;
+      do {
+        // Process 8 1d dct16 columns in parallel per iteration.
+        Dct16_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
+                                                 /*transpose=*/false);
+        i += 8;
+      } while (i < tx_width);
+    }
   }
   StoreToFrameWithRound(frame, start_x, start_y, tx_width, 16, src, tx_type);
 }
@@ -1928,15 +2494,23 @@ void Dct32TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                void* src_buffer, int start_x, int start_y,
                                void* dst_frame, bool is_row,
                                int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<32>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                      row_shift)) {
+      return;
+    }
+
     const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+        GetNumRows<32>(tx_type, std::min(tx_height, 32), non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<32>(src, num_rows);
     }
     // Process 8 1d dct32 rows in parallel per iteration.
@@ -1945,7 +2519,6 @@ void Dct32TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
       Dct32_SSE4_1(&src[i * 32], &src[i * 32], 32, /*transpose=*/true);
       i += 8;
     } while (i < num_rows);
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     // row_shift is always non zero here.
     RowShift<32>(src, num_rows, row_shift);
 
@@ -1953,12 +2526,14 @@ void Dct32TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
   }
 
   assert(!is_row);
-  // Process 8 1d dct32 columns in parallel per iteration.
-  int i = 0;
-  do {
-    Dct32_SSE4_1(&src[i], &src[i], tx_width, /*transpose=*/false);
-    i += 8;
-  } while (i < tx_width);
+  if (!DctDcOnlyColumn<32>(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    // Process 8 1d dct32 columns in parallel per iteration.
+    int i = 0;
+    do {
+      Dct32_SSE4_1(&src[i], &src[i], tx_width, /*transpose=*/false);
+      i += 8;
+    } while (i < tx_width);
+  }
   StoreToFrameWithRound(frame, start_x, start_y, tx_width, 32, src, tx_type);
 }
 
@@ -1966,15 +2541,23 @@ void Dct64TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                void* src_buffer, int start_x, int start_y,
                                void* dst_frame, bool is_row,
                                int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (DctDcOnly<64>(&src[0], &src[0], non_zero_coeff_count, should_round,
+                      row_shift)) {
+      return;
+    }
+
     const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+        GetNumRows<32>(tx_type, std::min(tx_height, 32), non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<64>(src, num_rows);
     }
     // Process 8 1d dct64 rows in parallel per iteration.
@@ -1983,7 +2566,6 @@ void Dct64TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
       Dct64_SSE4_1(&src[i * 64], &src[i * 64], 64, /*transpose=*/true);
       i += 8;
     } while (i < num_rows);
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     // row_shift is always non zero here.
     RowShift<64>(src, num_rows, row_shift);
 
@@ -1991,12 +2573,14 @@ void Dct64TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
   }
 
   assert(!is_row);
-  // Process 8 1d dct64 columns in parallel per iteration.
-  int i = 0;
-  do {
-    Dct64_SSE4_1(&src[i], &src[i], tx_width, /*transpose=*/false);
-    i += 8;
-  } while (i < tx_width);
+  if (!DctDcOnlyColumn<64>(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    // Process 8 1d dct64 columns in parallel per iteration.
+    int i = 0;
+    do {
+      Dct64_SSE4_1(&src[i], &src[i], tx_width, /*transpose=*/false);
+      i += 8;
+    } while (i < tx_width);
+  }
   StoreToFrameWithRound(frame, start_x, start_y, tx_width, 64, src, tx_type);
 }
 
@@ -2004,14 +2588,22 @@ void Adst4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                void* src_buffer, int start_x, int start_y,
                                void* dst_frame, bool is_row,
                                int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
+    const uint8_t row_shift = static_cast<uint8_t>(tx_height == 16);
     const bool should_round = (tx_height == 8);
+
+    if (Adst4DcOnly(&src[0], &src[0], non_zero_coeff_count, should_round,
+                    row_shift)) {
+      return;
+    }
+
+    const int num_rows =
+        GetNumRows<4>(tx_type, tx_height, non_zero_coeff_count);
     if (should_round) {
       ApplyRounding<4>(src, num_rows);
     }
@@ -2024,7 +2616,7 @@ void Adst4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
       i += 4;
     } while (i < num_rows);
 
-    if (tx_height == 16) {
+    if (row_shift != 0u) {
       RowShift<4>(src, num_rows, 1);
     }
     return;
@@ -2035,13 +2627,14 @@ void Adst4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<4>(src, tx_width);
   }
 
-  // Process 4 1d adst4 columns in parallel per iteration.
-  int i = 0;
-  do {
-    Adst4_SSE4_1<false>(&src[i], &src[i], tx_width, /*transpose=*/false);
-    i += 4;
-  } while (i < tx_width);
-
+  if (!Adst4DcOnlyColumn(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    // Process 4 1d adst4 columns in parallel per iteration.
+    int i = 0;
+    do {
+      Adst4_SSE4_1<false>(&src[i], &src[i], tx_width, /*transpose=*/false);
+      i += 4;
+    } while (i < tx_width);
+  }
   StoreToFrameWithRound</*enable_flip_rows=*/true>(frame, start_x, start_y,
                                                    tx_width, 4, src, tx_type);
 }
@@ -2050,14 +2643,23 @@ void Adst8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                void* src_buffer, int start_x, int start_y,
                                void* dst_frame, bool is_row,
                                int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
-    if (kShouldRound[tx_size]) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (Adst8DcOnly(&src[0], &src[0], non_zero_coeff_count, should_round,
+                    row_shift)) {
+      return;
+    }
+
+    const int num_rows =
+        GetNumRows<8>(tx_type, tx_height, non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<8>(src, num_rows);
     }
 
@@ -2075,7 +2677,6 @@ void Adst8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
         i += 8;
       } while (i < num_rows);
     }
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     if (row_shift > 0) {
       RowShift<8>(src, num_rows, row_shift);
     }
@@ -2087,18 +2688,20 @@ void Adst8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<8>(src, tx_width);
   }
 
-  if (tx_width == 4) {
-    // Process 4 1d adst8 columns in parallel.
-    Adst8_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
-                                            /*transpose=*/false);
-  } else {
-    // Process 8 1d adst8 columns in parallel per iteration.
-    int i = 0;
-    do {
-      Adst8_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
-                                               /*transpose=*/false);
-      i += 8;
-    } while (i < tx_width);
+  if (!Adst8DcOnlyColumn(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    if (tx_width == 4) {
+      // Process 4 1d adst8 columns in parallel.
+      Adst8_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
+                                              /*transpose=*/false);
+    } else {
+      // Process 8 1d adst8 columns in parallel per iteration.
+      int i = 0;
+      do {
+        Adst8_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
+                                                 /*transpose=*/false);
+        i += 8;
+      } while (i < tx_width);
+    }
   }
   StoreToFrameWithRound</*enable_flip_rows=*/true>(frame, start_x, start_y,
                                                    tx_width, 8, src, tx_type);
@@ -2108,15 +2711,23 @@ void Adst16TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                 void* src_buffer, int start_x, int start_y,
                                 void* dst_frame, bool is_row,
                                 int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+
+    if (Adst16DcOnly(&src[0], &src[0], non_zero_coeff_count, should_round,
+                     row_shift)) {
+      return;
+    }
+
     const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+        GetNumRows<16>(tx_type, std::min(tx_height, 32), non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<16>(src, num_rows);
     }
 
@@ -2133,7 +2744,6 @@ void Adst16TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
         i += 8;
       } while (i < num_rows);
     }
-    const uint8_t row_shift = kTransformRowShift[tx_size];
     // row_shift is always non zero here.
     RowShift<16>(src, num_rows, row_shift);
 
@@ -2145,18 +2755,20 @@ void Adst16TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<16>(src, tx_width);
   }
 
-  if (tx_width == 4) {
-    // Process 4 1d adst16 columns in parallel.
-    Adst16_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
-                                             /*transpose=*/false);
-  } else {
-    int i = 0;
-    do {
-      // Process 8 1d adst16 columns in parallel per iteration.
-      Adst16_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
-                                                /*transpose=*/false);
-      i += 8;
-    } while (i < tx_width);
+  if (!Adst16DcOnlyColumn(&src[0], &src[0], non_zero_coeff_count, tx_width)) {
+    if (tx_width == 4) {
+      // Process 4 1d adst16 columns in parallel.
+      Adst16_SSE4_1<ButterflyRotation_4, true>(&src[0], &src[0], 4,
+                                               /*transpose=*/false);
+    } else {
+      int i = 0;
+      do {
+        // Process 8 1d adst16 columns in parallel per iteration.
+        Adst16_SSE4_1<ButterflyRotation_8, false>(&src[i], &src[i], tx_width,
+                                                  /*transpose=*/false);
+        i += 8;
+      } while (i < tx_width);
+    }
   }
   StoreToFrameWithRound</*enable_flip_rows=*/true>(frame, start_x, start_y,
                                                    tx_width, 16, src, tx_type);
@@ -2166,7 +2778,7 @@ void Identity4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                    void* src_buffer, int start_x, int start_y,
                                    void* dst_frame, bool is_row,
                                    int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
@@ -2179,8 +2791,14 @@ void Identity4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
       return;
     }
 
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
     const bool should_round = (tx_height == 8);
+    if (Identity4DcOnly(&src[0], &src[0], non_zero_coeff_count, should_round,
+                        tx_height)) {
+      return;
+    }
+
+    const int num_rows =
+        GetNumRows<4>(tx_type, tx_height, non_zero_coeff_count);
     if (should_round) {
       ApplyRounding<4>(src, num_rows);
     }
@@ -2200,10 +2818,12 @@ void Identity4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     return;
   }
   assert(!is_row);
+  const int height = (non_zero_coeff_count == 1) ? 1 : tx_height;
   // Special case: Process row calculations during column transform call.
   if (tx_type == kTransformTypeIdentityIdentity &&
       (tx_size == kTransformSize4x4 || tx_size == kTransformSize8x4)) {
-    Identity4RowColumnStoreToFrame(frame, start_x, start_y, tx_width, 4, src);
+    Identity4RowColumnStoreToFrame(frame, start_x, start_y, tx_width, height,
+                                   src);
     return;
   }
 
@@ -2211,15 +2831,14 @@ void Identity4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<4>(src, tx_width);
   }
 
-  Identity4ColumnStoreToFrame(frame, start_x, start_y, tx_width,
-                              /*tx_height=*/4, src);
+  Identity4ColumnStoreToFrame(frame, start_x, start_y, tx_width, height, src);
 }
 
 void Identity8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
                                    void* src_buffer, int start_x, int start_y,
                                    void* dst_frame, bool is_row,
                                    int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
@@ -2231,8 +2850,17 @@ void Identity8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
         tx_size == kTransformSize8x4) {
       return;
     }
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
-    if (kShouldRound[tx_size]) {
+
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+    if (Identity8DcOnly(&src[0], &src[0], non_zero_coeff_count, should_round,
+                        row_shift)) {
+      return;
+    }
+
+    const int num_rows =
+        GetNumRows<8>(tx_type, tx_height, non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<8>(src, num_rows);
     }
 
@@ -2266,23 +2894,31 @@ void Identity8TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
     FlipColumns<8>(src, tx_width);
   }
 
-  Identity8ColumnStoreToFrame_SSE4_1(frame, start_x, start_y, tx_width,
-                                     /*tx_height=*/8, src);
+  const int height = (non_zero_coeff_count == 1) ? 1 : tx_height;
+  Identity8ColumnStoreToFrame_SSE4_1(frame, start_x, start_y, tx_width, height,
+                                     src);
 }
 
 void Identity16TransformLoop_SSE4_1(TransformType tx_type,
                                     TransformSize tx_size, void* src_buffer,
                                     int start_x, int start_y, void* dst_frame,
                                     bool is_row, int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
+    const bool should_round = kShouldRound[tx_size];
+    const uint8_t row_shift = kTransformRowShift[tx_size];
+    if (Identity16DcOnly(&src[0], &src[0], non_zero_coeff_count, should_round,
+                         row_shift)) {
+      return;
+    }
+
     const int num_rows =
-        (non_zero_coeff_count == 1) ? 1 : std::min(tx_height, 32);
-    if (kShouldRound[tx_size]) {
+        GetNumRows<16>(tx_type, std::min(tx_height, 32), non_zero_coeff_count);
+    if (should_round) {
       ApplyRounding<16>(src, num_rows);
     }
     int i = 0;
@@ -2298,28 +2934,37 @@ void Identity16TransformLoop_SSE4_1(TransformType tx_type,
   if (kTransformFlipColumnsMask.Contains(tx_type)) {
     FlipColumns<16>(src, tx_width);
   }
-  Identity16ColumnStoreToFrame_SSE4_1(frame, start_x, start_y, tx_width,
-                                      /*tx_height=*/16, src);
+  const int height = (non_zero_coeff_count == 1) ? 1 : tx_height;
+  Identity16ColumnStoreToFrame_SSE4_1(frame, start_x, start_y, tx_width, height,
+                                      src);
 }
 
-void Identity32TransformLoop_SSE4_1(TransformType /*tx_type*/,
+void Identity32TransformLoop_SSE4_1(TransformType tx_type,
                                     TransformSize tx_size, void* src_buffer,
                                     int start_x, int start_y, void* dst_frame,
                                     bool is_row, int non_zero_coeff_count) {
-  auto& frame = *reinterpret_cast<Array2DView<uint8_t>*>(dst_frame);
+  auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
 
   if (is_row) {
-    const int num_rows = (non_zero_coeff_count == 1) ? 1 : tx_height;
-
     // When combining the identity32 multiplier with the row shift, the
     // calculations for tx_height == 8 and tx_height == 32 can be simplified
     // from ((A * 4) + 2) >> 2) to A.
     if ((tx_height & 0x28) != 0) {
       return;
     }
+
+    // Process kTransformSize32x16. The src is always rounded before the
+    // identity transform and shifted by 1 afterwards.
+
+    if (Identity32DcOnly(&src[0], &src[0], non_zero_coeff_count)) {
+      return;
+    }
+
+    const int num_rows =
+        GetNumRows<32>(tx_type, tx_height, non_zero_coeff_count);
 
     // Process kTransformSize32x16
     assert(tx_size == kTransformSize32x16);
@@ -2333,8 +2978,8 @@ void Identity32TransformLoop_SSE4_1(TransformType /*tx_type*/,
   }
 
   assert(!is_row);
-  Identity32ColumnStoreToFrame(frame, start_x, start_y, tx_width,
-                               /*tx_height=*/32, src);
+  const int height = (non_zero_coeff_count == 1) ? 1 : tx_height;
+  Identity32ColumnStoreToFrame(frame, start_x, start_y, tx_width, height, src);
 }
 
 void Wht4TransformLoop_SSE4_1(TransformType tx_type, TransformSize tx_size,
@@ -2397,7 +3042,7 @@ void InitAll(Dsp* const dsp) {
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   InitAll<int16_t, uint8_t>(dsp);
@@ -2464,7 +3109,7 @@ void InverseTransformInit_SSE4_1() { low_bitdepth::Init8bpp(); }
 
 }  // namespace dsp
 }  // namespace libgav1
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 namespace libgav1 {
 namespace dsp {
 
