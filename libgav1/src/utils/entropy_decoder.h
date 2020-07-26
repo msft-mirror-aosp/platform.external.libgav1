@@ -21,6 +21,7 @@
 #include <cstdint>
 
 #include "src/utils/bit_reader.h"
+#include "src/utils/compiler_attributes.h"
 
 namespace libgav1 {
 
@@ -33,7 +34,7 @@ class DaalaBitReader : public BitReader {
   DaalaBitReader(DaalaBitReader&& rhs) noexcept;
   DaalaBitReader& operator=(DaalaBitReader&& rhs) noexcept;
 
-  int ReadBit() override;
+  int ReadBit() final;
   int64_t ReadLiteral(int num_bits) override;
   // ReadSymbol() calls for which the |symbol_count| is only known at runtime
   // will use this variant.
@@ -49,9 +50,12 @@ class DaalaBitReader : public BitReader {
   int ReadSymbol(uint16_t* cdf);
 
  private:
-  using WindowSize = uint32_t;
-  static constexpr uint32_t kWindowSize =
-      static_cast<uint32_t>(sizeof(WindowSize)) * 8;
+  // WindowSize must be an unsigned integer type with at least 32 bits. Use the
+  // largest type with fast arithmetic. size_t should meet these requirements.
+  static_assert(sizeof(size_t) == sizeof(void*), "");
+  using WindowSize = size_t;
+  static constexpr int kWindowSize = static_cast<int>(sizeof(WindowSize)) * 8;
+  static_assert(kWindowSize >= 32, "");
 
   // Reads a symbol using the |cdf| table which contains the probabilities of
   // each symbol. On a high level, this function does the following:
@@ -61,32 +65,49 @@ class DaalaBitReader : public BitReader {
   //   3) That index is the symbol that has been decoded.
   //   4) Update |window_diff_| and |values_in_range_| based on the symbol that
   //   has been decoded.
-  int ReadSymbolImpl(const uint16_t* cdf, int symbol_count);
+  inline int ReadSymbolImpl(const uint16_t* cdf, int symbol_count);
   // Similar to ReadSymbolImpl but it uses binary search to perform step 2 in
   // the comment above. As of now, this function is called when |symbol_count|
-  // is greater than or equal to 8.
-  int ReadSymbolImplBinarySearch(const uint16_t* cdf, int symbol_count);
+  // is greater than or equal to 14.
+  inline int ReadSymbolImplBinarySearch(const uint16_t* cdf, int symbol_count);
   // Specialized implementation of ReadSymbolImpl based on the fact that
   // symbol_count == 2.
-  int ReadSymbolImpl(const uint16_t* cdf);
-  void PopulateBits();
+  inline int ReadSymbolImpl(const uint16_t* cdf);
+  // ReadSymbolN is a specialization of ReadSymbol for symbol_count == N.
+  LIBGAV1_ALWAYS_INLINE int ReadSymbol4(uint16_t* cdf);
+  // ReadSymbolImplN is a specialization of ReadSymbolImpl for
+  // symbol_count == N.
+  LIBGAV1_ALWAYS_INLINE int ReadSymbolImpl8(const uint16_t* cdf);
+  inline void PopulateBits();
   // Normalizes the range so that 32768 <= |values_in_range_| < 65536. Also
   // calls PopulateBits() if necessary.
-  void NormalizeRange();
+  inline void NormalizeRange();
 
-  const uint8_t* data_;
+  const uint8_t* const data_;
   const size_t size_;
   size_t data_index_;
   const bool allow_update_cdf_;
   // Number of bits of data in the current value.
   int bits_;
-  // Number of values in the current range.
-  uint16_t values_in_range_;
+  // Number of values in the current range. Declared as uint32_t for better
+  // performance but only the lower 16 bits are used.
+  uint32_t values_in_range_;
   // The difference between the high end of the current range and the coded
-  // value minus 1. The 16 least significant bits of this variable is used to
+  // value minus 1. The 16 most significant bits of this variable is used to
   // decode the next symbol. It is filled in whenever |bits_| is less than 0.
   WindowSize window_diff_;
 };
+
+extern template int DaalaBitReader::ReadSymbol<3>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<4>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<5>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<7>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<8>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<10>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<11>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<13>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<14>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<16>(uint16_t* cdf);
 
 }  // namespace libgav1
 
