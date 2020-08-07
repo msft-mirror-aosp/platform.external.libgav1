@@ -12,8 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+bug_component_id = 324837
+
+fuzz_email_cc = ["jzern@google.com"]
+
 cc_library_static {
     name: "libgav1",
+    host_supported: true,
     vendor_available: true,
 
     export_include_dirs: [
@@ -23,6 +28,7 @@ cc_library_static {
 
     cflags: [
         "-DLIBGAV1_MAX_BITDEPTH=10",
+        "-DLIBGAV1_THREADPOOL_USE_STD_MUTEX",
         "-O2",
         "-Wall",
         "-Werror",
@@ -148,4 +154,62 @@ cc_library_static {
         },
     },
     min_sdk_version: "29",
+}
+
+cc_defaults {
+    name: "libgav1_fuzzer_defaults",
+    host_supported: true,
+    native_coverage: true,
+
+    cflags: [
+        "-DLIBGAV1_MAX_BITDEPTH=10",
+        "-DLIBGAV1_THREADPOOL_USE_STD_MUTEX",
+    ],
+
+    local_include_dirs: [
+        "libgav1",
+    ],
+
+    srcs: [
+        "libgav1/examples/file_reader.cc",
+        "libgav1/examples/file_reader_constants.cc",
+        "libgav1/examples/file_reader_factory.cc",
+        "libgav1/examples/ivf_parser.cc",
+    ],
+
+    static_libs: [
+        "libgav1",
+    ],
+
+    fuzz_config: {
+        cc: fuzz_email_cc,
+        componentid: bug_component_id,
+    },
+}
+
+cc_fuzz {
+    name: "libgav1_decoder_fuzzer",
+    defaults: ["libgav1_fuzzer_defaults"],
+
+    srcs: [
+        "libgav1/tests/fuzzer/decoder_fuzzer.cc",
+    ],
+}
+
+cc_fuzz {
+    name: "libgav1_decoder_fuzzer_frame_parallel",
+    defaults: ["libgav1_fuzzer_defaults"],
+
+    srcs: [
+        "libgav1/tests/fuzzer/decoder_fuzzer_frame_parallel.cc",
+    ],
+}
+
+cc_fuzz {
+    name: "libgav1_obu_parser_fuzzer",
+    defaults: ["libgav1_fuzzer_defaults"],
+
+    srcs: [
+        "libgav1/tests/fuzzer/obu_parser_fuzzer.cc",
+    ],
 }
