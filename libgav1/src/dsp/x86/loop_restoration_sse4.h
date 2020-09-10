@@ -17,8 +17,8 @@
 #ifndef LIBGAV1_SRC_DSP_X86_LOOP_RESTORATION_SSE4_H_
 #define LIBGAV1_SRC_DSP_X86_LOOP_RESTORATION_SSE4_H_
 
-#include "src/dsp/cpu.h"
 #include "src/dsp/dsp.h"
+#include "src/utils/cpu.h"
 
 namespace libgav1 {
 namespace dsp {
@@ -35,11 +35,11 @@ void LoopRestorationInit_SSE4_1();
 #if LIBGAV1_ENABLE_SSE4_1
 
 #ifndef LIBGAV1_Dsp8bpp_WienerFilter
-#define LIBGAV1_Dsp8bpp_WienerFilter LIBGAV1_DSP_SSE4_1
+#define LIBGAV1_Dsp8bpp_WienerFilter LIBGAV1_CPU_SSE4_1
 #endif
 
 #ifndef LIBGAV1_Dsp8bpp_SelfGuidedFilter
-#define LIBGAV1_Dsp8bpp_SelfGuidedFilter LIBGAV1_DSP_SSE4_1
+#define LIBGAV1_Dsp8bpp_SelfGuidedFilter LIBGAV1_CPU_SSE4_1
 #endif
 
 #endif  // LIBGAV1_ENABLE_SSE4_1
