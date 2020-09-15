@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/obmc.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -23,6 +23,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
@@ -298,7 +300,7 @@ void OverlapBlendFromTop_SSE4_1(void* const prediction,
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
 #if DSP_ENABLED_8BPP_SSE4_1(ObmcVertical)
   dsp->obmc_blend[kObmcDirectionVertical] = OverlapBlendFromTop_SSE4_1;
@@ -315,7 +317,7 @@ void ObmcInit_SSE4_1() { Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 
 namespace libgav1 {
 namespace dsp {

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/intrapred.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -26,6 +26,8 @@
 #include <cstring>  // memset
 
 #include "src/dsp/arm/common_neon.h"
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/utils/common.h"
 
 namespace libgav1 {
@@ -898,7 +900,7 @@ void DirectionalIntraPredictorZone3_NEON(void* const dest,
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   dsp->directional_intra_predictor_zone1 = DirectionalIntraPredictorZone1_NEON;
   dsp->directional_intra_predictor_zone2 = DirectionalIntraPredictorZone2_NEON;
@@ -913,7 +915,7 @@ void IntraPredDirectionalInit_NEON() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_NEON
+#else  // !LIBGAV1_ENABLE_NEON
 namespace libgav1 {
 namespace dsp {
 

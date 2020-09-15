@@ -27,7 +27,7 @@ namespace libgav1 {
 namespace {
 
 // Returns the number of super block rows/columns for |value4x4| where value4x4
-// is either rows4x4 or column4x4.
+// is either rows4x4 or columns4x4.
 int RowsOrColumns4x4ToSuperBlocks(int value4x4, bool use_128x128_superblock) {
   return use_128x128_superblock ? DivideBy128(MultiplyBy4(value4x4) + 127)
                                 : DivideBy64(MultiplyBy4(value4x4) + 63);
@@ -35,13 +35,11 @@ int RowsOrColumns4x4ToSuperBlocks(int value4x4, bool use_128x128_superblock) {
 
 }  // namespace
 
-BlockParametersHolder::BlockParametersHolder(int rows4x4, int columns4x4,
-                                             bool use_128x128_superblock)
-    : rows4x4_(rows4x4),
-      columns4x4_(columns4x4),
-      use_128x128_superblock_(use_128x128_superblock) {}
-
-bool BlockParametersHolder::Init() {
+bool BlockParametersHolder::Reset(int rows4x4, int columns4x4,
+                                  bool use_128x128_superblock) {
+  rows4x4_ = rows4x4;
+  columns4x4_ = columns4x4;
+  use_128x128_superblock_ = use_128x128_superblock;
   if (!block_parameters_cache_.Reset(rows4x4_, columns4x4_)) {
     LIBGAV1_DLOG(ERROR, "block_parameters_cache_.Reset() failed.");
     return false;
@@ -73,14 +71,36 @@ bool BlockParametersHolder::Init() {
 void BlockParametersHolder::FillCache(int row4x4, int column4x4,
                                       BlockSize block_size,
                                       BlockParameters* const bp) {
-  const int row4x4_end =
-      std::min(row4x4 + kNum4x4BlocksHigh[block_size], rows4x4_);
-  const int column4x4_end =
-      std::min(column4x4 + kNum4x4BlocksWide[block_size], columns4x4_);
-  for (int y = row4x4; y < row4x4_end; ++y) {
-    for (int x = column4x4; x < column4x4_end; ++x) {
-      block_parameters_cache_[y][x] = bp;
-    }
+  int rows = std::min(static_cast<int>(kNum4x4BlocksHigh[block_size]),
+                      rows4x4_ - row4x4);
+  const int columns = std::min(static_cast<int>(kNum4x4BlocksWide[block_size]),
+                               columns4x4_ - column4x4);
+  auto* bp_dst = &block_parameters_cache_[row4x4][column4x4];
+  // Specialize columns cases (values in kNum4x4BlocksWide[]) for better
+  // performance.
+  if (columns == 1) {
+    SetBlock<BlockParameters*>(rows, 1, bp, bp_dst, columns4x4_);
+  } else if (columns == 2) {
+    SetBlock<BlockParameters*>(rows, 2, bp, bp_dst, columns4x4_);
+  } else if (columns == 4) {
+    SetBlock<BlockParameters*>(rows, 4, bp, bp_dst, columns4x4_);
+  } else if (columns == 8) {
+    SetBlock<BlockParameters*>(rows, 8, bp, bp_dst, columns4x4_);
+  } else if (columns == 16) {
+    SetBlock<BlockParameters*>(rows, 16, bp, bp_dst, columns4x4_);
+  } else if (columns == 32) {
+    SetBlock<BlockParameters*>(rows, 32, bp, bp_dst, columns4x4_);
+  } else {
+    do {
+      // The following loop has better performance than using std::fill().
+      // std::fill() has some overhead in checking zero loop count.
+      int x = columns;
+      auto* d = bp_dst;
+      do {
+        *d++ = bp;
+      } while (--x != 0);
+      bp_dst += columns4x4_;
+    } while (--rows != 0);
   }
 }
 

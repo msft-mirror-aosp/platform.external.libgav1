@@ -15,10 +15,34 @@
 #include "src/utils/entropy_decoder.h"
 
 #include <cassert>
+#include <cstring>
 
 #include "src/utils/common.h"
+#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 
+#if defined(__ARM_NEON__) || defined(__aarch64__) || \
+    (defined(_MSC_VER) && defined(_M_ARM))
+#define LIBGAV1_ENTROPY_DECODER_ENABLE_NEON 1
+#else
+#define LIBGAV1_ENTROPY_DECODER_ENABLE_NEON 0
+#endif
+
+#if LIBGAV1_ENTROPY_DECODER_ENABLE_NEON
+#include <arm_neon.h>
+#endif
+
+#if defined(__SSE4_1__) || defined(LIBGAV1_X86_MSVC)
+#define LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4 1
+#else
+#define LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4 0
+#endif
+
+#if LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+#include <smmintrin.h>
+#endif
+
+namespace libgav1 {
 namespace {
 
 constexpr uint32_t kReadBitMask = ~255;
@@ -33,13 +57,13 @@ constexpr int kMinimumProbabilityPerSymbol = 4;
 // loop in Section 8.2.6 of the spec. This function is monotonically
 // decreasing as the values of index increases (note that the |cdf| array is
 // sorted in decreasing order).
-uint32_t ScaleCdf(uint16_t values_in_range_shifted, const uint16_t* const cdf,
+uint32_t ScaleCdf(uint32_t values_in_range_shifted, const uint16_t* const cdf,
                   int index, int symbol_count) {
   return ((values_in_range_shifted * (cdf[index] >> kCdfPrecision)) >> 1) +
          (kMinimumProbabilityPerSymbol * (symbol_count - index));
 }
 
-void UpdateCdf(uint16_t* const cdf, int symbol_count, int symbol) {
+void UpdateCdf(uint16_t* const cdf, const int symbol_count, const int symbol) {
   const uint16_t count = cdf[symbol_count];
   // rate is computed in the spec as:
   //  3 + ( cdf[N] > 15 ) + ( cdf[N] > 31 ) + Min(FloorLog2(N), 2)
@@ -68,9 +92,9 @@ void UpdateCdf(uint16_t* const cdf, int symbol_count, int symbol) {
   // 2. The for loop can be rewritten in the following form, which would enable
   // clang to vectorize the loop with width 8:
   //
-  //   const int mask = (1 << rate) - 1;
+  //   const int rounding = (1 << rate) - 1;
   //   for (int i = 0; i < symbol_count - 1; ++i) {
-  //     const uint16_t a = (i < symbol) ? kCdfMaxProbability : mask;
+  //     const uint16_t a = (i < symbol) ? kCdfMaxProbability : rounding;
   //     cdf[i] += static_cast<int16_t>(a - cdf[i]) >> rate;
   //   }
   //
@@ -81,7 +105,7 @@ void UpdateCdf(uint16_t* const cdf, int symbol_count, int symbol) {
   // Visual C++.
   for (int i = 0; i < symbol_count - 1; ++i) {
     if (i < symbol) {
-      cdf[i] += (libgav1::kCdfMaxProbability - cdf[i]) >> rate;
+      cdf[i] += (kCdfMaxProbability - cdf[i]) >> rate;
     } else {
       cdf[i] -= cdf[i] >> rate;
     }
@@ -89,11 +113,409 @@ void UpdateCdf(uint16_t* const cdf, int symbol_count, int symbol) {
   cdf[symbol_count] += static_cast<uint16_t>(count < 32);
 }
 
+// Define the UpdateCdfN functions. UpdateCdfN is a specialized implementation
+// of UpdateCdf based on the fact that symbol_count == N. UpdateCdfN uses the
+// SIMD instruction sets if available.
+
+#if LIBGAV1_ENTROPY_DECODER_ENABLE_NEON
+
+// The UpdateCdf() method contains the following for loop:
+//
+//   for (int i = 0; i < symbol_count - 1; ++i) {
+//     if (i < symbol) {
+//       cdf[i] += (kCdfMaxProbability - cdf[i]) >> rate;
+//     } else {
+//       cdf[i] -= cdf[i] >> rate;
+//     }
+//   }
+//
+// It can be rewritten in the following two forms, which are amenable to SIMD
+// implementations:
+//
+//   const int rounding = (1 << rate) - 1;
+//   for (int i = 0; i < symbol_count - 1; ++i) {
+//     const uint16_t a = (i < symbol) ? kCdfMaxProbability : rounding;
+//     cdf[i] += static_cast<int16_t>(a - cdf[i]) >> rate;
+//   }
+//
+// or:
+//
+//   const int rounding = (1 << rate) - 1;
+//   for (int i = 0; i < symbol_count - 1; ++i) {
+//     const uint16_t a = (i < symbol) ? (kCdfMaxProbability - rounding) : 0;
+//     cdf[i] -= static_cast<int16_t>(cdf[i] - a) >> rate;
+//   }
+//
+// The following ARM NEON implementations use the second form, which seems
+// slightly faster.
+//
+// The cdf array has symbol_count + 1 elements. The first symbol_count elements
+// are the CDF. The last element is a count that is initialized to 0 and may
+// grow up to 32. The for loop in UpdateCdf updates the CDF in the array. Since
+// cdf[symbol_count - 1] is always 0, the for loop does not update
+// cdf[symbol_count - 1]. However, it would be correct to have the for loop
+// update cdf[symbol_count - 1] anyway: since symbol_count - 1 >= symbol, the
+// for loop would take the else branch when i is symbol_count - 1:
+//      cdf[i] -= cdf[i] >> rate;
+// Since cdf[symbol_count - 1] is 0, cdf[symbol_count - 1] would still be 0
+// after the update. The ARM NEON implementations take advantage of this in the
+// following two cases:
+// 1. When symbol_count is 8 or 16, the vectorized code updates the first
+//    symbol_count elements in the array.
+// 2. When symbol_count is 7, the vectorized code updates all the 8 elements in
+//    the cdf array. Since an invalid CDF value is written into cdf[7], the
+//    count in cdf[7] needs to be fixed up after the vectorized code.
+
+void UpdateCdf5(uint16_t* const cdf, const int symbol) {
+  uint16x4_t cdf_vec = vld1_u16(cdf);
+  const uint16_t count = cdf[5];
+  const int rate = (4 | (count >> 4)) + 1;
+  const uint16x4_t zero = vdup_n_u16(0);
+  const uint16x4_t cdf_max_probability =
+      vdup_n_u16(kCdfMaxProbability + 1 - (1 << rate));
+  const uint16x4_t index = vcreate_u16(0x0003000200010000);
+  const uint16x4_t symbol_vec = vdup_n_u16(symbol);
+  const uint16x4_t mask = vclt_u16(index, symbol_vec);
+  const uint16x4_t a = vbsl_u16(mask, cdf_max_probability, zero);
+  const int16x4_t diff = vreinterpret_s16_u16(vsub_u16(cdf_vec, a));
+  const int16x4_t negative_rate = vdup_n_s16(-rate);
+  const uint16x4_t delta = vreinterpret_u16_s16(vshl_s16(diff, negative_rate));
+  cdf_vec = vsub_u16(cdf_vec, delta);
+  vst1_u16(cdf, cdf_vec);
+  cdf[5] = count + static_cast<uint16_t>(count < 32);
+}
+
+// This version works for |symbol_count| = 7, 8, or 9.
+template <int symbol_count>
+void UpdateCdf7To9(uint16_t* const cdf, const int symbol) {
+  static_assert(symbol_count >= 7 && symbol_count <= 9, "");
+  uint16x8_t cdf_vec = vld1q_u16(cdf);
+  const uint16_t count = cdf[symbol_count];
+  const int rate = (4 | (count >> 4)) + 1;
+  const uint16x8_t zero = vdupq_n_u16(0);
+  const uint16x8_t cdf_max_probability =
+      vdupq_n_u16(kCdfMaxProbability + 1 - (1 << rate));
+  const uint16x8_t index = vcombine_u16(vcreate_u16(0x0003000200010000),
+                                        vcreate_u16(0x0007000600050004));
+  const uint16x8_t symbol_vec = vdupq_n_u16(symbol);
+  const uint16x8_t mask = vcltq_u16(index, symbol_vec);
+  const uint16x8_t a = vbslq_u16(mask, cdf_max_probability, zero);
+  const int16x8_t diff = vreinterpretq_s16_u16(vsubq_u16(cdf_vec, a));
+  const int16x8_t negative_rate = vdupq_n_s16(-rate);
+  const uint16x8_t delta =
+      vreinterpretq_u16_s16(vshlq_s16(diff, negative_rate));
+  cdf_vec = vsubq_u16(cdf_vec, delta);
+  vst1q_u16(cdf, cdf_vec);
+  cdf[symbol_count] = count + static_cast<uint16_t>(count < 32);
+}
+
+void UpdateCdf7(uint16_t* const cdf, const int symbol) {
+  UpdateCdf7To9<7>(cdf, symbol);
+}
+
+void UpdateCdf8(uint16_t* const cdf, const int symbol) {
+  UpdateCdf7To9<8>(cdf, symbol);
+}
+
+void UpdateCdf11(uint16_t* const cdf, const int symbol) {
+  uint16x8_t cdf_vec = vld1q_u16(cdf + 2);
+  const uint16_t count = cdf[11];
+  cdf[11] = count + static_cast<uint16_t>(count < 32);
+  const int rate = (4 | (count >> 4)) + 1;
+  if (symbol > 1) {
+    cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
+    cdf[1] += (kCdfMaxProbability - cdf[1]) >> rate;
+    const uint16x8_t zero = vdupq_n_u16(0);
+    const uint16x8_t cdf_max_probability =
+        vdupq_n_u16(kCdfMaxProbability + 1 - (1 << rate));
+    const uint16x8_t symbol_vec = vdupq_n_u16(symbol);
+    const int16x8_t negative_rate = vdupq_n_s16(-rate);
+    const uint16x8_t index = vcombine_u16(vcreate_u16(0x0005000400030002),
+                                          vcreate_u16(0x0009000800070006));
+    const uint16x8_t mask = vcltq_u16(index, symbol_vec);
+    const uint16x8_t a = vbslq_u16(mask, cdf_max_probability, zero);
+    const int16x8_t diff = vreinterpretq_s16_u16(vsubq_u16(cdf_vec, a));
+    const uint16x8_t delta =
+        vreinterpretq_u16_s16(vshlq_s16(diff, negative_rate));
+    cdf_vec = vsubq_u16(cdf_vec, delta);
+    vst1q_u16(cdf + 2, cdf_vec);
+  } else {
+    if (symbol != 0) {
+      cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
+      cdf[1] -= cdf[1] >> rate;
+    } else {
+      cdf[0] -= cdf[0] >> rate;
+      cdf[1] -= cdf[1] >> rate;
+    }
+    const int16x8_t negative_rate = vdupq_n_s16(-rate);
+    const uint16x8_t delta = vshlq_u16(cdf_vec, negative_rate);
+    cdf_vec = vsubq_u16(cdf_vec, delta);
+    vst1q_u16(cdf + 2, cdf_vec);
+  }
+}
+
+void UpdateCdf13(uint16_t* const cdf, const int symbol) {
+  uint16x8_t cdf_vec0 = vld1q_u16(cdf);
+  uint16x8_t cdf_vec1 = vld1q_u16(cdf + 4);
+  const uint16_t count = cdf[13];
+  const int rate = (4 | (count >> 4)) + 1;
+  const uint16x8_t zero = vdupq_n_u16(0);
+  const uint16x8_t cdf_max_probability =
+      vdupq_n_u16(kCdfMaxProbability + 1 - (1 << rate));
+  const uint16x8_t symbol_vec = vdupq_n_u16(symbol);
+  const int16x8_t negative_rate = vdupq_n_s16(-rate);
+
+  uint16x8_t index = vcombine_u16(vcreate_u16(0x0003000200010000),
+                                  vcreate_u16(0x0007000600050004));
+  uint16x8_t mask = vcltq_u16(index, symbol_vec);
+  uint16x8_t a = vbslq_u16(mask, cdf_max_probability, zero);
+  int16x8_t diff = vreinterpretq_s16_u16(vsubq_u16(cdf_vec0, a));
+  uint16x8_t delta = vreinterpretq_u16_s16(vshlq_s16(diff, negative_rate));
+  cdf_vec0 = vsubq_u16(cdf_vec0, delta);
+  vst1q_u16(cdf, cdf_vec0);
+
+  index = vcombine_u16(vcreate_u16(0x0007000600050004),
+                       vcreate_u16(0x000b000a00090008));
+  mask = vcltq_u16(index, symbol_vec);
+  a = vbslq_u16(mask, cdf_max_probability, zero);
+  diff = vreinterpretq_s16_u16(vsubq_u16(cdf_vec1, a));
+  delta = vreinterpretq_u16_s16(vshlq_s16(diff, negative_rate));
+  cdf_vec1 = vsubq_u16(cdf_vec1, delta);
+  vst1q_u16(cdf + 4, cdf_vec1);
+
+  cdf[13] = count + static_cast<uint16_t>(count < 32);
+}
+
+void UpdateCdf16(uint16_t* const cdf, const int symbol) {
+  uint16x8_t cdf_vec = vld1q_u16(cdf);
+  const uint16_t count = cdf[16];
+  const int rate = (4 | (count >> 4)) + 1;
+  const uint16x8_t zero = vdupq_n_u16(0);
+  const uint16x8_t cdf_max_probability =
+      vdupq_n_u16(kCdfMaxProbability + 1 - (1 << rate));
+  const uint16x8_t symbol_vec = vdupq_n_u16(symbol);
+  const int16x8_t negative_rate = vdupq_n_s16(-rate);
+
+  uint16x8_t index = vcombine_u16(vcreate_u16(0x0003000200010000),
+                                  vcreate_u16(0x0007000600050004));
+  uint16x8_t mask = vcltq_u16(index, symbol_vec);
+  uint16x8_t a = vbslq_u16(mask, cdf_max_probability, zero);
+  int16x8_t diff = vreinterpretq_s16_u16(vsubq_u16(cdf_vec, a));
+  uint16x8_t delta = vreinterpretq_u16_s16(vshlq_s16(diff, negative_rate));
+  cdf_vec = vsubq_u16(cdf_vec, delta);
+  vst1q_u16(cdf, cdf_vec);
+
+  cdf_vec = vld1q_u16(cdf + 8);
+  index = vcombine_u16(vcreate_u16(0x000b000a00090008),
+                       vcreate_u16(0x000f000e000d000c));
+  mask = vcltq_u16(index, symbol_vec);
+  a = vbslq_u16(mask, cdf_max_probability, zero);
+  diff = vreinterpretq_s16_u16(vsubq_u16(cdf_vec, a));
+  delta = vreinterpretq_u16_s16(vshlq_s16(diff, negative_rate));
+  cdf_vec = vsubq_u16(cdf_vec, delta);
+  vst1q_u16(cdf + 8, cdf_vec);
+
+  cdf[16] = count + static_cast<uint16_t>(count < 32);
+}
+
+#else  // !LIBGAV1_ENTROPY_DECODER_ENABLE_NEON
+
+#if LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+
+inline __m128i LoadLo8(const void* a) {
+  return _mm_loadl_epi64(static_cast<const __m128i*>(a));
+}
+
+inline __m128i LoadUnaligned16(const void* a) {
+  return _mm_loadu_si128(static_cast<const __m128i*>(a));
+}
+
+inline void StoreLo8(void* a, const __m128i v) {
+  _mm_storel_epi64(static_cast<__m128i*>(a), v);
+}
+
+inline void StoreUnaligned16(void* a, const __m128i v) {
+  _mm_storeu_si128(static_cast<__m128i*>(a), v);
+}
+
+void UpdateCdf5(uint16_t* const cdf, const int symbol) {
+  __m128i cdf_vec = LoadLo8(cdf);
+  const uint16_t count = cdf[5];
+  const int rate = (4 | (count >> 4)) + 1;
+  const __m128i zero = _mm_setzero_si128();
+  const __m128i cdf_max_probability = _mm_shufflelo_epi16(
+      _mm_cvtsi32_si128(kCdfMaxProbability + 1 - (1 << rate)), 0);
+  const __m128i index = _mm_set_epi32(0x0, 0x0, 0x00030002, 0x00010000);
+  const __m128i symbol_vec = _mm_shufflelo_epi16(_mm_cvtsi32_si128(symbol), 0);
+  const __m128i mask = _mm_cmplt_epi16(index, symbol_vec);
+  const __m128i a = _mm_blendv_epi8(zero, cdf_max_probability, mask);
+  const __m128i diff = _mm_sub_epi16(cdf_vec, a);
+  const __m128i delta = _mm_sra_epi16(diff, _mm_cvtsi32_si128(rate));
+  cdf_vec = _mm_sub_epi16(cdf_vec, delta);
+  StoreLo8(cdf, cdf_vec);
+  cdf[5] = count + static_cast<uint16_t>(count < 32);
+}
+
+// This version works for |symbol_count| = 7, 8, or 9.
+template <int symbol_count>
+void UpdateCdf7To9(uint16_t* const cdf, const int symbol) {
+  static_assert(symbol_count >= 7 && symbol_count <= 9, "");
+  __m128i cdf_vec = LoadUnaligned16(cdf);
+  const uint16_t count = cdf[symbol_count];
+  const int rate = (4 | (count >> 4)) + 1;
+  const __m128i zero = _mm_setzero_si128();
+  const __m128i cdf_max_probability =
+      _mm_set1_epi16(kCdfMaxProbability + 1 - (1 << rate));
+  const __m128i index =
+      _mm_set_epi32(0x00070006, 0x00050004, 0x00030002, 0x00010000);
+  const __m128i symbol_vec = _mm_set1_epi16(symbol);
+  const __m128i mask = _mm_cmplt_epi16(index, symbol_vec);
+  const __m128i a = _mm_blendv_epi8(zero, cdf_max_probability, mask);
+  const __m128i diff = _mm_sub_epi16(cdf_vec, a);
+  const __m128i delta = _mm_sra_epi16(diff, _mm_cvtsi32_si128(rate));
+  cdf_vec = _mm_sub_epi16(cdf_vec, delta);
+  StoreUnaligned16(cdf, cdf_vec);
+  cdf[symbol_count] = count + static_cast<uint16_t>(count < 32);
+}
+
+void UpdateCdf7(uint16_t* const cdf, const int symbol) {
+  UpdateCdf7To9<7>(cdf, symbol);
+}
+
+void UpdateCdf8(uint16_t* const cdf, const int symbol) {
+  UpdateCdf7To9<8>(cdf, symbol);
+}
+
+void UpdateCdf11(uint16_t* const cdf, const int symbol) {
+  __m128i cdf_vec = LoadUnaligned16(cdf + 2);
+  const uint16_t count = cdf[11];
+  cdf[11] = count + static_cast<uint16_t>(count < 32);
+  const int rate = (4 | (count >> 4)) + 1;
+  if (symbol > 1) {
+    cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
+    cdf[1] += (kCdfMaxProbability - cdf[1]) >> rate;
+    const __m128i zero = _mm_setzero_si128();
+    const __m128i cdf_max_probability =
+        _mm_set1_epi16(kCdfMaxProbability + 1 - (1 << rate));
+    const __m128i index =
+        _mm_set_epi32(0x00090008, 0x00070006, 0x00050004, 0x00030002);
+    const __m128i symbol_vec = _mm_set1_epi16(symbol);
+    const __m128i mask = _mm_cmplt_epi16(index, symbol_vec);
+    const __m128i a = _mm_blendv_epi8(zero, cdf_max_probability, mask);
+    const __m128i diff = _mm_sub_epi16(cdf_vec, a);
+    const __m128i delta = _mm_sra_epi16(diff, _mm_cvtsi32_si128(rate));
+    cdf_vec = _mm_sub_epi16(cdf_vec, delta);
+    StoreUnaligned16(cdf + 2, cdf_vec);
+  } else {
+    if (symbol != 0) {
+      cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
+      cdf[1] -= cdf[1] >> rate;
+    } else {
+      cdf[0] -= cdf[0] >> rate;
+      cdf[1] -= cdf[1] >> rate;
+    }
+    const __m128i delta = _mm_sra_epi16(cdf_vec, _mm_cvtsi32_si128(rate));
+    cdf_vec = _mm_sub_epi16(cdf_vec, delta);
+    StoreUnaligned16(cdf + 2, cdf_vec);
+  }
+}
+
+void UpdateCdf13(uint16_t* const cdf, const int symbol) {
+  __m128i cdf_vec0 = LoadUnaligned16(cdf);
+  __m128i cdf_vec1 = LoadUnaligned16(cdf + 4);
+  const uint16_t count = cdf[13];
+  const int rate = (4 | (count >> 4)) + 1;
+  const __m128i zero = _mm_setzero_si128();
+  const __m128i cdf_max_probability =
+      _mm_set1_epi16(kCdfMaxProbability + 1 - (1 << rate));
+  const __m128i symbol_vec = _mm_set1_epi16(symbol);
+
+  const __m128i index =
+      _mm_set_epi32(0x00070006, 0x00050004, 0x00030002, 0x00010000);
+  const __m128i mask = _mm_cmplt_epi16(index, symbol_vec);
+  const __m128i a = _mm_blendv_epi8(zero, cdf_max_probability, mask);
+  const __m128i diff = _mm_sub_epi16(cdf_vec0, a);
+  const __m128i delta = _mm_sra_epi16(diff, _mm_cvtsi32_si128(rate));
+  cdf_vec0 = _mm_sub_epi16(cdf_vec0, delta);
+  StoreUnaligned16(cdf, cdf_vec0);
+
+  const __m128i index1 =
+      _mm_set_epi32(0x000b000a, 0x00090008, 0x00070006, 0x00050004);
+  const __m128i mask1 = _mm_cmplt_epi16(index1, symbol_vec);
+  const __m128i a1 = _mm_blendv_epi8(zero, cdf_max_probability, mask1);
+  const __m128i diff1 = _mm_sub_epi16(cdf_vec1, a1);
+  const __m128i delta1 = _mm_sra_epi16(diff1, _mm_cvtsi32_si128(rate));
+  cdf_vec1 = _mm_sub_epi16(cdf_vec1, delta1);
+  StoreUnaligned16(cdf + 4, cdf_vec1);
+
+  cdf[13] = count + static_cast<uint16_t>(count < 32);
+}
+
+void UpdateCdf16(uint16_t* const cdf, const int symbol) {
+  __m128i cdf_vec0 = LoadUnaligned16(cdf);
+  const uint16_t count = cdf[16];
+  const int rate = (4 | (count >> 4)) + 1;
+  const __m128i zero = _mm_setzero_si128();
+  const __m128i cdf_max_probability =
+      _mm_set1_epi16(kCdfMaxProbability + 1 - (1 << rate));
+  const __m128i symbol_vec = _mm_set1_epi16(symbol);
+
+  const __m128i index =
+      _mm_set_epi32(0x00070006, 0x00050004, 0x00030002, 0x00010000);
+  const __m128i mask = _mm_cmplt_epi16(index, symbol_vec);
+  const __m128i a = _mm_blendv_epi8(zero, cdf_max_probability, mask);
+  const __m128i diff = _mm_sub_epi16(cdf_vec0, a);
+  const __m128i delta = _mm_sra_epi16(diff, _mm_cvtsi32_si128(rate));
+  cdf_vec0 = _mm_sub_epi16(cdf_vec0, delta);
+  StoreUnaligned16(cdf, cdf_vec0);
+
+  __m128i cdf_vec1 = LoadUnaligned16(cdf + 8);
+  const __m128i index1 =
+      _mm_set_epi32(0x000f000e, 0x000d000c, 0x000b000a, 0x00090008);
+  const __m128i mask1 = _mm_cmplt_epi16(index1, symbol_vec);
+  const __m128i a1 = _mm_blendv_epi8(zero, cdf_max_probability, mask1);
+  const __m128i diff1 = _mm_sub_epi16(cdf_vec1, a1);
+  const __m128i delta1 = _mm_sra_epi16(diff1, _mm_cvtsi32_si128(rate));
+  cdf_vec1 = _mm_sub_epi16(cdf_vec1, delta1);
+  StoreUnaligned16(cdf + 8, cdf_vec1);
+
+  cdf[16] = count + static_cast<uint16_t>(count < 32);
+}
+
+#else  // !LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+
+void UpdateCdf5(uint16_t* const cdf, const int symbol) {
+  UpdateCdf(cdf, 5, symbol);
+}
+
+void UpdateCdf7(uint16_t* const cdf, const int symbol) {
+  UpdateCdf(cdf, 7, symbol);
+}
+
+void UpdateCdf8(uint16_t* const cdf, const int symbol) {
+  UpdateCdf(cdf, 8, symbol);
+}
+
+void UpdateCdf11(uint16_t* const cdf, const int symbol) {
+  UpdateCdf(cdf, 11, symbol);
+}
+
+void UpdateCdf13(uint16_t* const cdf, const int symbol) {
+  UpdateCdf(cdf, 13, symbol);
+}
+
+void UpdateCdf16(uint16_t* const cdf, const int symbol) {
+  UpdateCdf(cdf, 16, symbol);
+}
+
+#endif  // LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+#endif  // LIBGAV1_ENTROPY_DECODER_ENABLE_NEON
+
 }  // namespace
 
-namespace libgav1 {
-
-constexpr uint32_t DaalaBitReader::kWindowSize;  // static.
+#if !LIBGAV1_CXX17
+constexpr int DaalaBitReader::kWindowSize;  // static.
+#endif
 
 DaalaBitReader::DaalaBitReader(const uint8_t* data, size_t size,
                                bool allow_update_cdf)
@@ -131,10 +553,21 @@ int DaalaBitReader::ReadBit() {
 
 int64_t DaalaBitReader::ReadLiteral(int num_bits) {
   assert(num_bits <= 32);
+  assert(num_bits > 0);
   uint32_t literal = 0;
-  for (int bit = num_bits - 1; bit >= 0; --bit) {
-    literal |= static_cast<uint32_t>(ReadBit()) << bit;
-  }
+  int bit = num_bits - 1;
+  do {
+    // ARM can combine a shift operation with a constant number of bits with
+    // some other operations, such as the OR operation.
+    // Here is an ARM disassembly example:
+    // orr w1, w0, w1, lsl #1
+    // which left shifts register w1 by 1 bit and OR the shift result with
+    // register w0.
+    // The next 2 lines are equivalent to:
+    // literal |= static_cast<uint32_t>(ReadBit()) << bit;
+    literal <<= 1;
+    literal |= static_cast<uint32_t>(ReadBit());
+  } while (--bit >= 0);
   return literal;
 }
 
@@ -158,7 +591,7 @@ bool DaalaBitReader::ReadSymbol(uint16_t* cdf) {
     // 32). So using that information:
     //  count >> 4 is 0 for count from 0 to 15.
     //  count >> 4 is 1 for count from 16 to 31.
-    //  count >> 4 is 2 for count == 31.
+    //  count >> 4 is 2 for count == 32.
     // Now, the equation becomes:
     //  4 + (count >> 4).
     // Since (count >> 4) can only be 0 or 1 or 2, the addition can be replaced
@@ -182,11 +615,33 @@ bool DaalaBitReader::ReadSymbolWithoutCdfUpdate(uint16_t* cdf) {
 template <int symbol_count>
 int DaalaBitReader::ReadSymbol(uint16_t* const cdf) {
   static_assert(symbol_count >= 3 && symbol_count <= 16, "");
-  const int symbol = (symbol_count <= 13)
-                         ? ReadSymbolImpl(cdf, symbol_count)
-                         : ReadSymbolImplBinarySearch(cdf, symbol_count);
+  if (symbol_count == 4) {
+    return ReadSymbol4(cdf);
+  }
+  int symbol;
+  if (symbol_count == 8) {
+    symbol = ReadSymbolImpl8(cdf);
+  } else if (symbol_count <= 13) {
+    symbol = ReadSymbolImpl(cdf, symbol_count);
+  } else {
+    symbol = ReadSymbolImplBinarySearch(cdf, symbol_count);
+  }
   if (allow_update_cdf_) {
-    UpdateCdf(cdf, symbol_count, symbol);
+    if (symbol_count == 5) {
+      UpdateCdf5(cdf, symbol);
+    } else if (symbol_count == 7) {
+      UpdateCdf7(cdf, symbol);
+    } else if (symbol_count == 8) {
+      UpdateCdf8(cdf, symbol);
+    } else if (symbol_count == 11) {
+      UpdateCdf11(cdf, symbol);
+    } else if (symbol_count == 13) {
+      UpdateCdf13(cdf, symbol);
+    } else if (symbol_count == 16) {
+      UpdateCdf16(cdf, symbol);
+    } else {
+      UpdateCdf(cdf, symbol_count, symbol);
+    }
   }
   return symbol;
 }
@@ -238,7 +693,7 @@ int DaalaBitReader::ReadSymbolImplBinarySearch(const uint16_t* const cdf,
   // and |curr| is the scaled cdf value for |symbol|.
   uint32_t prev = values_in_range_;
   uint32_t curr = 0;
-  const uint16_t values_in_range_shifted = values_in_range_ >> 8;
+  const uint32_t values_in_range_shifted = values_in_range_ >> 8;
   do {
     const int mid = DivideBy2(low + high);
     const uint32_t scaled_cdf =
@@ -275,15 +730,279 @@ int DaalaBitReader::ReadSymbolImpl(const uint16_t* const cdf) {
   return symbol;
 }
 
+// Equivalent to ReadSymbol(cdf, 4), with the ReadSymbolImpl and UpdateCdf
+// calls inlined.
+int DaalaBitReader::ReadSymbol4(uint16_t* const cdf) {
+  assert(cdf[3] == 0);
+  uint32_t curr = values_in_range_;
+  uint32_t prev;
+  const auto symbol_value =
+      static_cast<uint32_t>(window_diff_ >> (kWindowSize - 16));
+  uint32_t delta = kMinimumProbabilityPerSymbol * 3;
+  const uint32_t values_in_range_shifted = values_in_range_ >> 8;
+
+  // Search through the |cdf| array to determine where the scaled cdf value and
+  // |symbol_value| cross over. If allow_update_cdf_ is true, update the |cdf|
+  // array.
+  //
+  // The original code is:
+  //
+  //  int symbol = -1;
+  //  do {
+  //    prev = curr;
+  //    curr =
+  //        ((values_in_range_shifted * (cdf[++symbol] >> kCdfPrecision)) >> 1)
+  //        + delta;
+  //    delta -= kMinimumProbabilityPerSymbol;
+  //  } while (symbol_value < curr);
+  //  if (allow_update_cdf_) {
+  //    UpdateCdf(cdf, 4, symbol);
+  //  }
+  //
+  // The do-while loop is unrolled with four iterations, and the UpdateCdf call
+  // is inlined and merged into the four iterations.
+  int symbol = 0;
+  // Iteration 0.
+  prev = curr;
+  curr =
+      ((values_in_range_shifted * (cdf[symbol] >> kCdfPrecision)) >> 1) + delta;
+  if (symbol_value >= curr) {
+    // symbol == 0.
+    if (allow_update_cdf_) {
+      // Inlined version of UpdateCdf(cdf, 4, /*symbol=*/0).
+      const uint16_t count = cdf[4];
+      cdf[4] += static_cast<uint16_t>(count < 32);
+      const int rate = (4 | (count >> 4)) + 1;
+#if LIBGAV1_ENTROPY_DECODER_ENABLE_NEON
+      // 1. On Motorola Moto G5 Plus (running 32-bit Android 8.1.0), the ARM
+      // NEON code is slower. Consider using the C version if __arm__ is
+      // defined.
+      // 2. The ARM NEON code (compiled for arm64) is slightly slower on
+      // Samsung Galaxy S8+ (SM-G955FD).
+      uint16x4_t cdf_vec = vld1_u16(cdf);
+      const int16x4_t negative_rate = vdup_n_s16(-rate);
+      const uint16x4_t delta = vshl_u16(cdf_vec, negative_rate);
+      cdf_vec = vsub_u16(cdf_vec, delta);
+      vst1_u16(cdf, cdf_vec);
+#elif LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+      __m128i cdf_vec = LoadLo8(cdf);
+      const __m128i delta = _mm_sra_epi16(cdf_vec, _mm_cvtsi32_si128(rate));
+      cdf_vec = _mm_sub_epi16(cdf_vec, delta);
+      StoreLo8(cdf, cdf_vec);
+#else  // !LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+      cdf[0] -= cdf[0] >> rate;
+      cdf[1] -= cdf[1] >> rate;
+      cdf[2] -= cdf[2] >> rate;
+#endif
+    }
+    goto found;
+  }
+  ++symbol;
+  delta -= kMinimumProbabilityPerSymbol;
+  // Iteration 1.
+  prev = curr;
+  curr =
+      ((values_in_range_shifted * (cdf[symbol] >> kCdfPrecision)) >> 1) + delta;
+  if (symbol_value >= curr) {
+    // symbol == 1.
+    if (allow_update_cdf_) {
+      // Inlined version of UpdateCdf(cdf, 4, /*symbol=*/1).
+      const uint16_t count = cdf[4];
+      cdf[4] += static_cast<uint16_t>(count < 32);
+      const int rate = (4 | (count >> 4)) + 1;
+      cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
+      cdf[1] -= cdf[1] >> rate;
+      cdf[2] -= cdf[2] >> rate;
+    }
+    goto found;
+  }
+  ++symbol;
+  delta -= kMinimumProbabilityPerSymbol;
+  // Iteration 2.
+  prev = curr;
+  curr =
+      ((values_in_range_shifted * (cdf[symbol] >> kCdfPrecision)) >> 1) + delta;
+  if (symbol_value >= curr) {
+    // symbol == 2.
+    if (allow_update_cdf_) {
+      // Inlined version of UpdateCdf(cdf, 4, /*symbol=*/2).
+      const uint16_t count = cdf[4];
+      cdf[4] += static_cast<uint16_t>(count < 32);
+      const int rate = (4 | (count >> 4)) + 1;
+      cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
+      cdf[1] += (kCdfMaxProbability - cdf[1]) >> rate;
+      cdf[2] -= cdf[2] >> rate;
+    }
+    goto found;
+  }
+  ++symbol;
+  // |delta| is 0 for the last iteration.
+  // Iteration 3.
+  prev = curr;
+  // Since cdf[3] is 0 and |delta| is 0, |curr| is also 0.
+  curr = 0;
+  // symbol == 3.
+  if (allow_update_cdf_) {
+    // Inlined version of UpdateCdf(cdf, 4, /*symbol=*/3).
+    const uint16_t count = cdf[4];
+    cdf[4] += static_cast<uint16_t>(count < 32);
+    const int rate = (4 | (count >> 4)) + 1;
+#if LIBGAV1_ENTROPY_DECODER_ENABLE_NEON
+    // On Motorola Moto G5 Plus (running 32-bit Android 8.1.0), the ARM NEON
+    // code is a tiny bit slower. Consider using the C version if __arm__ is
+    // defined.
+    uint16x4_t cdf_vec = vld1_u16(cdf);
+    const uint16x4_t cdf_max_probability = vdup_n_u16(kCdfMaxProbability);
+    const int16x4_t diff =
+        vreinterpret_s16_u16(vsub_u16(cdf_max_probability, cdf_vec));
+    const int16x4_t negative_rate = vdup_n_s16(-rate);
+    const uint16x4_t delta =
+        vreinterpret_u16_s16(vshl_s16(diff, negative_rate));
+    cdf_vec = vadd_u16(cdf_vec, delta);
+    vst1_u16(cdf, cdf_vec);
+    cdf[3] = 0;
+#elif LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+    __m128i cdf_vec = LoadLo8(cdf);
+    const __m128i cdf_max_probability =
+        _mm_shufflelo_epi16(_mm_cvtsi32_si128(kCdfMaxProbability), 0);
+    const __m128i diff = _mm_sub_epi16(cdf_max_probability, cdf_vec);
+    const __m128i delta = _mm_sra_epi16(diff, _mm_cvtsi32_si128(rate));
+    cdf_vec = _mm_add_epi16(cdf_vec, delta);
+    StoreLo8(cdf, cdf_vec);
+    cdf[3] = 0;
+#else  // !LIBGAV1_ENTROPY_DECODER_ENABLE_SSE4
+    cdf[0] += (kCdfMaxProbability - cdf[0]) >> rate;
+    cdf[1] += (kCdfMaxProbability - cdf[1]) >> rate;
+    cdf[2] += (kCdfMaxProbability - cdf[2]) >> rate;
+#endif
+  }
+found:
+  // End of unrolled do-while loop.
+
+  values_in_range_ = prev - curr;
+  window_diff_ -= static_cast<WindowSize>(curr) << (kWindowSize - 16);
+  NormalizeRange();
+  return symbol;
+}
+
+int DaalaBitReader::ReadSymbolImpl8(const uint16_t* const cdf) {
+  assert(cdf[7] == 0);
+  uint32_t curr = values_in_range_;
+  uint32_t prev;
+  const auto symbol_value =
+      static_cast<uint32_t>(window_diff_ >> (kWindowSize - 16));
+  uint32_t delta = kMinimumProbabilityPerSymbol * 7;
+  // Search through the |cdf| array to determine where the scaled cdf value and
+  // |symbol_value| cross over.
+  //
+  // The original code is:
+  //
+  // int symbol = -1;
+  // do {
+  //   prev = curr;
+  //   curr =
+  //       (((values_in_range_ >> 8) * (cdf[++symbol] >> kCdfPrecision)) >> 1)
+  //       + delta;
+  //   delta -= kMinimumProbabilityPerSymbol;
+  // } while (symbol_value < curr);
+  //
+  // The do-while loop is unrolled with eight iterations.
+  int symbol = 0;
+
+#define READ_SYMBOL_ITERATION                                                \
+  prev = curr;                                                               \
+  curr = (((values_in_range_ >> 8) * (cdf[symbol] >> kCdfPrecision)) >> 1) + \
+         delta;                                                              \
+  if (symbol_value >= curr) goto found;                                      \
+  ++symbol;                                                                  \
+  delta -= kMinimumProbabilityPerSymbol
+
+  READ_SYMBOL_ITERATION;  // Iteration 0.
+  READ_SYMBOL_ITERATION;  // Iteration 1.
+  READ_SYMBOL_ITERATION;  // Iteration 2.
+  READ_SYMBOL_ITERATION;  // Iteration 3.
+  READ_SYMBOL_ITERATION;  // Iteration 4.
+  READ_SYMBOL_ITERATION;  // Iteration 5.
+
+  // The last two iterations can be simplified, so they don't use the
+  // READ_SYMBOL_ITERATION macro.
+#undef READ_SYMBOL_ITERATION
+
+  // Iteration 6.
+  prev = curr;
+  curr =
+      (((values_in_range_ >> 8) * (cdf[symbol] >> kCdfPrecision)) >> 1) + delta;
+  if (symbol_value >= curr) goto found;  // symbol == 6.
+  ++symbol;
+  // |delta| is 0 for the last iteration.
+  // Iteration 7.
+  prev = curr;
+  // Since cdf[7] is 0 and |delta| is 0, |curr| is also 0.
+  curr = 0;
+  // symbol == 7.
+found:
+  // End of unrolled do-while loop.
+
+  values_in_range_ = prev - curr;
+  window_diff_ -= static_cast<WindowSize>(curr) << (kWindowSize - 16);
+  NormalizeRange();
+  return symbol;
+}
+
 void DaalaBitReader::PopulateBits() {
-  int shift = kWindowSize - 9 - (bits_ + 15);
-  for (; shift >= 0 && data_index_ < size_; shift -= 8) {
-    window_diff_ ^= static_cast<WindowSize>(data_[data_index_++]) << shift;
-    bits_ += 8;
+#if defined(__aarch64__)
+  // Fast path: read eight bytes and add the first six bytes to window_diff_.
+  // This fast path makes the following assumptions.
+  // 1. We assume that unaligned load of uint64_t is fast.
+  // 2. When there are enough bytes in data_, the for loop below reads 6 or 7
+  //    bytes depending on the value of bits_. This fast path always reads 6
+  //    bytes, which results in more calls to PopulateBits(). We assume that
+  //    making more calls to a faster PopulateBits() is overall a win.
+  // NOTE: Although this fast path could also be used on x86_64, it hurts
+  // performance (measured on Lenovo ThinkStation P920 running Linux). (The
+  // reason is still unknown.) Therefore this fast path is only used on arm64.
+  static_assert(kWindowSize == 64, "");
+  if (size_ - data_index_ >= 8) {
+    uint64_t value;
+    // arm64 supports unaligned loads, so this memcpy call is compiled to a
+    // single ldr instruction.
+    memcpy(&value, &data_[data_index_], 8);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    value = __builtin_bswap64(value);
+#endif
+    value &= 0xffffffffffff0000;
+    window_diff_ ^= static_cast<WindowSize>(value) >> (bits_ + 16);
+    data_index_ += 6;
+    bits_ += 6 * 8;
+    return;
   }
-  if (data_index_ >= size_) {
-    bits_ = kLargeBitCount;
+#endif
+
+  size_t data_index = data_index_;
+  int bits = bits_;
+  WindowSize window_diff = window_diff_;
+
+  int shift = kWindowSize - 9 - (bits + 15);
+  // The fast path above, if compiled, would cause clang 8.0.7 to vectorize
+  // this loop. Since -15 <= bits_ <= -1, this loop has at most 6 or 7
+  // iterations when WindowSize is 64 bits. So it is not profitable to
+  // vectorize this loop. Note that clang 8.0.7 does not vectorize this loop if
+  // the fast path above is not compiled.
+
+#ifdef __clang__
+#pragma clang loop vectorize(disable) interleave(disable)
+#endif
+  for (; shift >= 0 && data_index < size_; shift -= 8) {
+    window_diff ^= static_cast<WindowSize>(data_[data_index++]) << shift;
+    bits += 8;
   }
+  if (data_index >= size_) {
+    bits = kLargeBitCount;
+  }
+
+  data_index_ = data_index;
+  bits_ = bits;
+  window_diff_ = window_diff;
 }
 
 void DaalaBitReader::NormalizeRange() {
@@ -300,8 +1019,10 @@ template int DaalaBitReader::ReadSymbol<4>(uint16_t* cdf);
 template int DaalaBitReader::ReadSymbol<5>(uint16_t* cdf);
 template int DaalaBitReader::ReadSymbol<7>(uint16_t* cdf);
 template int DaalaBitReader::ReadSymbol<8>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<10>(uint16_t* cdf);
 template int DaalaBitReader::ReadSymbol<11>(uint16_t* cdf);
 template int DaalaBitReader::ReadSymbol<13>(uint16_t* cdf);
+template int DaalaBitReader::ReadSymbol<14>(uint16_t* cdf);
 template int DaalaBitReader::ReadSymbol<16>(uint16_t* cdf);
 
 }  // namespace libgav1
