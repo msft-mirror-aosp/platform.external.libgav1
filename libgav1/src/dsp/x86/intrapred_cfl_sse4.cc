@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/intrapred.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_SSE4_1
 
@@ -25,6 +25,7 @@
 #include <cstdint>
 
 #include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
@@ -51,7 +52,7 @@ void CflIntraPredictor_SSE4_1(
     void* const dest, ptrdiff_t stride,
     const int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
     const int alpha) {
-  auto* dst = reinterpret_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
   const __m128i alpha_sign = _mm_set1_epi16(alpha);
   const __m128i alpha_q12 = _mm_slli_epi16(_mm_abs_epi16(alpha_sign), 9);
   auto* row = reinterpret_cast<const __m128i*>(luma);
@@ -190,7 +191,8 @@ void CflSubsampler444_8xH_SSE4_1(
   do {
     __m128i samples0 = LoadLo8(src);
     if (!inside) {
-      const __m128i border0 = _mm_set1_epi8(src[visible_width - 1]);
+      const __m128i border0 =
+          _mm_set1_epi8(static_cast<int8_t>(src[visible_width - 1]));
       samples0 = _mm_blendv_epi8(samples0, border0, blend_mask);
     }
     src += stride;
@@ -202,7 +204,8 @@ void CflSubsampler444_8xH_SSE4_1(
 
     samples1 = LoadLo8(src);
     if (!inside) {
-      const __m128i border1 = _mm_set1_epi8(src[visible_width - 1]);
+      const __m128i border1 =
+          _mm_set1_epi8(static_cast<int8_t>(src[visible_width - 1]));
       samples1 = _mm_blendv_epi8(samples1, border1, blend_mask);
     }
     src += stride;
@@ -299,7 +302,7 @@ void CflSubsampler444_SSE4_1(
   __m128i inner_sum_lo, inner_sum_hi;
   int y = 0;
   do {
-#if LIBGAV1_MSAN  // We can load unintialized values here. Even though they are
+#if LIBGAV1_MSAN  // We can load uninitialized values here. Even though they are
                   // then masked off by blendv, MSAN isn't smart enough to
                   // understand that. So we switch to a C implementation here.
     uint16_t c_arr[16];
@@ -314,7 +317,8 @@ void CflSubsampler444_SSE4_1(
     __m128i samples01 = LoadUnaligned16(src);
 
     if (!inside) {
-      const __m128i border16 = _mm_set1_epi8(src[visible_width_16 - 1]);
+      const __m128i border16 =
+          _mm_set1_epi8(static_cast<int8_t>(src[visible_width_16 - 1]));
       samples01 = _mm_blendv_epi8(samples01, border16, blend_mask_16);
     }
     samples0 = _mm_slli_epi16(_mm_cvtepu8_epi16(samples01), 3);
@@ -326,7 +330,7 @@ void CflSubsampler444_SSE4_1(
     __m128i inner_sum = _mm_add_epi16(samples0, samples1);
 
     if (block_width == 32) {
-#if LIBGAV1_MSAN  // We can load unintialized values here. Even though they are
+#if LIBGAV1_MSAN  // We can load uninitialized values here. Even though they are
                   // then masked off by blendv, MSAN isn't smart enough to
                   // understand that. So we switch to a C implementation here.
       uint16_t c_arr[16];
@@ -340,7 +344,8 @@ void CflSubsampler444_SSE4_1(
 #else
       __m128i samples23 = LoadUnaligned16(src + 16);
       if (!inside) {
-        const __m128i border32 = _mm_set1_epi8(src[visible_width_32 - 1]);
+        const __m128i border32 =
+            _mm_set1_epi8(static_cast<int8_t>(src[visible_width_32 - 1]));
         samples23 = _mm_blendv_epi8(samples23, border32, blend_mask_32);
       }
       samples2 = _mm_slli_epi16(_mm_cvtepu8_epi16(samples23), 3);
@@ -781,7 +786,7 @@ void CflSubsampler420_WxH_SSE4_1(
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
 #if DSP_ENABLED_8BPP_SSE4_1(TransformSize4x4_CflSubsampler420)
   dsp->cfl_subsamplers[kTransformSize4x4][kSubsamplingType420] =

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/intra_edge.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -23,6 +23,8 @@
 #include <cassert>
 
 #include "src/dsp/arm/common_neon.h"
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/utils/common.h"  // RightShiftWithRounding()
 
 namespace libgav1 {
@@ -275,7 +277,7 @@ void IntraEdgeUpsampler_NEON(void* buffer, const int size) {
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   dsp->intra_edge_filter = IntraEdgeFilter_NEON;
   dsp->intra_edge_upsampler = IntraEdgeUpsampler_NEON;
@@ -288,7 +290,7 @@ void IntraEdgeInit_NEON() { Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_NEON
+#else  // !LIBGAV1_ENABLE_NEON
 namespace libgav1 {
 namespace dsp {
 
