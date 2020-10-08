@@ -1133,6 +1133,7 @@ inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
 template <int n>
 inline __m128i CalculateMa(const __m128i sum, const __m128i sum_sq,
                            const uint32_t scale) {
+  static_assert(n == 9 || n == 25, "");
   // a = |sum_sq|
   // d = |sum|
   // p = (a * n < d * d) ? 0 : a * n - d * d;
@@ -1148,22 +1149,59 @@ inline __m128i CalculateMa(const __m128i sum, const __m128i sum_sq,
   return VrshrU32(pxs, kSgrProjScaleBits);
 }
 
-template <int n, int offset>
-inline void CalculateIntermediate(const __m128i sum, const __m128i sum_sq[2],
-                                  const uint32_t scale, __m128i* const ma,
-                                  __m128i* const b) {
-  constexpr uint32_t one_over_n =
-      ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
+template <int n>
+inline __m128i CalculateMa(const __m128i sum, const __m128i sum_sq[2],
+                           const uint32_t scale) {
+  static_assert(n == 9 || n == 25, "");
   const __m128i sum_lo = _mm_unpacklo_epi16(sum, _mm_setzero_si128());
   const __m128i sum_hi = _mm_unpackhi_epi16(sum, _mm_setzero_si128());
   const __m128i z0 = CalculateMa<n>(sum_lo, sum_sq[0], scale);
   const __m128i z1 = CalculateMa<n>(sum_hi, sum_sq[1], scale);
-  const __m128i z01 = _mm_packus_epi32(z0, z1);
-  const __m128i z = _mm_packus_epi16(z01, z01);
+  return _mm_packus_epi32(z0, z1);
+}
+
+template <int n>
+inline __m128i CalculateB(const __m128i sum, const __m128i ma) {
+  static_assert(n == 9 || n == 25, "");
+  constexpr uint32_t one_over_n =
+      ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
+  const __m128i m0 = VmullLo16(ma, sum);
+  const __m128i m1 = VmullHi16(ma, sum);
+  const __m128i m2 = _mm_mullo_epi32(m0, _mm_set1_epi32(one_over_n));
+  const __m128i m3 = _mm_mullo_epi32(m1, _mm_set1_epi32(one_over_n));
+  const __m128i b_lo = VrshrU32(m2, kSgrProjReciprocalBits);
+  const __m128i b_hi = VrshrU32(m3, kSgrProjReciprocalBits);
+  return _mm_packus_epi32(b_lo, b_hi);
+}
+
+inline void CalculateSumAndIndex5(const __m128i s5[5], const __m128i sq5[5][2],
+                                  const uint32_t scale, __m128i* const sum,
+                                  __m128i* const index) {
+  __m128i sum_sq[2];
+  *sum = Sum5_16(s5);
+  Sum5_32(sq5, sum_sq);
+  *index = CalculateMa<25>(*sum, sum_sq, scale);
+}
+
+inline void CalculateSumAndIndex3(const __m128i s3[3], const __m128i sq3[3][2],
+                                  const uint32_t scale, __m128i* const sum,
+                                  __m128i* const index) {
+  __m128i sum_sq[2];
+  *sum = Sum3_16(s3);
+  Sum3_32(sq3, sum_sq);
+  *index = CalculateMa<9>(*sum, sum_sq, scale);
+}
+
+template <int n, int offset>
+inline void LookupIntermediate(const __m128i sum, const __m128i index,
+                               __m128i* const ma, __m128i* const b) {
+  static_assert(n == 9 || n == 25, "");
+  static_assert(offset == 0 || offset == 8, "");
+  const __m128i idx = _mm_packus_epi16(index, index);
   // Actually it's not stored and loaded. The compiler will use a 64-bit
   // general-purpose register to process. Faster than using _mm_extract_epi8().
   uint8_t temp[8];
-  StoreLo8(temp, z);
+  StoreLo8(temp, idx);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[temp[0]], offset + 0);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[temp[1]], offset + 1);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[temp[2]], offset + 2);
@@ -1189,33 +1227,109 @@ inline void CalculateIntermediate(const __m128i sum, const __m128i sum_sq[2],
   } else {
     maq = _mm_unpackhi_epi8(*ma, _mm_setzero_si128());
   }
-  const __m128i m0 = VmullLo16(maq, sum);
-  const __m128i m1 = VmullHi16(maq, sum);
-  const __m128i m2 = _mm_mullo_epi32(m0, _mm_set1_epi32(one_over_n));
-  const __m128i m3 = _mm_mullo_epi32(m1, _mm_set1_epi32(one_over_n));
-  const __m128i b_lo = VrshrU32(m2, kSgrProjReciprocalBits);
-  const __m128i b_hi = VrshrU32(m3, kSgrProjReciprocalBits);
-  *b = _mm_packus_epi32(b_lo, b_hi);
+  *b = CalculateB<n>(sum, maq);
 }
 
+// Set the shuffle control mask of indices out of range [0, 15] to (1xxxxxxx)b
+// to get value 0 as the shuffle result. The most significiant bit 1 comes
+// either from the comparision instruction, or from the sign bit of the index.
+inline __m128i ShuffleIndex(const __m128i table, const __m128i index) {
+  __m128i mask;
+  mask = _mm_cmpgt_epi8(index, _mm_set1_epi8(15));
+  mask = _mm_or_si128(mask, index);
+  return _mm_shuffle_epi8(table, mask);
+}
+
+inline __m128i AdjustValue(const __m128i value, const __m128i index,
+                           const int threshold) {
+  const __m128i thresholds = _mm_set1_epi8(threshold - 128);
+  const __m128i offset = _mm_cmpgt_epi8(index, thresholds);
+  return _mm_add_epi8(value, offset);
+}
+
+inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
+                                  __m128i* const ma, __m128i* const b0,
+                                  __m128i* const b1) {
+  // Use table lookup to read elements which indices are less than 48.
+  const __m128i c0 = LoadAligned16(kSgrMaLookup + 0 * 16);
+  const __m128i c1 = LoadAligned16(kSgrMaLookup + 1 * 16);
+  const __m128i c2 = LoadAligned16(kSgrMaLookup + 2 * 16);
+  const __m128i indices = _mm_packus_epi16(index[0], index[1]);
+  __m128i idx;
+  // Clip idx to 127 to apply signed comparision instructions.
+  idx = _mm_min_epu8(indices, _mm_set1_epi8(127));
+  // All elements which indices are less than 48 are set to 0.
+  // Get shuffle results for indices in range [0, 15].
+  *ma = ShuffleIndex(c0, idx);
+  // Get shuffle results for indices in range [16, 31].
+  // Subtract 16 to utilize the sign bit of the index.
+  idx = _mm_sub_epi8(idx, _mm_set1_epi8(16));
+  const __m128i res1 = ShuffleIndex(c1, idx);
+  // Use OR instruction to combine shuffle results together.
+  *ma = _mm_or_si128(*ma, res1);
+  // Get shuffle results for indices in range [32, 47].
+  // Subtract 16 to utilize the sign bit of the index.
+  idx = _mm_sub_epi8(idx, _mm_set1_epi8(16));
+  const __m128i res2 = ShuffleIndex(c2, idx);
+  *ma = _mm_or_si128(*ma, res2);
+
+  // For elements which indices are larger than 47, since they seldom change
+  // values with the increase of the index, we use comparison and arithmetic
+  // operations to calculate their values.
+  // Add -128 to apply signed comparision instructions.
+  idx = _mm_add_epi8(indices, _mm_set1_epi8(-128));
+  // Elements which indices are larger than 47 (with value 0) are set to 5.
+  *ma = _mm_max_epu8(*ma, _mm_set1_epi8(5));
+  *ma = AdjustValue(*ma, idx, 55);   // 55 is the last index which value is 5.
+  *ma = AdjustValue(*ma, idx, 72);   // 72 is the last index which value is 4.
+  *ma = AdjustValue(*ma, idx, 101);  // 101 is the last index which value is 3.
+  *ma = AdjustValue(*ma, idx, 169);  // 169 is the last index which value is 2.
+  *ma = AdjustValue(*ma, idx, 254);  // 254 is the last index which value is 1.
+
+  // b = ma * b * one_over_n
+  // |ma| = [0, 255]
+  // |sum| is a box sum with radius 1 or 2.
+  // For the first pass radius is 2. Maximum value is 5x5x255 = 6375.
+  // For the second pass radius is 1. Maximum value is 3x3x255 = 2295.
+  // |one_over_n| = ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n
+  // When radius is 2 |n| is 25. |one_over_n| is 164.
+  // When radius is 1 |n| is 9. |one_over_n| is 455.
+  // |kSgrProjReciprocalBits| is 12.
+  // Radius 2: 255 * 6375 * 164 >> 12 = 65088 (16 bits).
+  // Radius 1: 255 * 2295 * 455 >> 12 = 65009 (16 bits).
+  const __m128i maq0 = _mm_unpacklo_epi8(*ma, _mm_setzero_si128());
+  *b0 = CalculateB<9>(sum[0], maq0);
+  const __m128i maq1 = _mm_unpackhi_epi8(*ma, _mm_setzero_si128());
+  *b1 = CalculateB<9>(sum[1], maq1);
+}
+
+inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
+                                  __m128i ma[2], __m128i b[2]) {
+  __m128i mas;
+  CalculateIntermediate(sum, index, &mas, &b[0], &b[1]);
+  ma[0] = _mm_unpacklo_epi64(ma[0], mas);
+  ma[1] = _mm_srli_si128(mas, 8);
+}
+
+// Note: It has been tried to call CalculateIntermediate() to replace the slow
+// LookupIntermediate() when calculating 16 intermediate data points. However,
+// the compiler generates even slower code.
 template <int offset>
 inline void CalculateIntermediate5(const __m128i s5[5], const __m128i sq5[5][2],
                                    const uint32_t scale, __m128i* const ma,
                                    __m128i* const b) {
-  const __m128i sum = Sum5_16(s5);
-  __m128i sum_sq[2];
-  Sum5_32(sq5, sum_sq);
-  CalculateIntermediate<25, offset>(sum, sum_sq, scale, ma, b);
+  static_assert(offset == 0 || offset == 8, "");
+  __m128i sum, index;
+  CalculateSumAndIndex5(s5, sq5, scale, &sum, &index);
+  LookupIntermediate<25, offset>(sum, index, ma, b);
 }
 
-template <int offset>
 inline void CalculateIntermediate3(const __m128i s3[3], const __m128i sq3[3][2],
                                    const uint32_t scale, __m128i* const ma,
                                    __m128i* const b) {
-  const __m128i sum = Sum3_16(s3);
-  __m128i sum_sq[2];
-  Sum3_32(sq3, sum_sq);
-  CalculateIntermediate<9, offset>(sum, sum_sq, scale, ma, b);
+  __m128i sum, index;
+  CalculateSumAndIndex3(s3, sq3, scale, &sum, &index);
+  LookupIntermediate<9, 0>(sum, index, ma, b);
 }
 
 inline void Store343_444(const __m128i b3[2], const ptrdiff_t x,
@@ -1407,7 +1521,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess3Lo(
   StoreAligned32U32(square_sum3[2], sq3[2]);
   LoadAligned16x2U16(sum3, 0, s3);
   LoadAligned32x2U32(square_sum3, 0, sq3);
-  CalculateIntermediate3<0>(s3, sq3, scale, ma, b);
+  CalculateIntermediate3(s3, sq3, scale, ma, b);
 }
 
 LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess3(
@@ -1415,7 +1529,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess3(
     const uint32_t scale, uint16_t* const sum3[3],
     uint32_t* const square_sum3[3], __m128i sq[4], __m128i ma[2],
     __m128i b[3]) {
-  __m128i s3[4], sq3[3][2];
+  __m128i s3[4], sq3[3][2], sum[2], index[2];
   sq[2] = SquareLo8(s[1]);
   Sum3Horizontal<8>(s, s3 + 2);
   StoreAligned32U16(sum3[2] + x, s3 + 2);
@@ -1423,14 +1537,15 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess3(
   StoreAligned32U32(square_sum3[2] + x + 0, sq3[2]);
   LoadAligned16x2U16(sum3, x, s3);
   LoadAligned32x2U32(square_sum3, x, sq3);
-  CalculateIntermediate3<8>(s3, sq3, scale, &ma[0], &b[1]);
+  CalculateSumAndIndex3(s3, sq3, scale, &sum[0], &index[0]);
 
   sq[3] = SquareHi8(s[1]);
   Sum3WHorizontal(sq + 2, sq3[2]);
   StoreAligned32U32(square_sum3[2] + x + 8, sq3[2]);
   LoadAligned16x2U16Msan(sum3, x + 8, sum_width, s3 + 1);
   LoadAligned32x2U32Msan(square_sum3, x + 8, sum_width, sq3);
-  CalculateIntermediate3<0>(s3 + 1, sq3, scale, &ma[1], &b[2]);
+  CalculateSumAndIndex3(s3 + 1, sq3, scale, &sum[1], &index[1]);
+  CalculateIntermediate(sum, index, ma, b + 1);
 }
 
 LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLo(
@@ -1438,7 +1553,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLo(
     uint16_t* const sum5[5], uint32_t* const square_sum3[4],
     uint32_t* const square_sum5[5], __m128i sq[2][4], __m128i ma3[2][2],
     __m128i b3[2][3], __m128i* const ma5, __m128i* const b5) {
-  __m128i s3[4], s5[5], sq3[4][2], sq5[5][2];
+  __m128i s3[4], s5[5], sq3[4][2], sq5[5][2], sum[2], index[2];
   sq[0][1] = SquareHi8(s[0][0]);
   sq[1][1] = SquareHi8(s[1][0]);
   SumHorizontalLo(s[0][0], &s3[2], &s5[3]);
@@ -1457,8 +1572,10 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLo(
   LoadAligned32x2U32(square_sum3, 0, sq3);
   LoadAligned16x3U16(sum5, 0, s5);
   LoadAligned32x3U32(square_sum5, 0, sq5);
-  CalculateIntermediate3<0>(s3, sq3, scales[1], &ma3[0][0], &b3[0][0]);
-  CalculateIntermediate3<0>(s3 + 1, sq3 + 1, scales[1], &ma3[1][0], &b3[1][0]);
+  CalculateSumAndIndex3(s3 + 0, sq3 + 0, scales[1], &sum[0], &index[0]);
+  CalculateSumAndIndex3(s3 + 1, sq3 + 1, scales[1], &sum[1], &index[1]);
+  CalculateIntermediate(sum, index, &ma3[0][0], &b3[0][0], &b3[1][0]);
+  ma3[1][0] = _mm_srli_si128(ma3[0][0], 8);
   CalculateIntermediate5<0>(s5, sq5, scales[0], ma5, b5);
 }
 
@@ -1468,7 +1585,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess(
     uint32_t* const square_sum3[4], uint32_t* const square_sum5[5],
     const ptrdiff_t sum_width, __m128i sq[2][4], __m128i ma3[2][2],
     __m128i b3[2][3], __m128i ma5[2], __m128i b5[3]) {
-  __m128i s3[2][4], s5[2][5], sq3[4][2], sq5[5][2];
+  __m128i s3[2][4], s5[2][5], sq3[4][2], sq5[5][2], sum[2][2], index[2][2];
   SumHorizontal<8>(s[0], &s3[0][2], &s3[1][2], &s5[0][3], &s5[1][3]);
   StoreAligned16(sum3[2] + x + 0, s3[0][2]);
   StoreAligned16(sum3[2] + x + 8, s3[1][2]);
@@ -1489,9 +1606,9 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess(
   StoreAligned32U32(square_sum5[4] + x, sq5[4]);
   LoadAligned16x2U16(sum3, x, s3[0]);
   LoadAligned32x2U32(square_sum3, x, sq3);
-  CalculateIntermediate3<8>(s3[0], sq3, scales[1], &ma3[0][0], &b3[0][1]);
-  CalculateIntermediate3<8>(s3[0] + 1, sq3 + 1, scales[1], &ma3[1][0],
-                            &b3[1][1]);
+  CalculateSumAndIndex3(s3[0], sq3, scales[1], &sum[0][0], &index[0][0]);
+  CalculateSumAndIndex3(s3[0] + 1, sq3 + 1, scales[1], &sum[1][0],
+                        &index[1][0]);
   LoadAligned16x3U16(sum5, x, s5[0]);
   LoadAligned32x3U32(square_sum5, x, sq5);
   CalculateIntermediate5<8>(s5[0], sq5, scales[0], &ma5[0], &b5[1]);
@@ -1506,9 +1623,11 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess(
   StoreAligned32U32(square_sum5[4] + x + 8, sq5[4]);
   LoadAligned16x2U16Msan(sum3, x + 8, sum_width, s3[1]);
   LoadAligned32x2U32Msan(square_sum3, x + 8, sum_width, sq3);
-  CalculateIntermediate3<0>(s3[1], sq3, scales[1], &ma3[0][1], &b3[0][2]);
-  CalculateIntermediate3<0>(s3[1] + 1, sq3 + 1, scales[1], &ma3[1][1],
-                            &b3[1][2]);
+  CalculateSumAndIndex3(s3[1], sq3, scales[1], &sum[0][1], &index[0][1]);
+  CalculateSumAndIndex3(s3[1] + 1, sq3 + 1, scales[1], &sum[1][1],
+                        &index[1][1]);
+  CalculateIntermediate(sum[0], index[0], ma3[0], b3[0] + 1);
+  CalculateIntermediate(sum[1], index[1], ma3[1], b3[1] + 1);
   LoadAligned16x3U16Msan(sum5, x + 8, sum_width, s5[1]);
   LoadAligned32x3U32Msan(square_sum5, x + 8, sum_width, sq5);
   CalculateIntermediate5<0>(s5[1], sq5, scales[0], &ma5[1], &b5[2]);
@@ -1531,7 +1650,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRowLo(
   CalculateIntermediate5<0>(s5, sq5, scales[0], ma5, b5);
   LoadAligned16x2U16(sum3, 0, s3);
   LoadAligned32x2U32(square_sum3, 0, sq3);
-  CalculateIntermediate3<0>(s3, sq3, scales[1], ma3, b3);
+  CalculateIntermediate3(s3, sq3, scales[1], ma3, b3);
 }
 
 LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRow(
@@ -1540,7 +1659,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRow(
     const uint16_t* const sum5[5], const uint32_t* const square_sum3[4],
     const uint32_t* const square_sum5[5], __m128i sq[4], __m128i ma3[2],
     __m128i ma5[2], __m128i b3[3], __m128i b5[3]) {
-  __m128i s3[2][3], s5[2][5], sq3[3][2], sq5[5][2];
+  __m128i s3[2][3], s5[2][5], sq3[3][2], sq5[5][2], sum[2], index[2];
   sq[2] = SquareLo8(s[1]);
   SumHorizontal<8>(s, &s3[0][2], &s3[1][2], &s5[0][3], &s5[1][3]);
   SumHorizontal(sq + 1, &sq3[2][0], &sq3[2][1], &sq5[3][0], &sq5[3][1]);
@@ -1552,7 +1671,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRow(
   CalculateIntermediate5<8>(s5[0], sq5, scales[0], ma5, b5 + 1);
   LoadAligned16x2U16(sum3, x, s3[0]);
   LoadAligned32x2U32(square_sum3, x, sq3);
-  CalculateIntermediate3<8>(s3[0], sq3, scales[1], ma3, b3 + 1);
+  CalculateSumAndIndex3(s3[0], sq3, scales[1], &sum[0], &index[0]);
 
   sq[3] = SquareHi8(s[1]);
   SumHorizontal(sq + 2, &sq3[2][0], &sq3[2][1], &sq5[3][0], &sq5[3][1]);
@@ -1564,7 +1683,8 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRow(
   CalculateIntermediate5<0>(s5[1], sq5, scales[0], ma5 + 1, b5 + 2);
   LoadAligned16x2U16Msan(sum3, x + 8, sum_width, s3[1]);
   LoadAligned32x2U32Msan(square_sum3, x + 8, sum_width, sq3);
-  CalculateIntermediate3<0>(s3[1], sq3, scales[1], ma3 + 1, b3 + 2);
+  CalculateSumAndIndex3(s3[1], sq3, scales[1], &sum[1], &index[1]);
+  CalculateIntermediate(sum, index, ma3, b3 + 1);
 }
 
 inline void BoxSumFilterPreProcess5(const uint8_t* const src0,
