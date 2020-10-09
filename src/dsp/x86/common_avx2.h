@@ -25,6 +25,7 @@
 #include <immintrin.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 
 namespace libgav1 {
@@ -38,8 +39,56 @@ inline __m256i LoadAligned32(const void* a) {
   return _mm256_load_si256(static_cast<const __m256i*>(a));
 }
 
+inline void LoadAligned64(const void* a, __m256i dst[2]) {
+  assert((reinterpret_cast<uintptr_t>(a) & 0x1f) == 0);
+  dst[0] = _mm256_load_si256(static_cast<const __m256i*>(a) + 0);
+  dst[1] = _mm256_load_si256(static_cast<const __m256i*>(a) + 1);
+}
+
 inline __m256i LoadUnaligned32(const void* a) {
   return _mm256_loadu_si256(static_cast<const __m256i*>(a));
+}
+
+//------------------------------------------------------------------------------
+// Load functions to avoid MemorySanitizer's use-of-uninitialized-value warning.
+
+inline __m256i MaskOverreads(const __m256i source,
+                             const ptrdiff_t over_read_in_bytes) {
+  __m256i dst = source;
+#if LIBGAV1_MSAN
+  if (over_read_in_bytes >= 32) return _mm256_setzero_si256();
+  if (over_read_in_bytes > 0) {
+    __m128i m = _mm_set1_epi8(-1);
+    for (ptrdiff_t i = 0; i < over_read_in_bytes % 16; ++i) {
+      m = _mm_srli_si128(m, 1);
+    }
+    const __m256i mask = (over_read_in_bytes < 16)
+                             ? _mm256_setr_m128i(_mm_set1_epi8(-1), m)
+                             : _mm256_setr_m128i(m, _mm_setzero_si128());
+    dst = _mm256_and_si256(dst, mask);
+  }
+#else
+  static_cast<void>(over_read_in_bytes);
+#endif
+  return dst;
+}
+
+inline __m256i LoadAligned32Msan(const void* const source,
+                                 const ptrdiff_t over_read_in_bytes) {
+  return MaskOverreads(LoadAligned32(source), over_read_in_bytes);
+}
+
+inline void LoadAligned64Msan(const void* const source,
+                              const ptrdiff_t over_read_in_bytes,
+                              __m256i dst[2]) {
+  dst[0] = MaskOverreads(LoadAligned32(source), over_read_in_bytes);
+  dst[1] = MaskOverreads(LoadAligned32(static_cast<const __m256i*>(source) + 1),
+                         over_read_in_bytes);
+}
+
+inline __m256i LoadUnaligned32Msan(const void* const source,
+                                   const ptrdiff_t over_read_in_bytes) {
+  return MaskOverreads(LoadUnaligned32(source), over_read_in_bytes);
 }
 
 //------------------------------------------------------------------------------
@@ -48,6 +97,12 @@ inline __m256i LoadUnaligned32(const void* a) {
 inline void StoreAligned32(void* a, const __m256i v) {
   assert((reinterpret_cast<uintptr_t>(a) & 0x1f) == 0);
   _mm256_store_si256(static_cast<__m256i*>(a), v);
+}
+
+inline void StoreAligned64(void* a, const __m256i v[2]) {
+  assert((reinterpret_cast<uintptr_t>(a) & 0x1f) == 0);
+  _mm256_store_si256(static_cast<__m256i*>(a) + 0, v[0]);
+  _mm256_store_si256(static_cast<__m256i*>(a) + 1, v[1]);
 }
 
 inline void StoreUnaligned32(void* a, const __m256i v) {

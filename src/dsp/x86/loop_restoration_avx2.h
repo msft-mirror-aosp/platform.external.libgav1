@@ -43,6 +43,10 @@ void LoopRestorationInit10bpp_AVX2();
 #define LIBGAV1_Dsp10bpp_WienerFilter LIBGAV1_CPU_AVX2
 #endif
 
+#ifndef LIBGAV1_Dsp8bpp_SelfGuidedFilter
+#define LIBGAV1_Dsp8bpp_SelfGuidedFilter LIBGAV1_CPU_AVX2
+#endif
+
 #endif  // LIBGAV1_TARGETING_AVX2
 
 #endif  // LIBGAV1_SRC_DSP_X86_LOOP_RESTORATION_AVX2_H_
