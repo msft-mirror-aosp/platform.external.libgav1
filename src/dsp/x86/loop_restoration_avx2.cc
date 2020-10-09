@@ -1505,7 +1505,7 @@ inline void LookupIntermediate(const __m128i sum, const __m128i index,
   // general-purpose register to process. Faster than using _mm_extract_epi8().
   uint8_t temp[8];
   StoreLo8(temp, idx);
-  *ma = _mm_insert_epi8(*ma, kSgrMaLookup[temp[0]], 0);
+  *ma = _mm_cvtsi32_si128(kSgrMaLookup[temp[0]]);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[temp[1]], 1);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[temp[2]], 2);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[temp[3]], 3);
