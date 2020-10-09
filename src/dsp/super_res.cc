@@ -30,7 +30,7 @@ void SuperRes_C(const void* /*coefficients*/, void* const source,
                 const int downscaled_width, const int upscaled_width,
                 const int initial_subpixel_x, const int step,
                 void* const dest) {
-  assert(step <= kSuperResScaleMask || upscaled_width <= 4);
+  assert(step <= 1 << kSuperResScaleBits);
   auto* src = static_cast<Pixel*>(source) - DivideBy2(kSuperResFilterTaps);
   auto* dst = static_cast<Pixel*>(dest);
   int y = height;
