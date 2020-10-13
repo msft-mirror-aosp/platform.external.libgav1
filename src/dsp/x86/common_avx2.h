@@ -109,6 +109,17 @@ inline void StoreUnaligned32(void* a, const __m256i v) {
   _mm256_storeu_si256(static_cast<__m256i*>(a), v);
 }
 
+//------------------------------------------------------------------------------
+// Arithmetic utilities.
+
+inline __m256i RightShiftWithRounding_S16(const __m256i v_val_d, int bits) {
+  assert(bits <= 16);
+  const __m256i v_bias_d =
+      _mm256_set1_epi16(static_cast<int16_t>((1 << bits) >> 1));
+  const __m256i v_tmp_d = _mm256_add_epi16(v_val_d, v_bias_d);
+  return _mm256_srai_epi16(v_tmp_d, bits);
+}
+
 }  // namespace dsp
 }  // namespace libgav1
 

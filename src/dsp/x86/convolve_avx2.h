@@ -34,6 +34,10 @@ void ConvolveInit_AVX2();
 // optimization being enabled, signal the avx2 implementation should be used.
 #if LIBGAV1_TARGETING_AVX2
 
+#ifndef LIBGAV1_Dsp8bpp_ConvolveHorizontal
+#define LIBGAV1_Dsp8bpp_ConvolveHorizontal LIBGAV1_CPU_AVX2
+#endif
+
 #endif  // LIBGAV1_TARGETING_AVX2
 
 #endif  // LIBGAV1_SRC_DSP_X86_CONVOLVE_AVX2_H_
