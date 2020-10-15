@@ -32,6 +32,17 @@ namespace libgav1 {
 namespace dsp {
 
 //------------------------------------------------------------------------------
+// Compatibility functions.
+
+inline __m256i SetrM128i(const __m128i lo, const __m128i hi) {
+  // For compatibility with older gcc toolchains (< 8) use
+  // _mm256_inserti128_si256 over _mm256_setr_m128i. Newer gcc implementations
+  // are implemented similarly to the following, clang uses a different method
+  // but no differences in assembly have been observed.
+  return _mm256_inserti128_si256(_mm256_castsi128_si256(lo), hi, 1);
+}
+
+//------------------------------------------------------------------------------
 // Load functions.
 
 inline __m256i LoadAligned32(const void* a) {
@@ -63,8 +74,8 @@ inline __m256i MaskOverreads(const __m256i source,
       m = _mm_srli_si128(m, 1);
     }
     const __m256i mask = (over_read_in_bytes < 16)
-                             ? _mm256_setr_m128i(_mm_set1_epi8(-1), m)
-                             : _mm256_setr_m128i(m, _mm_setzero_si128());
+                             ? SetrM128i(_mm_set1_epi8(-1), m)
+                             : SetrM128i(m, _mm_setzero_si128());
     dst = _mm256_and_si256(dst, mask);
   }
 #else

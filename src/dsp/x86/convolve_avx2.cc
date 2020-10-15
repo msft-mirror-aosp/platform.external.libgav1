@@ -277,11 +277,11 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
         // placeholder
       } else {
         // Load into 2 128 bit lanes.
-        const __m256i src_long = _mm256_setr_m128i(
-            LoadUnaligned16(&src[0]), LoadUnaligned16(&src[src_stride]));
+        const __m256i src_long = SetrM128i(LoadUnaligned16(&src[0]),
+                                           LoadUnaligned16(&src[src_stride]));
         const __m256i result =
             SimpleHorizontalTaps<filter_index>(&src_long, v_tap);
-        const __m256i src_long2 = _mm256_setr_m128i(
+        const __m256i src_long2 = SetrM128i(
             LoadUnaligned16(&src[8]), LoadUnaligned16(&src[8 + src_stride]));
         const __m256i result2 =
             SimpleHorizontalTaps<filter_index>(&src_long2, v_tap);
@@ -304,7 +304,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
         const __m128i this_row = LoadUnaligned16(&src[0]);
         const __m128i next_row = LoadUnaligned16(&src[src_stride]);
         // Load into 2 128 bit lanes.
-        const __m256i src_long = _mm256_setr_m128i(this_row, next_row);
+        const __m256i src_long = SetrM128i(this_row, next_row);
         const __m256i result =
             SimpleHorizontalTaps<filter_index>(&src_long, v_tap);
         StoreLo8(&dest8[0], _mm256_castsi256_si128(result));
@@ -324,7 +324,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
         const __m128i this_row = LoadUnaligned16(&src[0]);
         const __m128i next_row = LoadUnaligned16(&src[src_stride]);
         // Load into 2 128 bit lanes.
-        const __m256i src_long = _mm256_setr_m128i(this_row, next_row);
+        const __m256i src_long = SetrM128i(this_row, next_row);
         const __m256i result =
             SimpleHorizontalTaps<filter_index>(&src_long, v_tap);
         Store4(&dest8[0], _mm256_castsi256_si128(result));

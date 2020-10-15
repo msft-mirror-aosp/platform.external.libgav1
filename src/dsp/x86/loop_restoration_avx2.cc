@@ -1269,7 +1269,7 @@ inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
     sum5 += 8;
     square_sum3 += 8;
     square_sum5 += 8;
-    sq[0] = _mm256_setr_m128i(sq_128[1], sq_128[1]);
+    sq[0] = SetrM128i(sq_128[1], sq_128[1]);
     ptrdiff_t x = sum_width;
     do {
       __m256i row3[2], row5[2], row_sq3[2], row_sq5[2];
@@ -1337,7 +1337,7 @@ inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
     src += 8;
     sums += 8;
     square_sums += 8;
-    sq[0] = _mm256_setr_m128i(sq_128[1], sq_128[1]);
+    sq[0] = SetrM128i(sq_128[1], sq_128[1]);
     ptrdiff_t x = sum_width;
     do {
       __m256i row[2], row_sq[4];
@@ -2036,10 +2036,10 @@ inline void BoxSumFilterPreProcess5(const uint8_t* const src0,
   sq_128[0][0] = SquareLo8(s[0][0]);
   sq_128[1][0] = SquareLo8(s[1][0]);
   BoxFilterPreProcess5Lo(s, scale, sum5, square_sum5, sq_128, &ma0, &b0);
-  sq[0][0] = _mm256_setr_m128i(sq_128[0][0], sq_128[0][1]);
-  sq[1][0] = _mm256_setr_m128i(sq_128[1][0], sq_128[1][1]);
-  mas[0] = _mm256_setr_m128i(ma0, ma0);
-  bs[0] = _mm256_setr_m128i(b0, b0);
+  sq[0][0] = SetrM128i(sq_128[0][0], sq_128[0][1]);
+  sq[1][0] = SetrM128i(sq_128[1][0], sq_128[1][1]);
+  mas[0] = SetrM128i(ma0, ma0);
+  bs[0] = SetrM128i(b0, b0);
 
   int x = 0;
   do {
@@ -2076,9 +2076,9 @@ LIBGAV1_ALWAYS_INLINE void BoxSumFilterPreProcess3(
   const __m128i s = LoadUnaligned16Msan(src, kOverreadInBytesPass2_128 - width);
   sq_128[0] = SquareLo8(s);
   BoxFilterPreProcess3Lo(s, scale, sum3, square_sum3, sq_128, &ma0, &b0);
-  sq[0] = _mm256_setr_m128i(sq_128[0], sq_128[1]);
-  mas[0] = _mm256_setr_m128i(ma0, ma0);
-  bs[0] = _mm256_setr_m128i(b0, b0);
+  sq[0] = SetrM128i(sq_128[0], sq_128[1]);
+  mas[0] = SetrM128i(ma0, ma0);
+  bs[0] = SetrM128i(b0, b0);
 
   int x = 0;
   do {
@@ -2126,14 +2126,14 @@ inline void BoxSumFilterPreProcess(
   sq_128[1][0] = SquareLo8(s[1]);
   BoxFilterPreProcessLo(s, scales, sum3, sum5, square_sum3, square_sum5, sq_128,
                         ma3_128, b3_128, &ma5_0, &b5_0);
-  sq[0][0] = _mm256_setr_m128i(sq_128[0][0], sq_128[0][1]);
-  sq[1][0] = _mm256_setr_m128i(sq_128[1][0], sq_128[1][1]);
-  ma3[0][0] = _mm256_setr_m128i(ma3_128[0], ma3_128[0]);
-  ma3[1][0] = _mm256_setr_m128i(ma3_128[1], ma3_128[1]);
-  ma5[0] = _mm256_setr_m128i(ma5_0, ma5_0);
-  b3[0][0] = _mm256_setr_m128i(b3_128[0], b3_128[0]);
-  b3[1][0] = _mm256_setr_m128i(b3_128[1], b3_128[1]);
-  b5[0] = _mm256_setr_m128i(b5_0, b5_0);
+  sq[0][0] = SetrM128i(sq_128[0][0], sq_128[0][1]);
+  sq[1][0] = SetrM128i(sq_128[1][0], sq_128[1][1]);
+  ma3[0][0] = SetrM128i(ma3_128[0], ma3_128[0]);
+  ma3[1][0] = SetrM128i(ma3_128[1], ma3_128[1]);
+  ma5[0] = SetrM128i(ma5_0, ma5_0);
+  b3[0][0] = SetrM128i(b3_128[0], b3_128[0]);
+  b3[1][0] = SetrM128i(b3_128[1], b3_128[1]);
+  b5[0] = SetrM128i(b5_0, b5_0);
 
   int x = 0;
   do {
@@ -2260,10 +2260,10 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPass1(
   sq_128[0][0] = SquareLo8(s[0][0]);
   sq_128[1][0] = SquareLo8(s[1][0]);
   BoxFilterPreProcess5Lo(s, scale, sum5, square_sum5, sq_128, &ma0, &b0);
-  sq[0][0] = _mm256_setr_m128i(sq_128[0][0], sq_128[0][1]);
-  sq[1][0] = _mm256_setr_m128i(sq_128[1][0], sq_128[1][1]);
-  mas[0] = _mm256_setr_m128i(ma0, ma0);
-  bs[0] = _mm256_setr_m128i(b0, b0);
+  sq[0][0] = SetrM128i(sq_128[0][0], sq_128[0][1]);
+  sq[1][0] = SetrM128i(sq_128[1][0], sq_128[1][1]);
+  mas[0] = SetrM128i(ma0, ma0);
+  bs[0] = SetrM128i(b0, b0);
 
   int x = 0;
   do {
@@ -2319,9 +2319,9 @@ inline void BoxFilterPass1LastRow(
   sq_128[0] = SquareLo8(s0);
   BoxFilterPreProcess5LastRowLo(s0, scale, sum5, square_sum5, sq_128, &ma0,
                                 &b0);
-  sq[0] = _mm256_setr_m128i(sq_128[0], sq_128[1]);
-  mas[0] = _mm256_setr_m128i(ma0, ma0);
-  bs[0] = _mm256_setr_m128i(b0, b0);
+  sq[0] = SetrM128i(sq_128[0], sq_128[1]);
+  mas[0] = SetrM128i(ma0, ma0);
+  bs[0] = SetrM128i(b0, b0);
 
   int x = 0;
   do {
@@ -2367,9 +2367,9 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPass2(
   __m256i mas[3], sq[3], bs[3];
   sq_128[0] = SquareLo8(s0);
   BoxFilterPreProcess3Lo(s0, scale, sum3, square_sum3, sq_128, &ma0, &b0);
-  sq[0] = _mm256_setr_m128i(sq_128[0], sq_128[1]);
-  mas[0] = _mm256_setr_m128i(ma0, ma0);
-  bs[0] = _mm256_setr_m128i(b0, b0);
+  sq[0] = SetrM128i(sq_128[0], sq_128[1]);
+  mas[0] = SetrM128i(ma0, ma0);
+  bs[0] = SetrM128i(b0, b0);
 
   int x = 0;
   do {
@@ -2422,14 +2422,14 @@ LIBGAV1_ALWAYS_INLINE void BoxFilter(
   sq_128[1][0] = SquareLo8(s[1]);
   BoxFilterPreProcessLo(s, scales, sum3, sum5, square_sum3, square_sum5, sq_128,
                         ma3_128, b3_128, &ma5_0, &b5_0);
-  sq[0][0] = _mm256_setr_m128i(sq_128[0][0], sq_128[0][1]);
-  sq[1][0] = _mm256_setr_m128i(sq_128[1][0], sq_128[1][1]);
-  ma3[0][0] = _mm256_setr_m128i(ma3_128[0], ma3_128[0]);
-  ma3[1][0] = _mm256_setr_m128i(ma3_128[1], ma3_128[1]);
-  ma5[0] = _mm256_setr_m128i(ma5_0, ma5_0);
-  b3[0][0] = _mm256_setr_m128i(b3_128[0], b3_128[0]);
-  b3[1][0] = _mm256_setr_m128i(b3_128[1], b3_128[1]);
-  b5[0] = _mm256_setr_m128i(b5_0, b5_0);
+  sq[0][0] = SetrM128i(sq_128[0][0], sq_128[0][1]);
+  sq[1][0] = SetrM128i(sq_128[1][0], sq_128[1][1]);
+  ma3[0][0] = SetrM128i(ma3_128[0], ma3_128[0]);
+  ma3[1][0] = SetrM128i(ma3_128[1], ma3_128[1]);
+  ma5[0] = SetrM128i(ma5_0, ma5_0);
+  b3[0][0] = SetrM128i(b3_128[0], b3_128[0]);
+  b3[1][0] = SetrM128i(b3_128[1], b3_128[1]);
+  b5[0] = SetrM128i(b5_0, b5_0);
 
   int x = 0;
   do {
@@ -2521,11 +2521,11 @@ inline void BoxFilterLastRow(
   sq_128[0] = SquareLo8(s0);
   BoxFilterPreProcessLastRowLo(s0, scales, sum3, sum5, square_sum3, square_sum5,
                                sq_128, &ma3_0, &ma5_0, &b3_0, &b5_0);
-  sq[0] = _mm256_setr_m128i(sq_128[0], sq_128[1]);
-  ma3[0] = _mm256_setr_m128i(ma3_0, ma3_0);
-  ma5[0] = _mm256_setr_m128i(ma5_0, ma5_0);
-  b3[0] = _mm256_setr_m128i(b3_0, b3_0);
-  b5[0] = _mm256_setr_m128i(b5_0, b5_0);
+  sq[0] = SetrM128i(sq_128[0], sq_128[1]);
+  ma3[0] = SetrM128i(ma3_0, ma3_0);
+  ma5[0] = SetrM128i(ma5_0, ma5_0);
+  b3[0] = SetrM128i(b3_0, b3_0);
+  b5[0] = SetrM128i(b5_0, b5_0);
 
   int x = 0;
   do {
