@@ -118,6 +118,14 @@ __m256i SimpleHorizontalTaps(const __m256i* const src,
 }
 
 template <int filter_index>
+__m256i HorizontalTaps8To16(const __m256i* const src,
+                            const __m256i* const v_tap) {
+  const __m256i sum = SumHorizontalTaps<filter_index>(src, v_tap);
+
+  return RightShiftWithRounding_S16(sum, kInterRoundBitsHorizontal - 1);
+}
+
+template <int filter_index>
 __m128i SumHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
                              const __m128i* const v_tap) {
   // 00 01 02 03 04 05 06 07 10 11 12 13 14 15 16 17
@@ -251,7 +259,22 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
       int x = 0;
       do {
         if (is_2d || is_compound) {
-          // placeholder
+          // Load into 2 128 bit lanes.
+          const __m256i src_long =
+              SetrM128i(LoadUnaligned16(&src[x]), LoadUnaligned16(&src[x + 8]));
+          const __m256i result =
+              HorizontalTaps8To16<filter_index>(&src_long, v_tap);
+          const __m256i src_long2 = SetrM128i(LoadUnaligned16(&src[x + 16]),
+                                              LoadUnaligned16(&src[x + 24]));
+          const __m256i result2 =
+              HorizontalTaps8To16<filter_index>(&src_long2, v_tap);
+          if (is_2d) {
+            StoreAligned32(&dest16[x], result);
+            StoreAligned32(&dest16[x + 16], result2);
+          } else {
+            StoreUnaligned32(&dest16[x], result);
+            StoreUnaligned32(&dest16[x + 16], result2);
+          }
         } else {
           // Load src used to calculate dest8[7:0] and dest8[23:16].
           const __m256i src_long = LoadUnaligned32(&src[x]);
@@ -274,7 +297,23 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
     int y = height;
     do {
       if (is_2d || is_compound) {
-        // placeholder
+        // Load into 2 128 bit lanes.
+        const __m256i src_long =
+            SetrM128i(LoadUnaligned16(&src[0]), LoadUnaligned16(&src[8]));
+        const __m256i result =
+            HorizontalTaps8To16<filter_index>(&src_long, v_tap);
+        const __m256i src_long2 =
+            SetrM128i(LoadUnaligned16(&src[src_stride]),
+                      LoadUnaligned16(&src[8 + src_stride]));
+        const __m256i result2 =
+            HorizontalTaps8To16<filter_index>(&src_long2, v_tap);
+        if (is_2d) {
+          StoreAligned32(&dest16[0], result);
+          StoreAligned32(&dest16[pred_stride], result2);
+        } else {
+          StoreUnaligned32(&dest16[0], result);
+          StoreUnaligned32(&dest16[pred_stride], result2);
+        }
       } else {
         // Load into 2 128 bit lanes.
         const __m256i src_long = SetrM128i(LoadUnaligned16(&src[0]),
@@ -298,8 +337,22 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
   } else if (width == 8) {
     int y = height;
     do {
+      // Load into 2 128 bit lanes.
+      const __m128i this_row = LoadUnaligned16(&src[0]);
+      const __m128i next_row = LoadUnaligned16(&src[src_stride]);
+      const __m256i src_long = SetrM128i(this_row, next_row);
       if (is_2d || is_compound) {
-        // placeholder
+        const __m256i result =
+            HorizontalTaps8To16<filter_index>(&src_long, v_tap);
+        if (is_2d) {
+          StoreAligned16(&dest16[0], _mm256_castsi256_si128(result));
+          StoreAligned16(&dest16[pred_stride],
+                         _mm256_extracti128_si256(result, 1));
+        } else {
+          StoreUnaligned16(&dest16[0], _mm256_castsi256_si128(result));
+          StoreUnaligned16(&dest16[pred_stride],
+                           _mm256_extracti128_si256(result, 1));
+        }
       } else {
         const __m128i this_row = LoadUnaligned16(&src[0]);
         const __m128i next_row = LoadUnaligned16(&src[src_stride]);
@@ -318,8 +371,15 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
   } else {  // width == 4
     int y = height;
     do {
+      // Load into 2 128 bit lanes.
+      const __m128i this_row = LoadUnaligned16(&src[0]);
+      const __m128i next_row = LoadUnaligned16(&src[src_stride]);
+      const __m256i src_long = SetrM128i(this_row, next_row);
       if (is_2d || is_compound) {
-        // placeholder
+        const __m256i result =
+            HorizontalTaps8To16<filter_index>(&src_long, v_tap);
+        StoreLo8(&dest16[0], _mm256_castsi256_si128(result));
+        StoreLo8(&dest16[pred_stride], _mm256_extracti128_si256(result, 1));
       } else {
         const __m128i this_row = LoadUnaligned16(&src[0]);
         const __m128i next_row = LoadUnaligned16(&src[src_stride]);
@@ -509,10 +569,38 @@ void ConvolveHorizontal_AVX2(const void* const reference,
   }
 }
 
+void ConvolveCompoundHorizontal_AVX2(
+    const void* const reference, const ptrdiff_t reference_stride,
+    const int horizontal_filter_index, const int /*vertical_filter_index*/,
+    const int horizontal_filter_id, const int /*vertical_filter_id*/,
+    const int width, const int height, void* prediction,
+    const ptrdiff_t pred_stride) {
+  const int filter_index = GetFilterIndex(horizontal_filter_index, width);
+  // Set |src| to the outermost tap.
+  const auto* src = static_cast<const uint8_t*>(reference) - kHorizontalOffset;
+  auto* dest = static_cast<uint8_t*>(prediction);
+  // All compound functions output to the predictor buffer with |pred_stride|
+  // equal to |width|.
+  assert(pred_stride == width);
+  // Compound functions start at 4x4.
+  assert(width >= 4 && height >= 4);
+
+#ifdef NDEBUG
+  // Quiet compiler error.
+  (void)pred_stride;
+#endif
+
+  DoHorizontalPass</*is_2d=*/false, /*is_compound=*/true>(
+      src, reference_stride, dest, width, width, height, horizontal_filter_id,
+      filter_index);
+}
+
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   dsp->convolve[0][0][0][1] = ConvolveHorizontal_AVX2;
+
+  dsp->convolve[0][1][0][1] = ConvolveCompoundHorizontal_AVX2;
 }
 
 }  // namespace
