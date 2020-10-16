@@ -1160,11 +1160,26 @@ inline __m128i CalculateMa(const __m128i sum, const __m128i sum_sq[2],
   return _mm_packus_epi32(z0, z1);
 }
 
-template <int n>
-inline __m128i CalculateB(const __m128i sum, const __m128i ma) {
-  static_assert(n == 9 || n == 25, "");
+inline __m128i CalculateB5(const __m128i sum, const __m128i ma) {
+  // one_over_n == 164.
   constexpr uint32_t one_over_n =
-      ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
+      ((1 << kSgrProjReciprocalBits) + (25 >> 1)) / 25;
+  // one_over_n_quarter == 41.
+  constexpr uint32_t one_over_n_quarter = one_over_n >> 2;
+  static_assert(one_over_n == one_over_n_quarter << 2, "");
+  // |ma| is in range [0, 255].
+  const __m128i m = _mm_maddubs_epi16(ma, _mm_set1_epi16(one_over_n_quarter));
+  const __m128i m0 = VmullLo16(m, sum);
+  const __m128i m1 = VmullHi16(m, sum);
+  const __m128i b_lo = VrshrU32(m0, kSgrProjReciprocalBits - 2);
+  const __m128i b_hi = VrshrU32(m1, kSgrProjReciprocalBits - 2);
+  return _mm_packus_epi32(b_lo, b_hi);
+}
+
+inline __m128i CalculateB3(const __m128i sum, const __m128i ma) {
+  // one_over_n == 455.
+  constexpr uint32_t one_over_n =
+      ((1 << kSgrProjReciprocalBits) + (9 >> 1)) / 9;
   const __m128i m0 = VmullLo16(ma, sum);
   const __m128i m1 = VmullHi16(ma, sum);
   const __m128i m2 = _mm_mullo_epi32(m0, _mm_set1_epi32(one_over_n));
@@ -1227,7 +1242,7 @@ inline void LookupIntermediate(const __m128i sum, const __m128i index,
   } else {
     maq = _mm_unpackhi_epi8(*ma, _mm_setzero_si128());
   }
-  *b = CalculateB<n>(sum, maq);
+  *b = (n == 9) ? CalculateB3(sum, maq) : CalculateB5(sum, maq);
 }
 
 // Set the shuffle control mask of indices out of range [0, 15] to (1xxxxxxx)b
@@ -1298,9 +1313,9 @@ inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
   // Radius 2: 255 * 6375 * 164 >> 12 = 65088 (16 bits).
   // Radius 1: 255 * 2295 * 455 >> 12 = 65009 (16 bits).
   const __m128i maq0 = _mm_unpacklo_epi8(*ma, _mm_setzero_si128());
-  *b0 = CalculateB<9>(sum[0], maq0);
+  *b0 = CalculateB3(sum[0], maq0);
   const __m128i maq1 = _mm_unpackhi_epi8(*ma, _mm_setzero_si128());
-  *b1 = CalculateB<9>(sum[1], maq1);
+  *b1 = CalculateB3(sum[1], maq1);
 }
 
 inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],

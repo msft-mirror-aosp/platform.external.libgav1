@@ -1432,11 +1432,43 @@ inline __m256i CalculateMa(const __m256i sum, const __m256i sum_sq[2],
   return _mm256_packus_epi32(z0, z1);
 }
 
-template <int n>
-inline __m128i CalculateB(const __m128i sum, const __m128i ma) {
-  static_assert(n == 9 || n == 25, "");
+inline __m128i CalculateB5(const __m128i sum, const __m128i ma) {
+  // one_over_n == 164.
   constexpr uint32_t one_over_n =
-      ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
+      ((1 << kSgrProjReciprocalBits) + (25 >> 1)) / 25;
+  // one_over_n_quarter == 41.
+  constexpr uint32_t one_over_n_quarter = one_over_n >> 2;
+  static_assert(one_over_n == one_over_n_quarter << 2, "");
+  // |ma| is in range [0, 255].
+  const __m128i m = _mm_maddubs_epi16(ma, _mm_set1_epi16(one_over_n_quarter));
+  const __m128i m0 = VmullLo16(m, sum);
+  const __m128i m1 = VmullHi16(m, sum);
+  const __m128i b_lo = VrshrU32(m0, kSgrProjReciprocalBits - 2);
+  const __m128i b_hi = VrshrU32(m1, kSgrProjReciprocalBits - 2);
+  return _mm_packus_epi32(b_lo, b_hi);
+}
+
+inline __m256i CalculateB5(const __m256i sum, const __m256i ma) {
+  // one_over_n == 164.
+  constexpr uint32_t one_over_n =
+      ((1 << kSgrProjReciprocalBits) + (25 >> 1)) / 25;
+  // one_over_n_quarter == 41.
+  constexpr uint32_t one_over_n_quarter = one_over_n >> 2;
+  static_assert(one_over_n == one_over_n_quarter << 2, "");
+  // |ma| is in range [0, 255].
+  const __m256i m =
+      _mm256_maddubs_epi16(ma, _mm256_set1_epi16(one_over_n_quarter));
+  const __m256i m0 = VmullLo16(m, sum);
+  const __m256i m1 = VmullHi16(m, sum);
+  const __m256i b_lo = VrshrU32(m0, kSgrProjReciprocalBits - 2);
+  const __m256i b_hi = VrshrU32(m1, kSgrProjReciprocalBits - 2);
+  return _mm256_packus_epi32(b_lo, b_hi);
+}
+
+inline __m128i CalculateB3(const __m128i sum, const __m128i ma) {
+  // one_over_n == 455.
+  constexpr uint32_t one_over_n =
+      ((1 << kSgrProjReciprocalBits) + (9 >> 1)) / 9;
   const __m128i m0 = VmullLo16(ma, sum);
   const __m128i m1 = VmullHi16(ma, sum);
   const __m128i m2 = _mm_mullo_epi32(m0, _mm_set1_epi32(one_over_n));
@@ -1446,11 +1478,10 @@ inline __m128i CalculateB(const __m128i sum, const __m128i ma) {
   return _mm_packus_epi32(b_lo, b_hi);
 }
 
-template <int n>
-inline __m256i CalculateB(const __m256i sum, const __m256i ma) {
-  static_assert(n == 9 || n == 25, "");
+inline __m256i CalculateB3(const __m256i sum, const __m256i ma) {
+  // one_over_n == 455.
   constexpr uint32_t one_over_n =
-      ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
+      ((1 << kSgrProjReciprocalBits) + (9 >> 1)) / 9;
   const __m256i m0 = VmullLo16(ma, sum);
   const __m256i m1 = VmullHi16(ma, sum);
   const __m256i m2 = _mm256_mullo_epi32(m0, _mm256_set1_epi32(one_over_n));
@@ -1525,7 +1556,7 @@ inline void LookupIntermediate(const __m128i sum, const __m128i index,
   // Radius 2: 255 * 6375 * 164 >> 12 = 65088 (16 bits).
   // Radius 1: 255 * 2295 * 455 >> 12 = 65009 (16 bits).
   const __m128i maq = _mm_unpacklo_epi8(*ma, _mm_setzero_si128());
-  *b = CalculateB<n>(sum, maq);
+  *b = (n == 9) ? CalculateB3(sum, maq) : CalculateB5(sum, maq);
 }
 
 // Repeat the first 48 elements in kSgrMaLookup with a period of 16.
@@ -1611,8 +1642,13 @@ inline void CalculateIntermediate(const __m256i sum[2], const __m256i index[2],
   // Radius 1: 255 * 2295 * 455 >> 12 = 65009 (16 bits).
   const __m256i maq0 = _mm256_unpackhi_epi8(ma[0], _mm256_setzero_si256());
   const __m256i maq1 = _mm256_unpacklo_epi8(ma[1], _mm256_setzero_si256());
-  b[0] = CalculateB<n>(sum[0], maq0);
-  b[1] = CalculateB<n>(sum[1], maq1);
+  if (n == 9) {
+    b[0] = CalculateB3(sum[0], maq0);
+    b[1] = CalculateB3(sum[1], maq1);
+  } else {
+    b[0] = CalculateB5(sum[0], maq0);
+    b[1] = CalculateB5(sum[1], maq1);
+  }
 }
 
 inline void CalculateIntermediate5(const __m128i s5[5], const __m128i sq5[5][2],
