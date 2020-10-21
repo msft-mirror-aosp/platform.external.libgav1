@@ -47,6 +47,10 @@ void LoopRestorationInit10bpp_SSE4_1();
 #define LIBGAV1_Dsp10bpp_WienerFilter LIBGAV1_CPU_SSE4_1
 #endif
 
+#ifndef LIBGAV1_Dsp10bpp_SelfGuidedFilter
+#define LIBGAV1_Dsp10bpp_SelfGuidedFilter LIBGAV1_CPU_SSE4_1
+#endif
+
 #endif  // LIBGAV1_TARGETING_SSE4_1
 
 #endif  // LIBGAV1_SRC_DSP_X86_LOOP_RESTORATION_SSE4_H_

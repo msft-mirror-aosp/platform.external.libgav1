@@ -233,7 +233,7 @@ void WienerFilter_C(const RestorationUnitInfo& restoration_info,
 //------------------------------------------------------------------------------
 // SGR
 
-// When |height| is 1, |src_stride| could be set to arbitrary value.
+// When |height| is 1, |src_stride| could be set to an arbitrary value.
 template <typename Pixel, int size>
 LIBGAV1_ALWAYS_INLINE void BoxSum(const Pixel* src, const ptrdiff_t src_stride,
                                   const int height, const int width,
@@ -267,7 +267,7 @@ LIBGAV1_ALWAYS_INLINE void BoxSum(const Pixel* src, const ptrdiff_t src_stride,
   } while (--y != 0);
 }
 
-// When |height| is 1, |src_stride| could be set to arbitrary value.
+// When |height| is 1, |src_stride| could be set to an arbitrary value.
 template <typename Pixel>
 LIBGAV1_ALWAYS_INLINE void BoxSum(const Pixel* src, const ptrdiff_t src_stride,
                                   const int height, const int width,
