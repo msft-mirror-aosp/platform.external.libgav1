@@ -2498,8 +2498,8 @@ inline void BoxFilterProcessPass2(const RestorationUnitInfo& restoration_info,
   } while (--y != 0);
 }
 
-// If |width| is non-multiple of 8, up to 7 more pixels are written to |dest| in
-// the end of each row. It is safe to overwrite the output as it will not be
+// If |width| is non-multiple of 16, up to 15 more pixels are written to |dest|
+// in the end of each row. It is safe to overwrite the output as it will not be
 // part of the visible frame.
 void SelfGuidedFilter_SSE4_1(
     const RestorationUnitInfo& restoration_info, const void* const source,
