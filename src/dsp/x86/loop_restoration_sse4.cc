@@ -1931,15 +1931,15 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPass1(
 
   int x = 0;
   do {
-    __m128i ma[2], ma3[3], b[2][2], sr[2], p[2];
+    __m128i ma[2], ma5[3], b[2][2], sr[2], p[2];
     s[0][1] = LoadUnaligned16Msan(src0 + x + 16,
                                   x + 16 + kOverreadInBytesPass1 - width);
     s[1][1] = LoadUnaligned16Msan(src1 + x + 16,
                                   x + 16 + kOverreadInBytesPass1 - width);
     BoxFilterPreProcess5(s, sum_width, x + 8, scale, sum5, square_sum5, sq, mas,
                          bs);
-    Prepare3_8<0>(mas, ma3);
-    ma[1] = Sum565Lo(ma3);
+    Prepare3_8<0>(mas, ma5);
+    ma[1] = Sum565Lo(ma5);
     StoreAligned16(ma565[1] + x, ma[1]);
     Sum565W(bs, b[1]);
     StoreAligned32U32(b565[1] + x, b[1]);
@@ -1954,7 +1954,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPass1(
     const __m128i d00 = SelfGuidedSingleMultiplier(sr0_lo, p[0], w0);
     const __m128i d10 = SelfGuidedSingleMultiplier(sr1_lo, p[1], w0);
 
-    ma[1] = Sum565Hi(ma3);
+    ma[1] = Sum565Hi(ma5);
     StoreAligned16(ma565[1] + x + 8, ma[1]);
     Sum565W(bs + 1, b[1]);
     StoreAligned32U32(b565[1] + x + 8, b[1]);

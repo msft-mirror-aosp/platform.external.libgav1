@@ -2303,13 +2303,13 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPass1(
 
   int x = 0;
   do {
-    __m256i ma[3], ma3[3], b[2][2][2];
+    __m256i ma[3], ma5[3], b[2][2][2];
     BoxFilterPreProcess5(src0 + x + 8, src1 + x + 8,
                          x + 8 + kOverreadInBytesPass1_256 - width, sum_width,
                          x + 8, scale, sum5, square_sum5, sq, mas, bs);
-    Prepare3_8(mas, ma3);
-    ma[1] = Sum565Lo(ma3);
-    ma[2] = Sum565Hi(ma3);
+    Prepare3_8(mas, ma5);
+    ma[1] = Sum565Lo(ma5);
+    ma[2] = Sum565Hi(ma5);
     StoreAligned64(ma565[1] + x, ma + 1);
     Sum565W(bs + 0, b[0][1]);
     Sum565W(bs + 1, b[1][1]);
