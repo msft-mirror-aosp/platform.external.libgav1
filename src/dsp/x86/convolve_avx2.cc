@@ -35,7 +35,41 @@ namespace dsp {
 namespace low_bitdepth {
 namespace {
 
-constexpr int kHorizontalOffset = 3;
+#include "src/dsp/convolve.inc"
+
+// Multiply every entry in |src[]| by the corresponding entry in |taps[]| and
+// sum. The filters in |taps[]| are pre-shifted by 1. This prevents the final
+// sum from outranging int16_t.
+template <int filter_index>
+__m128i SumOnePassTaps(const __m128i* const src, const __m128i* const taps) {
+  __m128i sum;
+  if (filter_index < 2) {
+    // 6 taps.
+    const __m128i v_madd_21 = _mm_maddubs_epi16(src[0], taps[0]);  // k2k1
+    const __m128i v_madd_43 = _mm_maddubs_epi16(src[1], taps[1]);  // k4k3
+    const __m128i v_madd_65 = _mm_maddubs_epi16(src[2], taps[2]);  // k6k5
+    sum = _mm_add_epi16(v_madd_21, v_madd_43);
+    sum = _mm_add_epi16(sum, v_madd_65);
+  } else if (filter_index == 2) {
+    // 8 taps.
+    const __m128i v_madd_10 = _mm_maddubs_epi16(src[0], taps[0]);  // k1k0
+    const __m128i v_madd_32 = _mm_maddubs_epi16(src[1], taps[1]);  // k3k2
+    const __m128i v_madd_54 = _mm_maddubs_epi16(src[2], taps[2]);  // k5k4
+    const __m128i v_madd_76 = _mm_maddubs_epi16(src[3], taps[3]);  // k7k6
+    const __m128i v_sum_3210 = _mm_add_epi16(v_madd_10, v_madd_32);
+    const __m128i v_sum_7654 = _mm_add_epi16(v_madd_54, v_madd_76);
+    sum = _mm_add_epi16(v_sum_7654, v_sum_3210);
+  } else if (filter_index == 3) {
+    // 2 taps.
+    sum = _mm_maddubs_epi16(src[0], taps[0]);  // k4k3
+  } else {
+    // 4 taps.
+    const __m128i v_madd_32 = _mm_maddubs_epi16(src[0], taps[0]);  // k3k2
+    const __m128i v_madd_54 = _mm_maddubs_epi16(src[1], taps[1]);  // k5k4
+    sum = _mm_add_epi16(v_madd_32, v_madd_54);
+  }
+  return sum;
+}
 
 // Multiply every entry in |src[]| by the corresponding entry in |taps[]| and
 // sum. The filters in |taps[]| are pre-shifted by 1. This prevents the final
@@ -546,6 +580,944 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
   }
 }
 
+// The 1D compound shift is always |kInterRoundBitsHorizontal|, even for 1D
+// Vertical calculations.
+__m128i Compound1DShift(const __m128i sum) {
+  return RightShiftWithRounding_S16(sum, kInterRoundBitsHorizontal - 1);
+}
+
+template <int filter_index>
+__m128i SumVerticalTaps(const __m128i* const srcs, const __m128i* const v_tap) {
+  __m128i v_src[4];
+
+  if (filter_index < 2) {
+    // 6 taps.
+    v_src[0] = _mm_unpacklo_epi8(srcs[0], srcs[1]);
+    v_src[1] = _mm_unpacklo_epi8(srcs[2], srcs[3]);
+    v_src[2] = _mm_unpacklo_epi8(srcs[4], srcs[5]);
+  } else if (filter_index == 2) {
+    // 8 taps.
+    v_src[0] = _mm_unpacklo_epi8(srcs[0], srcs[1]);
+    v_src[1] = _mm_unpacklo_epi8(srcs[2], srcs[3]);
+    v_src[2] = _mm_unpacklo_epi8(srcs[4], srcs[5]);
+    v_src[3] = _mm_unpacklo_epi8(srcs[6], srcs[7]);
+  } else if (filter_index == 3) {
+    // 2 taps.
+    v_src[0] = _mm_unpacklo_epi8(srcs[0], srcs[1]);
+  } else if (filter_index > 3) {
+    // 4 taps.
+    v_src[0] = _mm_unpacklo_epi8(srcs[0], srcs[1]);
+    v_src[1] = _mm_unpacklo_epi8(srcs[2], srcs[3]);
+  }
+  const __m128i sum = SumOnePassTaps<filter_index>(v_src, v_tap);
+  return sum;
+}
+
+template <int filter_index, bool unpack_high = false>
+__m256i SumVerticalTaps(const __m256i* const srcs, const __m256i* const v_tap) {
+  __m256i v_src[4];
+
+  if (!unpack_high) {
+    if (filter_index < 2) {
+      // 6 taps.
+      v_src[0] = _mm256_unpacklo_epi8(srcs[0], srcs[1]);
+      v_src[1] = _mm256_unpacklo_epi8(srcs[2], srcs[3]);
+      v_src[2] = _mm256_unpacklo_epi8(srcs[4], srcs[5]);
+    } else if (filter_index == 2) {
+      // 8 taps.
+      v_src[0] = _mm256_unpacklo_epi8(srcs[0], srcs[1]);
+      v_src[1] = _mm256_unpacklo_epi8(srcs[2], srcs[3]);
+      v_src[2] = _mm256_unpacklo_epi8(srcs[4], srcs[5]);
+      v_src[3] = _mm256_unpacklo_epi8(srcs[6], srcs[7]);
+    } else if (filter_index == 3) {
+      // 2 taps.
+      v_src[0] = _mm256_unpacklo_epi8(srcs[0], srcs[1]);
+    } else if (filter_index > 3) {
+      // 4 taps.
+      v_src[0] = _mm256_unpacklo_epi8(srcs[0], srcs[1]);
+      v_src[1] = _mm256_unpacklo_epi8(srcs[2], srcs[3]);
+    }
+  } else {
+    if (filter_index < 2) {
+      // 6 taps.
+      v_src[0] = _mm256_unpackhi_epi8(srcs[0], srcs[1]);
+      v_src[1] = _mm256_unpackhi_epi8(srcs[2], srcs[3]);
+      v_src[2] = _mm256_unpackhi_epi8(srcs[4], srcs[5]);
+    } else if (filter_index == 2) {
+      // 8 taps.
+      v_src[0] = _mm256_unpackhi_epi8(srcs[0], srcs[1]);
+      v_src[1] = _mm256_unpackhi_epi8(srcs[2], srcs[3]);
+      v_src[2] = _mm256_unpackhi_epi8(srcs[4], srcs[5]);
+      v_src[3] = _mm256_unpackhi_epi8(srcs[6], srcs[7]);
+    } else if (filter_index == 3) {
+      // 2 taps.
+      v_src[0] = _mm256_unpackhi_epi8(srcs[0], srcs[1]);
+    } else if (filter_index > 3) {
+      // 4 taps.
+      v_src[0] = _mm256_unpackhi_epi8(srcs[0], srcs[1]);
+      v_src[1] = _mm256_unpackhi_epi8(srcs[2], srcs[3]);
+    }
+  }
+  return SumOnePassTaps<filter_index>(v_src, v_tap);
+}
+
+template <int filter_index, bool is_compound = false>
+void FilterVertical32xH(const uint8_t* src, const ptrdiff_t src_stride,
+                        void* const dst, const ptrdiff_t dst_stride,
+                        const int width, const int height,
+                        const __m256i* const v_tap) {
+  const int num_taps = GetNumTapsInFilter(filter_index);
+  const int next_row = num_taps - 1;
+  auto* dst8 = static_cast<uint8_t*>(dst);
+  assert(width >= 32);
+  int x = 0;
+  do {
+    const uint8_t* src_x = src + x;
+    __m256i srcs[8];
+    srcs[0] = LoadUnaligned32(src_x);
+    src_x += src_stride;
+    if (num_taps >= 4) {
+      srcs[1] = LoadUnaligned32(src_x);
+      src_x += src_stride;
+      srcs[2] = LoadUnaligned32(src_x);
+      src_x += src_stride;
+      if (num_taps >= 6) {
+        srcs[3] = LoadUnaligned32(src_x);
+        src_x += src_stride;
+        srcs[4] = LoadUnaligned32(src_x);
+        src_x += src_stride;
+        if (num_taps == 8) {
+          srcs[5] = LoadUnaligned32(src_x);
+          src_x += src_stride;
+          srcs[6] = LoadUnaligned32(src_x);
+          src_x += src_stride;
+        }
+      }
+    }
+
+    auto* dst8_x = dst8 + x;
+    int y = height;
+    do {
+      srcs[next_row] = LoadUnaligned32(src_x);
+      src_x += src_stride;
+
+      const __m256i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      const __m256i sums_hi =
+          SumVerticalTaps<filter_index, /*unpack_high=*/true>(srcs, v_tap);
+      if (is_compound) {
+        // placeholder
+      } else {
+        const __m256i results =
+            RightShiftWithRounding_S16(sums, kFilterBits - 1);
+        const __m256i results_hi =
+            RightShiftWithRounding_S16(sums_hi, kFilterBits - 1);
+        const __m256i packed_results = _mm256_packus_epi16(results, results_hi);
+
+        StoreUnaligned32(dst8_x, packed_results);
+        dst8_x += dst_stride;
+      }
+
+      srcs[0] = srcs[1];
+      if (num_taps >= 4) {
+        srcs[1] = srcs[2];
+        srcs[2] = srcs[3];
+        if (num_taps >= 6) {
+          srcs[3] = srcs[4];
+          srcs[4] = srcs[5];
+          if (num_taps == 8) {
+            srcs[5] = srcs[6];
+            srcs[6] = srcs[7];
+          }
+        }
+      }
+    } while (--y != 0);
+    x += 32;
+  } while (x < width);
+}
+
+template <int filter_index, bool is_compound = false>
+void FilterVertical16xH(const uint8_t* src, const ptrdiff_t src_stride,
+                        void* const dst, const ptrdiff_t dst_stride,
+                        const int /*width*/, const int height,
+                        const __m256i* const v_tap) {
+  const int num_taps = GetNumTapsInFilter(filter_index);
+  const int next_row = num_taps;
+  auto* dst8 = static_cast<uint8_t*>(dst);
+
+  const uint8_t* src_x = src;
+  __m256i srcs[8 + 1];
+  // The upper 128 bits hold the filter data for the next row.
+  srcs[0] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+  src_x += src_stride;
+  if (num_taps >= 4) {
+    srcs[1] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+    src_x += src_stride;
+    srcs[0] =
+        _mm256_inserti128_si256(srcs[0], _mm256_castsi256_si128(srcs[1]), 1);
+    srcs[2] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+    src_x += src_stride;
+    srcs[1] =
+        _mm256_inserti128_si256(srcs[1], _mm256_castsi256_si128(srcs[2]), 1);
+    if (num_taps >= 6) {
+      srcs[3] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+      src_x += src_stride;
+      srcs[2] =
+          _mm256_inserti128_si256(srcs[2], _mm256_castsi256_si128(srcs[3]), 1);
+      srcs[4] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+      src_x += src_stride;
+      srcs[3] =
+          _mm256_inserti128_si256(srcs[3], _mm256_castsi256_si128(srcs[4]), 1);
+      if (num_taps == 8) {
+        srcs[5] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+        src_x += src_stride;
+        srcs[4] = _mm256_inserti128_si256(srcs[4],
+                                          _mm256_castsi256_si128(srcs[5]), 1);
+        srcs[6] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+        src_x += src_stride;
+        srcs[5] = _mm256_inserti128_si256(srcs[5],
+                                          _mm256_castsi256_si128(srcs[6]), 1);
+      }
+    }
+  }
+
+  int y = height;
+  do {
+    srcs[next_row - 1] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+    src_x += src_stride;
+
+    srcs[next_row - 2] = _mm256_inserti128_si256(
+        srcs[next_row - 2], _mm256_castsi256_si128(srcs[next_row - 1]), 1);
+
+    srcs[next_row] = _mm256_castsi128_si256(LoadUnaligned16(src_x));
+    src_x += src_stride;
+
+    srcs[next_row - 1] = _mm256_inserti128_si256(
+        srcs[next_row - 1], _mm256_castsi256_si128(srcs[next_row]), 1);
+
+    const __m256i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+    const __m256i sums_hi =
+        SumVerticalTaps<filter_index, /*unpack_high=*/true>(srcs, v_tap);
+    if (is_compound) {
+      // placeholder
+    } else {
+      const __m256i results = RightShiftWithRounding_S16(sums, kFilterBits - 1);
+      const __m256i results_hi =
+          RightShiftWithRounding_S16(sums_hi, kFilterBits - 1);
+      const __m256i packed_results = _mm256_packus_epi16(results, results_hi);
+      const __m128i this_dst = _mm256_castsi256_si128(packed_results);
+      const auto next_dst = _mm256_extracti128_si256(packed_results, 1);
+
+      StoreUnaligned16(dst8, this_dst);
+      StoreUnaligned16(dst8 + dst_stride, next_dst);
+      dst8 += dst_stride << 1;
+    }
+
+    srcs[0] = srcs[2];
+    if (num_taps >= 4) {
+      srcs[1] = srcs[3];
+      srcs[2] = srcs[4];
+      if (num_taps >= 6) {
+        srcs[3] = srcs[5];
+        srcs[4] = srcs[6];
+        if (num_taps == 8) {
+          srcs[5] = srcs[7];
+          srcs[6] = srcs[8];
+        }
+      }
+    }
+    y -= 2;
+  } while (y != 0);
+}
+
+template <int filter_index, bool is_compound = false>
+void FilterVertical8xH(const uint8_t* src, const ptrdiff_t src_stride,
+                       void* const dst, const ptrdiff_t dst_stride,
+                       const int /*width*/, const int height,
+                       const __m128i* const v_tap) {
+  const int num_taps = GetNumTapsInFilter(filter_index);
+  const int next_row = num_taps - 1;
+  auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
+
+  // TODO(slavarnway): Write 256 bit version, processing two rows per iteration.
+  const uint8_t* src_x = src;
+  __m128i srcs[8];
+  srcs[0] = LoadLo8(src_x);
+  src_x += src_stride;
+  if (num_taps >= 4) {
+    srcs[1] = LoadLo8(src_x);
+    src_x += src_stride;
+    srcs[2] = LoadLo8(src_x);
+    src_x += src_stride;
+    if (num_taps >= 6) {
+      srcs[3] = LoadLo8(src_x);
+      src_x += src_stride;
+      srcs[4] = LoadLo8(src_x);
+      src_x += src_stride;
+      if (num_taps == 8) {
+        srcs[5] = LoadLo8(src_x);
+        src_x += src_stride;
+        srcs[6] = LoadLo8(src_x);
+        src_x += src_stride;
+      }
+    }
+  }
+
+  int y = height;
+  do {
+    srcs[next_row] = LoadLo8(src_x);
+    src_x += src_stride;
+
+    const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+    if (is_compound) {
+      const __m128i results = Compound1DShift(sums);
+      StoreUnaligned16(dst16, results);
+      dst16 += dst_stride;
+    } else {
+      const __m128i results = RightShiftWithRounding_S16(sums, kFilterBits - 1);
+      StoreLo8(dst8, _mm_packus_epi16(results, results));
+      dst8 += dst_stride;
+    }
+
+    srcs[0] = srcs[1];
+    if (num_taps >= 4) {
+      srcs[1] = srcs[2];
+      srcs[2] = srcs[3];
+      if (num_taps >= 6) {
+        srcs[3] = srcs[4];
+        srcs[4] = srcs[5];
+        if (num_taps == 8) {
+          srcs[5] = srcs[6];
+          srcs[6] = srcs[7];
+        }
+      }
+    }
+  } while (--y != 0);
+}
+
+template <int filter_index, bool is_compound = false>
+void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
+                       void* const dst, const ptrdiff_t dst_stride,
+                       const int height, const __m128i* const v_tap) {
+  const int num_taps = GetNumTapsInFilter(filter_index);
+  auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
+
+  __m128i srcs[9];
+
+  if (num_taps == 2) {
+    srcs[2] = _mm_setzero_si128();
+    // 00 01 02 03
+    srcs[0] = Load4(src);
+    src += src_stride;
+
+    int y = 0;
+    do {
+      // 10 11 12 13
+      const __m128i a = Load4(src);
+      // 00 01 02 03 10 11 12 13
+      srcs[0] = _mm_unpacklo_epi32(srcs[0], a);
+      src += src_stride;
+      // 20 21 22 23
+      srcs[2] = Load4(src);
+      src += src_stride;
+      // 10 11 12 13 20 21 22 23
+      srcs[1] = _mm_unpacklo_epi32(a, srcs[2]);
+
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      if (is_compound) {
+        const __m128i results = Compound1DShift(sums);
+        StoreUnaligned16(dst16, results);
+        dst16 += 4 << 1;
+      } else {
+        const __m128i results_16 =
+            RightShiftWithRounding_S16(sums, kFilterBits - 1);
+        const __m128i results = _mm_packus_epi16(results_16, results_16);
+        Store4(dst8, results);
+        dst8 += dst_stride;
+        Store4(dst8, _mm_srli_si128(results, 4));
+        dst8 += dst_stride;
+      }
+
+      srcs[0] = srcs[2];
+      y += 2;
+    } while (y < height);
+  } else if (num_taps == 4) {
+    srcs[4] = _mm_setzero_si128();
+    // 00 01 02 03
+    srcs[0] = Load4(src);
+    src += src_stride;
+    // 10 11 12 13
+    const __m128i a = Load4(src);
+    // 00 01 02 03 10 11 12 13
+    srcs[0] = _mm_unpacklo_epi32(srcs[0], a);
+    src += src_stride;
+    // 20 21 22 23
+    srcs[2] = Load4(src);
+    src += src_stride;
+    // 10 11 12 13 20 21 22 23
+    srcs[1] = _mm_unpacklo_epi32(a, srcs[2]);
+
+    int y = 0;
+    do {
+      // 30 31 32 33
+      const __m128i b = Load4(src);
+      // 20 21 22 23 30 31 32 33
+      srcs[2] = _mm_unpacklo_epi32(srcs[2], b);
+      src += src_stride;
+      // 40 41 42 43
+      srcs[4] = Load4(src);
+      src += src_stride;
+      // 30 31 32 33 40 41 42 43
+      srcs[3] = _mm_unpacklo_epi32(b, srcs[4]);
+
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      if (is_compound) {
+        const __m128i results = Compound1DShift(sums);
+        StoreUnaligned16(dst16, results);
+        dst16 += 4 << 1;
+      } else {
+        const __m128i results_16 =
+            RightShiftWithRounding_S16(sums, kFilterBits - 1);
+        const __m128i results = _mm_packus_epi16(results_16, results_16);
+        Store4(dst8, results);
+        dst8 += dst_stride;
+        Store4(dst8, _mm_srli_si128(results, 4));
+        dst8 += dst_stride;
+      }
+
+      srcs[0] = srcs[2];
+      srcs[1] = srcs[3];
+      srcs[2] = srcs[4];
+      y += 2;
+    } while (y < height);
+  } else if (num_taps == 6) {
+    srcs[6] = _mm_setzero_si128();
+    // 00 01 02 03
+    srcs[0] = Load4(src);
+    src += src_stride;
+    // 10 11 12 13
+    const __m128i a = Load4(src);
+    // 00 01 02 03 10 11 12 13
+    srcs[0] = _mm_unpacklo_epi32(srcs[0], a);
+    src += src_stride;
+    // 20 21 22 23
+    srcs[2] = Load4(src);
+    src += src_stride;
+    // 10 11 12 13 20 21 22 23
+    srcs[1] = _mm_unpacklo_epi32(a, srcs[2]);
+    // 30 31 32 33
+    const __m128i b = Load4(src);
+    // 20 21 22 23 30 31 32 33
+    srcs[2] = _mm_unpacklo_epi32(srcs[2], b);
+    src += src_stride;
+    // 40 41 42 43
+    srcs[4] = Load4(src);
+    src += src_stride;
+    // 30 31 32 33 40 41 42 43
+    srcs[3] = _mm_unpacklo_epi32(b, srcs[4]);
+
+    int y = 0;
+    do {
+      // 50 51 52 53
+      const __m128i c = Load4(src);
+      // 40 41 42 43 50 51 52 53
+      srcs[4] = _mm_unpacklo_epi32(srcs[4], c);
+      src += src_stride;
+      // 60 61 62 63
+      srcs[6] = Load4(src);
+      src += src_stride;
+      // 50 51 52 53 60 61 62 63
+      srcs[5] = _mm_unpacklo_epi32(c, srcs[6]);
+
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      if (is_compound) {
+        const __m128i results = Compound1DShift(sums);
+        StoreUnaligned16(dst16, results);
+        dst16 += 4 << 1;
+      } else {
+        const __m128i results_16 =
+            RightShiftWithRounding_S16(sums, kFilterBits - 1);
+        const __m128i results = _mm_packus_epi16(results_16, results_16);
+        Store4(dst8, results);
+        dst8 += dst_stride;
+        Store4(dst8, _mm_srli_si128(results, 4));
+        dst8 += dst_stride;
+      }
+
+      srcs[0] = srcs[2];
+      srcs[1] = srcs[3];
+      srcs[2] = srcs[4];
+      srcs[3] = srcs[5];
+      srcs[4] = srcs[6];
+      y += 2;
+    } while (y < height);
+  } else if (num_taps == 8) {
+    srcs[8] = _mm_setzero_si128();
+    // 00 01 02 03
+    srcs[0] = Load4(src);
+    src += src_stride;
+    // 10 11 12 13
+    const __m128i a = Load4(src);
+    // 00 01 02 03 10 11 12 13
+    srcs[0] = _mm_unpacklo_epi32(srcs[0], a);
+    src += src_stride;
+    // 20 21 22 23
+    srcs[2] = Load4(src);
+    src += src_stride;
+    // 10 11 12 13 20 21 22 23
+    srcs[1] = _mm_unpacklo_epi32(a, srcs[2]);
+    // 30 31 32 33
+    const __m128i b = Load4(src);
+    // 20 21 22 23 30 31 32 33
+    srcs[2] = _mm_unpacklo_epi32(srcs[2], b);
+    src += src_stride;
+    // 40 41 42 43
+    srcs[4] = Load4(src);
+    src += src_stride;
+    // 30 31 32 33 40 41 42 43
+    srcs[3] = _mm_unpacklo_epi32(b, srcs[4]);
+    // 50 51 52 53
+    const __m128i c = Load4(src);
+    // 40 41 42 43 50 51 52 53
+    srcs[4] = _mm_unpacklo_epi32(srcs[4], c);
+    src += src_stride;
+    // 60 61 62 63
+    srcs[6] = Load4(src);
+    src += src_stride;
+    // 50 51 52 53 60 61 62 63
+    srcs[5] = _mm_unpacklo_epi32(c, srcs[6]);
+
+    int y = 0;
+    do {
+      // 70 71 72 73
+      const __m128i d = Load4(src);
+      // 60 61 62 63 70 71 72 73
+      srcs[6] = _mm_unpacklo_epi32(srcs[6], d);
+      src += src_stride;
+      // 80 81 82 83
+      srcs[8] = Load4(src);
+      src += src_stride;
+      // 70 71 72 73 80 81 82 83
+      srcs[7] = _mm_unpacklo_epi32(d, srcs[8]);
+
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      if (is_compound) {
+        const __m128i results = Compound1DShift(sums);
+        StoreUnaligned16(dst16, results);
+        dst16 += 4 << 1;
+      } else {
+        const __m128i results_16 =
+            RightShiftWithRounding_S16(sums, kFilterBits - 1);
+        const __m128i results = _mm_packus_epi16(results_16, results_16);
+        Store4(dst8, results);
+        dst8 += dst_stride;
+        Store4(dst8, _mm_srli_si128(results, 4));
+        dst8 += dst_stride;
+      }
+
+      srcs[0] = srcs[2];
+      srcs[1] = srcs[3];
+      srcs[2] = srcs[4];
+      srcs[3] = srcs[5];
+      srcs[4] = srcs[6];
+      srcs[5] = srcs[7];
+      srcs[6] = srcs[8];
+      y += 2;
+    } while (y < height);
+  }
+}
+
+template <int filter_index, bool negative_outside_taps = false>
+void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
+                       void* const dst, const ptrdiff_t dst_stride,
+                       const int height, const __m128i* const v_tap) {
+  const int num_taps = GetNumTapsInFilter(filter_index);
+  auto* dst8 = static_cast<uint8_t*>(dst);
+
+  __m128i srcs[9];
+
+  if (num_taps == 2) {
+    srcs[2] = _mm_setzero_si128();
+    // 00 01
+    srcs[0] = Load2(src);
+    src += src_stride;
+
+    int y = 0;
+    do {
+      // 00 01 10 11
+      srcs[0] = Load2<1>(src, srcs[0]);
+      src += src_stride;
+      // 00 01 10 11 20 21
+      srcs[0] = Load2<2>(src, srcs[0]);
+      src += src_stride;
+      // 00 01 10 11 20 21 30 31
+      srcs[0] = Load2<3>(src, srcs[0]);
+      src += src_stride;
+      // 40 41
+      srcs[2] = Load2<0>(src, srcs[2]);
+      src += src_stride;
+      // 00 01 10 11 20 21 30 31 40 41
+      const __m128i srcs_0_2 = _mm_unpacklo_epi64(srcs[0], srcs[2]);
+      // 10 11 20 21 30 31 40 41
+      srcs[1] = _mm_srli_si128(srcs_0_2, 2);
+      // This uses srcs[0]..srcs[1].
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      const __m128i results_16 =
+          RightShiftWithRounding_S16(sums, kFilterBits - 1);
+      const __m128i results = _mm_packus_epi16(results_16, results_16);
+
+      Store2(dst8, results);
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 2));
+      if (height == 2) return;
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 4));
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 6));
+      dst8 += dst_stride;
+
+      srcs[0] = srcs[2];
+      y += 4;
+    } while (y < height);
+  } else if (num_taps == 4) {
+    srcs[4] = _mm_setzero_si128();
+
+    // 00 01
+    srcs[0] = Load2(src);
+    src += src_stride;
+    // 00 01 10 11
+    srcs[0] = Load2<1>(src, srcs[0]);
+    src += src_stride;
+    // 00 01 10 11 20 21
+    srcs[0] = Load2<2>(src, srcs[0]);
+    src += src_stride;
+
+    int y = 0;
+    do {
+      // 00 01 10 11 20 21 30 31
+      srcs[0] = Load2<3>(src, srcs[0]);
+      src += src_stride;
+      // 40 41
+      srcs[4] = Load2<0>(src, srcs[4]);
+      src += src_stride;
+      // 40 41 50 51
+      srcs[4] = Load2<1>(src, srcs[4]);
+      src += src_stride;
+      // 40 41 50 51 60 61
+      srcs[4] = Load2<2>(src, srcs[4]);
+      src += src_stride;
+      // 00 01 10 11 20 21 30 31 40 41 50 51 60 61
+      const __m128i srcs_0_4 = _mm_unpacklo_epi64(srcs[0], srcs[4]);
+      // 10 11 20 21 30 31 40 41
+      srcs[1] = _mm_srli_si128(srcs_0_4, 2);
+      // 20 21 30 31 40 41 50 51
+      srcs[2] = _mm_srli_si128(srcs_0_4, 4);
+      // 30 31 40 41 50 51 60 61
+      srcs[3] = _mm_srli_si128(srcs_0_4, 6);
+
+      // This uses srcs[0]..srcs[3].
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      const __m128i results_16 =
+          RightShiftWithRounding_S16(sums, kFilterBits - 1);
+      const __m128i results = _mm_packus_epi16(results_16, results_16);
+
+      Store2(dst8, results);
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 2));
+      if (height == 2) return;
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 4));
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 6));
+      dst8 += dst_stride;
+
+      srcs[0] = srcs[4];
+      y += 4;
+    } while (y < height);
+  } else if (num_taps == 6) {
+    // During the vertical pass the number of taps is restricted when
+    // |height| <= 4.
+    assert(height > 4);
+    srcs[8] = _mm_setzero_si128();
+
+    // 00 01
+    srcs[0] = Load2(src);
+    src += src_stride;
+    // 00 01 10 11
+    srcs[0] = Load2<1>(src, srcs[0]);
+    src += src_stride;
+    // 00 01 10 11 20 21
+    srcs[0] = Load2<2>(src, srcs[0]);
+    src += src_stride;
+    // 00 01 10 11 20 21 30 31
+    srcs[0] = Load2<3>(src, srcs[0]);
+    src += src_stride;
+    // 40 41
+    srcs[4] = Load2(src);
+    src += src_stride;
+    // 00 01 10 11 20 21 30 31 40 41 50 51 60 61
+    const __m128i srcs_0_4x = _mm_unpacklo_epi64(srcs[0], srcs[4]);
+    // 10 11 20 21 30 31 40 41
+    srcs[1] = _mm_srli_si128(srcs_0_4x, 2);
+
+    int y = 0;
+    do {
+      // 40 41 50 51
+      srcs[4] = Load2<1>(src, srcs[4]);
+      src += src_stride;
+      // 40 41 50 51 60 61
+      srcs[4] = Load2<2>(src, srcs[4]);
+      src += src_stride;
+      // 40 41 50 51 60 61 70 71
+      srcs[4] = Load2<3>(src, srcs[4]);
+      src += src_stride;
+      // 80 81
+      srcs[8] = Load2<0>(src, srcs[8]);
+      src += src_stride;
+      // 00 01 10 11 20 21 30 31 40 41 50 51 60 61
+      const __m128i srcs_0_4 = _mm_unpacklo_epi64(srcs[0], srcs[4]);
+      // 20 21 30 31 40 41 50 51
+      srcs[2] = _mm_srli_si128(srcs_0_4, 4);
+      // 30 31 40 41 50 51 60 61
+      srcs[3] = _mm_srli_si128(srcs_0_4, 6);
+      const __m128i srcs_4_8 = _mm_unpacklo_epi64(srcs[4], srcs[8]);
+      // 50 51 60 61 70 71 80 81
+      srcs[5] = _mm_srli_si128(srcs_4_8, 2);
+
+      // This uses srcs[0]..srcs[5].
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      const __m128i results_16 =
+          RightShiftWithRounding_S16(sums, kFilterBits - 1);
+      const __m128i results = _mm_packus_epi16(results_16, results_16);
+
+      Store2(dst8, results);
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 2));
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 4));
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 6));
+      dst8 += dst_stride;
+
+      srcs[0] = srcs[4];
+      srcs[1] = srcs[5];
+      srcs[4] = srcs[8];
+      y += 4;
+    } while (y < height);
+  } else if (num_taps == 8) {
+    // During the vertical pass the number of taps is restricted when
+    // |height| <= 4.
+    assert(height > 4);
+    srcs[8] = _mm_setzero_si128();
+    // 00 01
+    srcs[0] = Load2(src);
+    src += src_stride;
+    // 00 01 10 11
+    srcs[0] = Load2<1>(src, srcs[0]);
+    src += src_stride;
+    // 00 01 10 11 20 21
+    srcs[0] = Load2<2>(src, srcs[0]);
+    src += src_stride;
+    // 00 01 10 11 20 21 30 31
+    srcs[0] = Load2<3>(src, srcs[0]);
+    src += src_stride;
+    // 40 41
+    srcs[4] = Load2(src);
+    src += src_stride;
+    // 40 41 50 51
+    srcs[4] = Load2<1>(src, srcs[4]);
+    src += src_stride;
+    // 40 41 50 51 60 61
+    srcs[4] = Load2<2>(src, srcs[4]);
+    src += src_stride;
+
+    // 00 01 10 11 20 21 30 31 40 41 50 51 60 61
+    const __m128i srcs_0_4 = _mm_unpacklo_epi64(srcs[0], srcs[4]);
+    // 10 11 20 21 30 31 40 41
+    srcs[1] = _mm_srli_si128(srcs_0_4, 2);
+    // 20 21 30 31 40 41 50 51
+    srcs[2] = _mm_srli_si128(srcs_0_4, 4);
+    // 30 31 40 41 50 51 60 61
+    srcs[3] = _mm_srli_si128(srcs_0_4, 6);
+
+    int y = 0;
+    do {
+      // 40 41 50 51 60 61 70 71
+      srcs[4] = Load2<3>(src, srcs[4]);
+      src += src_stride;
+      // 80 81
+      srcs[8] = Load2<0>(src, srcs[8]);
+      src += src_stride;
+      // 80 81 90 91
+      srcs[8] = Load2<1>(src, srcs[8]);
+      src += src_stride;
+      // 80 81 90 91 a0 a1
+      srcs[8] = Load2<2>(src, srcs[8]);
+      src += src_stride;
+
+      // 40 41 50 51 60 61 70 71 80 81 90 91 a0 a1
+      const __m128i srcs_4_8 = _mm_unpacklo_epi64(srcs[4], srcs[8]);
+      // 50 51 60 61 70 71 80 81
+      srcs[5] = _mm_srli_si128(srcs_4_8, 2);
+      // 60 61 70 71 80 81 90 91
+      srcs[6] = _mm_srli_si128(srcs_4_8, 4);
+      // 70 71 80 81 90 91 a0 a1
+      srcs[7] = _mm_srli_si128(srcs_4_8, 6);
+
+      // This uses srcs[0]..srcs[7].
+      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      const __m128i results_16 =
+          RightShiftWithRounding_S16(sums, kFilterBits - 1);
+      const __m128i results = _mm_packus_epi16(results_16, results_16);
+
+      Store2(dst8, results);
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 2));
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 4));
+      dst8 += dst_stride;
+      Store2(dst8, _mm_srli_si128(results, 6));
+      dst8 += dst_stride;
+
+      srcs[0] = srcs[4];
+      srcs[1] = srcs[5];
+      srcs[2] = srcs[6];
+      srcs[3] = srcs[7];
+      srcs[4] = srcs[8];
+      y += 4;
+    } while (y < height);
+  }
+}
+
+void ConvolveVertical_AVX2(const void* const reference,
+                           const ptrdiff_t reference_stride,
+                           const int /*horizontal_filter_index*/,
+                           const int vertical_filter_index,
+                           const int /*horizontal_filter_id*/,
+                           const int vertical_filter_id, const int width,
+                           const int height, void* prediction,
+                           const ptrdiff_t pred_stride) {
+  const int filter_index = GetFilterIndex(vertical_filter_index, height);
+  const int vertical_taps = GetNumTapsInFilter(filter_index);
+  const ptrdiff_t src_stride = reference_stride;
+  const auto* src = static_cast<const uint8_t*>(reference) -
+                    (vertical_taps / 2 - 1) * src_stride;
+  auto* dest = static_cast<uint8_t*>(prediction);
+  const ptrdiff_t dest_stride = pred_stride;
+  assert(vertical_filter_id != 0);
+
+  const __m128i v_filter =
+      LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
+
+  // Use 256 bits for width > 8.
+  if (width > 8) {
+    __m256i taps_256[4];
+    if (filter_index < 2) {  // 6 tap.
+      SetupTaps<6>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<0>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      } else {
+        FilterVertical32xH<0>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      }
+    } else if (filter_index == 2) {  // 8 tap.
+      SetupTaps<8>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<2>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      } else {
+        FilterVertical32xH<2>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      }
+    } else if (filter_index == 3) {  // 2 tap.
+      SetupTaps<2>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<3>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      } else {
+        FilterVertical32xH<3>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      }
+    } else if (filter_index == 4) {  // 4 tap.
+      SetupTaps<4>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<4>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      } else {
+        FilterVertical32xH<4>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      }
+    } else {
+      SetupTaps<4>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<5>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      } else {
+        FilterVertical32xH<5>(src, src_stride, dest, dest_stride, width, height,
+                              taps_256);
+      }
+    }
+  } else {  // width <= 8
+    // Use 128 bit code.  Copied from convolve_sse4.cc.
+    // TODO(slavarnway): Move sse4 code to convolve_sse4.inc.
+    __m128i taps[4];
+
+    if (filter_index < 2) {  // 6 tap.
+      SetupTaps<6>(&v_filter, taps);
+      if (width == 2) {
+        FilterVertical2xH<0>(src, src_stride, dest, dest_stride, height, taps);
+      } else if (width == 4) {
+        FilterVertical4xH<0>(src, src_stride, dest, dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<0>(src, src_stride, dest, dest_stride, width, height,
+                             taps);
+      }
+    } else if (filter_index == 2) {  // 8 tap.
+      SetupTaps<8>(&v_filter, taps);
+      if (width == 2) {
+        FilterVertical2xH<2>(src, src_stride, dest, dest_stride, height, taps);
+      } else if (width == 4) {
+        FilterVertical4xH<2>(src, src_stride, dest, dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<2>(src, src_stride, dest, dest_stride, width, height,
+                             taps);
+      }
+    } else if (filter_index == 3) {  // 2 tap.
+      SetupTaps<2>(&v_filter, taps);
+      if (width == 2) {
+        FilterVertical2xH<3>(src, src_stride, dest, dest_stride, height, taps);
+      } else if (width == 4) {
+        FilterVertical4xH<3>(src, src_stride, dest, dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<3>(src, src_stride, dest, dest_stride, width, height,
+                             taps);
+      }
+    } else if (filter_index == 4) {  // 4 tap.
+      SetupTaps<4>(&v_filter, taps);
+      if (width == 2) {
+        FilterVertical2xH<4>(src, src_stride, dest, dest_stride, height, taps);
+      } else if (width == 4) {
+        FilterVertical4xH<4>(src, src_stride, dest, dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<4>(src, src_stride, dest, dest_stride, width, height,
+                             taps);
+      }
+    } else {
+      SetupTaps<4>(&v_filter, taps);
+      if (width == 2) {
+        FilterVertical2xH<5>(src, src_stride, dest, dest_stride, height, taps);
+      } else if (width == 4) {
+        FilterVertical4xH<5>(src, src_stride, dest, dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<5>(src, src_stride, dest, dest_stride, width, height,
+                             taps);
+      }
+    }
+  }
+}
+
 void ConvolveHorizontal_AVX2(const void* const reference,
                              const ptrdiff_t reference_stride,
                              const int horizontal_filter_index,
@@ -599,6 +1571,7 @@ void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   dsp->convolve[0][0][0][1] = ConvolveHorizontal_AVX2;
+  dsp->convolve[0][0][1][0] = ConvolveVertical_AVX2;
 
   dsp->convolve[0][1][0][1] = ConvolveCompoundHorizontal_AVX2;
 }
