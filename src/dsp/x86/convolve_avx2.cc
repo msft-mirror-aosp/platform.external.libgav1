@@ -586,6 +586,10 @@ __m128i Compound1DShift(const __m128i sum) {
   return RightShiftWithRounding_S16(sum, kInterRoundBitsHorizontal - 1);
 }
 
+__m256i Compound1DShift(const __m256i sum) {
+  return RightShiftWithRounding_S16(sum, kInterRoundBitsHorizontal - 1);
+}
+
 template <int filter_index>
 __m128i SumVerticalTaps(const __m128i* const srcs, const __m128i* const v_tap) {
   __m128i v_src[4];
@@ -669,6 +673,7 @@ void FilterVertical32xH(const uint8_t* src, const ptrdiff_t src_stride,
   const int num_taps = GetNumTapsInFilter(filter_index);
   const int next_row = num_taps - 1;
   auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
   assert(width >= 32);
   int x = 0;
   do {
@@ -696,6 +701,7 @@ void FilterVertical32xH(const uint8_t* src, const ptrdiff_t src_stride,
     }
 
     auto* dst8_x = dst8 + x;
+    auto* dst16_x = dst16 + x;
     int y = height;
     do {
       srcs[next_row] = LoadUnaligned32(src_x);
@@ -705,7 +711,13 @@ void FilterVertical32xH(const uint8_t* src, const ptrdiff_t src_stride,
       const __m256i sums_hi =
           SumVerticalTaps<filter_index, /*unpack_high=*/true>(srcs, v_tap);
       if (is_compound) {
-        // placeholder
+        const __m256i results =
+            Compound1DShift(_mm256_permute2x128_si256(sums, sums_hi, 0x20));
+        const __m256i results_hi =
+            Compound1DShift(_mm256_permute2x128_si256(sums, sums_hi, 0x31));
+        StoreUnaligned32(dst16_x, results);
+        StoreUnaligned32(dst16_x + 16, results_hi);
+        dst16_x += dst_stride;
       } else {
         const __m256i results =
             RightShiftWithRounding_S16(sums, kFilterBits - 1);
@@ -743,6 +755,7 @@ void FilterVertical16xH(const uint8_t* src, const ptrdiff_t src_stride,
   const int num_taps = GetNumTapsInFilter(filter_index);
   const int next_row = num_taps;
   auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
 
   const uint8_t* src_x = src;
   __m256i srcs[8 + 1];
@@ -798,7 +811,14 @@ void FilterVertical16xH(const uint8_t* src, const ptrdiff_t src_stride,
     const __m256i sums_hi =
         SumVerticalTaps<filter_index, /*unpack_high=*/true>(srcs, v_tap);
     if (is_compound) {
-      // placeholder
+      const __m256i results =
+          Compound1DShift(_mm256_permute2x128_si256(sums, sums_hi, 0x20));
+      const __m256i results_hi =
+          Compound1DShift(_mm256_permute2x128_si256(sums, sums_hi, 0x31));
+
+      StoreUnaligned32(dst16, results);
+      StoreUnaligned32(dst16 + dst_stride, results_hi);
+      dst16 += dst_stride << 1;
     } else {
       const __m256i results = RightShiftWithRounding_S16(sums, kFilterBits - 1);
       const __m256i results_hi =
@@ -1518,6 +1538,127 @@ void ConvolveVertical_AVX2(const void* const reference,
   }
 }
 
+void ConvolveCompoundVertical_AVX2(
+    const void* const reference, const ptrdiff_t reference_stride,
+    const int /*horizontal_filter_index*/, const int vertical_filter_index,
+    const int /*horizontal_filter_id*/, const int vertical_filter_id,
+    const int width, const int height, void* prediction,
+    const ptrdiff_t /*pred_stride*/) {
+  const int filter_index = GetFilterIndex(vertical_filter_index, height);
+  const int vertical_taps = GetNumTapsInFilter(filter_index);
+  const ptrdiff_t src_stride = reference_stride;
+  const auto* src = static_cast<const uint8_t*>(reference) -
+                    (vertical_taps / 2 - 1) * src_stride;
+  auto* dest = static_cast<uint8_t*>(prediction);
+  const ptrdiff_t dest_stride = width;
+  assert(vertical_filter_id != 0);
+
+  const __m128i v_filter =
+      LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
+
+  // Use 256 bits for width > 8.
+  if (width > 8) {
+    __m256i taps_256[4];
+    if (filter_index < 2) {  // 6 tap.
+      SetupTaps<6>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<0, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else {
+        FilterVertical32xH<0, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      }
+    } else if (filter_index == 2) {  // 8 tap.
+      SetupTaps<8>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<2, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else {
+        FilterVertical32xH<2, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      }
+    } else if (filter_index == 3) {  // 2 tap.
+      SetupTaps<2>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<3, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else {
+        FilterVertical32xH<3, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      }
+    } else if (filter_index == 4) {  // 4 tap.
+      SetupTaps<4>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<4, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else {
+        FilterVertical32xH<4, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      }
+    } else {
+      SetupTaps<4>(&v_filter, taps_256);
+      if (width == 16) {
+        FilterVertical16xH<5, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else {
+        FilterVertical32xH<5, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      }
+    }
+  } else {  // width <= 8
+    // Use 128 bit code.  Copied from convolve_sse4.cc.
+    // TODO(slavarnway): Move sse4 code to convolve_sse4.inc.
+    __m128i taps[4];
+
+    if (filter_index < 2) {  // 6 tap.
+      SetupTaps<6>(&v_filter, taps);
+      if (width == 4) {
+        FilterVertical4xH<0, /*is_compound=*/true>(src, src_stride, dest,
+                                                   dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<0, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps);
+      }
+    } else if (filter_index == 2) {  // 8 tap.
+      SetupTaps<8>(&v_filter, taps);
+      if (width == 4) {
+        FilterVertical4xH<2, /*is_compound=*/true>(src, src_stride, dest,
+                                                   dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<2, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps);
+      }
+    } else if (filter_index == 3) {  // 2 tap.
+      SetupTaps<2>(&v_filter, taps);
+      if (width == 4) {
+        FilterVertical4xH<3, /*is_compound=*/true>(src, src_stride, dest,
+                                                   dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<3, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps);
+      }
+    } else if (filter_index == 4) {  // 4 tap.
+      SetupTaps<4>(&v_filter, taps);
+      if (width == 4) {
+        FilterVertical4xH<4, /*is_compound=*/true>(src, src_stride, dest,
+                                                   dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<4, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps);
+      }
+    } else {
+      SetupTaps<4>(&v_filter, taps);
+      if (width == 4) {
+        FilterVertical4xH<5, /*is_compound=*/true>(src, src_stride, dest,
+                                                   dest_stride, height, taps);
+      } else {
+        FilterVertical8xH<5, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps);
+      }
+    }
+  }
+}
+
 void ConvolveHorizontal_AVX2(const void* const reference,
                              const ptrdiff_t reference_stride,
                              const int horizontal_filter_index,
@@ -1574,6 +1715,7 @@ void Init8bpp() {
   dsp->convolve[0][0][1][0] = ConvolveVertical_AVX2;
 
   dsp->convolve[0][1][0][1] = ConvolveCompoundHorizontal_AVX2;
+  dsp->convolve[0][1][1][0] = ConvolveCompoundVertical_AVX2;
 }
 
 }  // namespace
