@@ -479,9 +479,13 @@ bool ObuParser::ParseSequenceHeader(bool seen_frame_header) {
       LIBGAV1_DLOG(ERROR, "Sequence header changed in the middle of a frame.");
       return false;
     }
+    sequence_header_changed_ = true;
     decoder_state_.ClearReferenceFrames();
   }
   sequence_header_ = sequence_header;
+  if (!has_sequence_header_) {
+    sequence_header_changed_ = true;
+  }
   has_sequence_header_ = true;
   // Section 6.4.1: It is a requirement of bitstream conformance that if
   // OperatingPointIdc is equal to 0, then obu_extension_flag is equal to 0 for
@@ -2665,6 +2669,7 @@ StatusCode ObuParser::ParseOneFrame(RefCountedBufferPtr* const current_frame) {
   metadata_ = {};
   tile_buffers_.clear();
   next_tile_group_start_ = 0;
+  sequence_header_changed_ = false;
 
   bool parsed_one_full_frame = false;
   bool seen_frame_header = false;
