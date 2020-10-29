@@ -2918,6 +2918,7 @@ void Wht4TransformLoopColumn_SSE4_1(TransformType tx_type,
 
 //------------------------------------------------------------------------------
 
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 template <typename Residual, typename Pixel>
 void InitAll(Dsp* const dsp) {
   // Maximum transform size for Dct is 64.
@@ -2980,6 +2981,7 @@ void InitAll(Dsp* const dsp) {
   dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kColumn] =
       Wht4TransformLoopColumn_SSE4_1;
 }
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);

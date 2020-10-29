@@ -1211,6 +1211,7 @@ void TransformLoop_C(TransformType tx_type, TransformSize tx_size,
 
 //------------------------------------------------------------------------------
 
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 template <int bitdepth, typename Residual, typename Pixel>
 void InitAll(Dsp* const dsp) {
   // Maximum transform size for Dct is 64.
@@ -1325,6 +1326,7 @@ void InitAll(Dsp* const dsp) {
                       Wht4DcOnly_C<bitdepth, Residual>, Wht4_C<Residual>,
                       /*is_row=*/false>;
 }
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
