@@ -177,18 +177,17 @@ inline void WienerHorizontalTap3(const uint8_t* src, const ptrdiff_t src_stride,
                                  int16_t** const wiener_buffer) {
   for (int y = height; y != 0; --y) {
     const uint8_t* src_ptr = src;
-    uint8x16_t s[4];
-    s[0] = vld1q_u8(src_ptr);
+    uint8x16_t s[3];
     ptrdiff_t x = width;
     do {
-      src_ptr += 16;
-      s[3] = vld1q_u8(src_ptr);
-      s[1] = vextq_u8(s[0], s[3], 1);
-      s[2] = vextq_u8(s[0], s[3], 2);
+      // Slightly faster than using vextq_u8().
+      s[0] = vld1q_u8(src_ptr);
+      s[1] = vld1q_u8(src_ptr + 1);
+      s[2] = vld1q_u8(src_ptr + 2);
       int16x8x2_t sum;
       sum.val[0] = sum.val[1] = vdupq_n_s16(0);
       WienerHorizontalSum(s, filter, sum, *wiener_buffer);
-      s[0] = s[3];
+      src_ptr += 16;
       *wiener_buffer += 16;
       x -= 16;
     } while (x != 0);
