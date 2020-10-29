@@ -190,16 +190,6 @@ void IntraPredFuncs_C<block_width, block_height, Pixel>::Horizontal(
   }
 }
 
-template <typename Pixel>
-inline Pixel Average(Pixel a, Pixel b) {
-  return static_cast<Pixel>((a + b + 1) >> 1);
-}
-
-template <typename Pixel>
-inline Pixel Average(Pixel a, Pixel b, Pixel c) {
-  return static_cast<Pixel>((a + 2 * b + c + 2) >> 2);
-}
-
 // IntraPredFuncs_C::Paeth
 template <int block_width, int block_height, typename Pixel>
 void IntraPredFuncs_C<block_width, block_height, Pixel>::Paeth(
