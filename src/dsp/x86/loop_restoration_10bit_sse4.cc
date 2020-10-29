@@ -1108,7 +1108,7 @@ inline void LookupIntermediate(const __m128i sum, const __m128i index,
 
 // Set the shuffle control mask of indices out of range [0, 15] to (1xxxxxxx)b
 // to get value 0 as the shuffle result. The most significiant bit 1 comes
-// either from the comparision instruction, or from the sign bit of the index.
+// either from the comparison instruction, or from the sign bit of the index.
 inline __m128i ShuffleIndex(const __m128i table, const __m128i index) {
   __m128i mask;
   mask = _mm_cmpgt_epi8(index, _mm_set1_epi8(15));
@@ -1132,7 +1132,7 @@ inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
   const __m128i c2 = LoadAligned16(kSgrMaLookup + 2 * 16);
   const __m128i indices = _mm_packus_epi16(index[0], index[1]);
   __m128i idx;
-  // Clip idx to 127 to apply signed comparision instructions.
+  // Clip idx to 127 to apply signed comparison instructions.
   idx = _mm_min_epu8(indices, _mm_set1_epi8(127));
   // All elements which indices are less than 48 are set to 0.
   // Get shuffle results for indices in range [0, 15].
@@ -1152,7 +1152,7 @@ inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
   // For elements which indices are larger than 47, since they seldom change
   // values with the increase of the index, we use comparison and arithmetic
   // operations to calculate their values.
-  // Add -128 to apply signed comparision instructions.
+  // Add -128 to apply signed comparison instructions.
   idx = _mm_add_epi8(indices, _mm_set1_epi8(-128));
   // Elements which indices are larger than 47 (with value 0) are set to 5.
   *ma = _mm_max_epu8(*ma, _mm_set1_epi8(5));
