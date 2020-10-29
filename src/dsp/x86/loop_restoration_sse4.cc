@@ -1869,8 +1869,9 @@ inline __m128i CalculateFilteredOutput(const __m128i src, const __m128i ma,
   return _mm_packs_epi32(dst_lo, dst_hi);  // 13 bits
 }
 
-inline __m128i CalculateFilteredOutputPass1(const __m128i src, __m128i ma[2],
-                                            __m128i b[2][2]) {
+inline __m128i CalculateFilteredOutputPass1(const __m128i src,
+                                            const __m128i ma[2],
+                                            const __m128i b[2][2]) {
   const __m128i ma_sum = _mm_add_epi16(ma[0], ma[1]);
   __m128i b_sum[2];
   b_sum[0] = _mm_add_epi32(b[0][0], b[1][0]);
@@ -1878,8 +1879,9 @@ inline __m128i CalculateFilteredOutputPass1(const __m128i src, __m128i ma[2],
   return CalculateFilteredOutput<5>(src, ma_sum, b_sum);
 }
 
-inline __m128i CalculateFilteredOutputPass2(const __m128i src, __m128i ma[3],
-                                            __m128i b[3][2]) {
+inline __m128i CalculateFilteredOutputPass2(const __m128i src,
+                                            const __m128i ma[3],
+                                            const __m128i b[3][2]) {
   const __m128i ma_sum = Sum3_16(ma);
   __m128i b_sum[2];
   Sum3_32(b, b_sum);

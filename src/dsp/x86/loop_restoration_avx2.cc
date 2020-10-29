@@ -765,17 +765,6 @@ inline __m256i VaddwHi16(const __m256i src0, const __m256i src1) {
   return _mm256_add_epi32(src0, s1);
 }
 
-// Using VgetLane16() can save a sign extension instruction.
-template <int n>
-inline int VgetLane16(__m256i src) {
-  return _mm256_extract_epi16(src, n);
-}
-
-template <int n>
-inline int VgetLane8(__m256i src) {
-  return _mm256_extract_epi8(src, n);
-}
-
 inline __m256i VmullNLo8(const __m256i src0, const int src1) {
   const __m256i s0 = _mm256_unpacklo_epi16(src0, _mm256_setzero_si256());
   return _mm256_madd_epi16(s0, _mm256_set1_epi32(src1));
@@ -1253,9 +1242,8 @@ inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
   do {
     const __m128i s0 =
         LoadUnaligned16Msan(src, kOverreadInBytesPass1_128 - width);
-    __m128i sq_128[2];
+    __m128i sq_128[2], s3, s5, sq3[2], sq5[2];
     __m256i sq[3];
-    __m128i s3, s5, sq3[2], sq5[2];
     sq_128[0] = SquareLo8(s0);
     sq_128[1] = SquareHi8(s0);
     SumHorizontalLo(s0, &s3, &s5);
@@ -1939,8 +1927,8 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess(
     __m256i b3[2][5], __m256i ma5[3], __m256i b5[5]) {
   const __m256i s0 = LoadUnaligned32Msan(src0 + 8, over_read_in_bytes + 8);
   const __m256i s1 = LoadUnaligned32Msan(src1 + 8, over_read_in_bytes + 8);
-  __m256i s3[2][4], s5[2][5], sq3[4][2], sq5[5][2], sq3t[4][2], sq5t[5][2],
-      sum_3[2][2], index_3[2][2], sum_5[2], index_5[2];
+  __m256i s3[2][4], s5[2][5], sq3[4][2], sq5[5][2], sum_3[2][2], index_3[2][2],
+      sum_5[2], index_5[2];
   sq[0][1] = SquareLo8(s0);
   sq[0][2] = SquareHi8(s0);
   sq[1][1] = SquareLo8(s1);
@@ -1974,22 +1962,22 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess(
   LoadAligned64x3U32(square_sum5, x, sq5);
   CalculateSumAndIndex5(s5[0], sq5, scales[0], &sum_5[0], &index_5[0]);
 
-  SumHorizontal(sq[0] + 1, &sq3t[2][0], &sq3t[2][1], &sq5t[3][0], &sq5t[3][1]);
-  SumHorizontal(sq[1] + 1, &sq3t[3][0], &sq3t[3][1], &sq5t[4][0], &sq5t[4][1]);
-  StoreAligned64(square_sum3[2] + x + 16, sq3t[2]);
-  StoreAligned64(square_sum5[3] + x + 16, sq5t[3]);
-  StoreAligned64(square_sum3[3] + x + 16, sq3t[3]);
-  StoreAligned64(square_sum5[4] + x + 16, sq5t[4]);
+  SumHorizontal(sq[0] + 1, &sq3[2][0], &sq3[2][1], &sq5[3][0], &sq5[3][1]);
+  SumHorizontal(sq[1] + 1, &sq3[3][0], &sq3[3][1], &sq5[4][0], &sq5[4][1]);
+  StoreAligned64(square_sum3[2] + x + 16, sq3[2]);
+  StoreAligned64(square_sum5[3] + x + 16, sq5[3]);
+  StoreAligned64(square_sum3[3] + x + 16, sq3[3]);
+  StoreAligned64(square_sum5[4] + x + 16, sq5[4]);
   LoadAligned32x2U16Msan(sum3, x + 16, sum_width, s3[1]);
-  LoadAligned64x2U32Msan(square_sum3, x + 16, sum_width, sq3t);
-  CalculateSumAndIndex3(s3[1], sq3t, scales[1], &sum_3[0][1], &index_3[0][1]);
-  CalculateSumAndIndex3(s3[1] + 1, sq3t + 1, scales[1], &sum_3[1][1],
+  LoadAligned64x2U32Msan(square_sum3, x + 16, sum_width, sq3);
+  CalculateSumAndIndex3(s3[1], sq3, scales[1], &sum_3[0][1], &index_3[0][1]);
+  CalculateSumAndIndex3(s3[1] + 1, sq3 + 1, scales[1], &sum_3[1][1],
                         &index_3[1][1]);
   CalculateIntermediate<9>(sum_3[0], index_3[0], ma3[0], b3[0] + 1);
   CalculateIntermediate<9>(sum_3[1], index_3[1], ma3[1], b3[1] + 1);
   LoadAligned32x3U16Msan(sum5, x + 16, sum_width, s5[1]);
-  LoadAligned64x3U32Msan(square_sum5, x + 16, sum_width, sq5t);
-  CalculateSumAndIndex5(s5[1], sq5t, scales[0], &sum_5[1], &index_5[1]);
+  LoadAligned64x3U32Msan(square_sum5, x + 16, sum_width, sq5);
+  CalculateSumAndIndex5(s5[1], sq5, scales[0], &sum_5[1], &index_5[1]);
   CalculateIntermediate<25>(sum_5, index_5, ma5, b5 + 1);
   b3[0][0] = _mm256_permute2x128_si256(b3[0][0], b3[0][2], 0x21);
   b3[1][0] = _mm256_permute2x128_si256(b3[1][0], b3[1][2], 0x21);
@@ -2024,8 +2012,8 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRow(
     __m256i sq[6], __m256i ma3[2], __m256i ma5[2], __m256i b3[5],
     __m256i b5[5]) {
   const __m256i s0 = LoadUnaligned32Msan(src + 8, over_read_in_bytes + 8);
-  __m256i s3[2][3], s5[2][5], sq3[4][2], sq3t[4][2], sq5[5][2], sq5t[5][2],
-      sum_3[2], index_3[2], sum_5[2], index_5[2];
+  __m256i s3[2][3], s5[2][5], sq3[4][2], sq5[5][2], sum_3[2], index_3[2],
+      sum_5[2], index_5[2];
   sq[1] = SquareLo8(s0);
   sq[2] = SquareHi8(s0);
   sq[0] = _mm256_permute2x128_si256(sq[0], sq[2], 0x21);
@@ -2042,17 +2030,17 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRow(
   sq5[4][1] = sq5[3][1];
   CalculateSumAndIndex5(s5[0], sq5, scales[0], &sum_5[0], &index_5[0]);
 
-  SumHorizontal(sq + 1, &sq3t[2][0], &sq3t[2][1], &sq5t[3][0], &sq5t[3][1]);
+  SumHorizontal(sq + 1, &sq3[2][0], &sq3[2][1], &sq5[3][0], &sq5[3][1]);
   LoadAligned32x2U16Msan(sum3, x + 16, sum_width, s3[1]);
-  LoadAligned64x2U32Msan(square_sum3, x + 16, sum_width, sq3t);
-  CalculateSumAndIndex3(s3[1], sq3t, scales[1], &sum_3[1], &index_3[1]);
+  LoadAligned64x2U32Msan(square_sum3, x + 16, sum_width, sq3);
+  CalculateSumAndIndex3(s3[1], sq3, scales[1], &sum_3[1], &index_3[1]);
   CalculateIntermediate<9>(sum_3, index_3, ma3, b3 + 1);
   LoadAligned32x3U16Msan(sum5, x + 16, sum_width, s5[1]);
   s5[1][4] = s5[1][3];
-  LoadAligned64x3U32Msan(square_sum5, x + 16, sum_width, sq5t);
-  sq5t[4][0] = sq5t[3][0];
-  sq5t[4][1] = sq5t[3][1];
-  CalculateSumAndIndex5(s5[1], sq5t, scales[0], &sum_5[1], &index_5[1]);
+  LoadAligned64x3U32Msan(square_sum5, x + 16, sum_width, sq5);
+  sq5[4][0] = sq5[3][0];
+  sq5[4][1] = sq5[3][1];
+  CalculateSumAndIndex5(s5[1], sq5, scales[0], &sum_5[1], &index_5[1]);
   CalculateIntermediate<25>(sum_5, index_5, ma5, b5 + 1);
   b3[0] = _mm256_permute2x128_si256(b3[0], b3[2], 0x21);
   b5[0] = _mm256_permute2x128_si256(b5[0], b5[2], 0x21);
@@ -2107,9 +2095,9 @@ LIBGAV1_ALWAYS_INLINE void BoxSumFilterPreProcess3(
     uint16_t* const sum3[3], uint32_t* const square_sum3[3],
     const ptrdiff_t sum_width, uint16_t* ma343, uint16_t* ma444, uint32_t* b343,
     uint32_t* b444) {
+  const __m128i s = LoadUnaligned16Msan(src, kOverreadInBytesPass2_128 - width);
   __m128i ma0, sq_128[2], b0;
   __m256i mas[3], sq[3], bs[3];
-  const __m128i s = LoadUnaligned16Msan(src, kOverreadInBytesPass2_128 - width);
   sq_128[0] = SquareLo8(s);
   BoxFilterPreProcess3Lo(s, scale, sum3, square_sum3, sq_128, &ma0, &b0);
   sq[0] = SetrM128i(sq_128[0], sq_128[1]);
@@ -2235,8 +2223,9 @@ inline __m256i CalculateFilteredOutput(const __m256i src, const __m256i ma,
   return _mm256_packs_epi32(dst_lo, dst_hi);  // 13 bits
 }
 
-inline __m256i CalculateFilteredOutputPass1(const __m256i src, __m256i ma[2],
-                                            __m256i b[2][2]) {
+inline __m256i CalculateFilteredOutputPass1(const __m256i src,
+                                            const __m256i ma[2],
+                                            const __m256i b[2][2]) {
   const __m256i ma_sum = _mm256_add_epi16(ma[0], ma[1]);
   __m256i b_sum[2];
   b_sum[0] = _mm256_add_epi32(b[0][0], b[1][0]);
@@ -2244,8 +2233,9 @@ inline __m256i CalculateFilteredOutputPass1(const __m256i src, __m256i ma[2],
   return CalculateFilteredOutput<5>(src, ma_sum, b_sum);
 }
 
-inline __m256i CalculateFilteredOutputPass2(const __m256i src, __m256i ma[3],
-                                            __m256i b[3][2]) {
+inline __m256i CalculateFilteredOutputPass2(const __m256i src,
+                                            const __m256i ma[3],
+                                            const __m256i b[3][2]) {
   const __m256i ma_sum = Sum3_16(ma);
   __m256i b_sum[2];
   Sum3_32(b, b_sum);
