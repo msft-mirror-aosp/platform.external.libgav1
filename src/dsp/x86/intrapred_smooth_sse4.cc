@@ -67,29 +67,6 @@ inline void WriteSmoothHorizontalSum4(void* const dest, const __m128i& left,
   Store4(dest, _mm_shuffle_epi8(pred, cvtepi32_epi8));
 }
 
-template <int y_mask>
-inline __m128i SmoothVerticalSum4(const __m128i& top, const __m128i& weights,
-                                  const __m128i& scaled_bottom_left) {
-  const __m128i weights_y = _mm_shuffle_epi32(weights, y_mask);
-  const __m128i weighted_top_y = _mm_mullo_epi16(top, weights_y);
-  const __m128i scaled_bottom_left_y =
-      _mm_shuffle_epi32(scaled_bottom_left, y_mask);
-  return _mm_add_epi32(scaled_bottom_left_y, weighted_top_y);
-}
-
-template <int y_mask>
-inline void WriteSmoothVerticalSum4(uint8_t* dest, const __m128i& top,
-                                    const __m128i& weights,
-                                    const __m128i& scaled_bottom_left,
-                                    const __m128i& round) {
-  __m128i pred_sum =
-      SmoothVerticalSum4<y_mask>(top, weights, scaled_bottom_left);
-  // Equivalent to RightShiftWithRounding(pred[x][y], 8).
-  pred_sum = _mm_srli_epi32(_mm_add_epi32(pred_sum, round), 8);
-  const __m128i cvtepi32_epi8 = _mm_set1_epi32(0x0C080400);
-  Store4(dest, _mm_shuffle_epi8(pred_sum, cvtepi32_epi8));
-}
-
 // For SMOOTH_H, |pixels| is the repeated left value for the row. For SMOOTH_V,
 // |pixels| is a segment of the top row or the whole top row, and |weights| is
 // repeated.
