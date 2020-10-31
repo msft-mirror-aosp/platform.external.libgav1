@@ -38,8 +38,11 @@
 #endif
 
 // The glibc wrapper for the gettid() system call was added in glibc 2.30.
-// Emulate it for older versions of glibc.
-#if defined(__GLIBC_PREREQ)
+// Emulate it for older versions of glibc, but avoid defining it in Android
+// builds. When targeting libc++ some older versions of the NDK (e.g., r16,
+// r17c) will #define __GLIBC_PREREQ(a, b) 0, so we additionally check that
+// __GLIBC__ is defined. __BIONIC__ is used on Android in this case.
+#if defined(__GLIBC__) && defined(__GLIBC_PREREQ)
 #if !__GLIBC_PREREQ(2, 30)
 
 #include <sys/syscall.h>
