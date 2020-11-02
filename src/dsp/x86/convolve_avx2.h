@@ -46,6 +46,10 @@ void ConvolveInit_AVX2();
 #define LIBGAV1_Dsp8bpp_ConvolveVertical LIBGAV1_CPU_AVX2
 #endif
 
+#ifndef LIBGAV1_Dsp8bpp_Convolve2D
+#define LIBGAV1_Dsp8bpp_Convolve2D LIBGAV1_CPU_AVX2
+#endif
+
 #ifndef LIBGAV1_Dsp8bpp_ConvolveCompoundVertical
 #define LIBGAV1_Dsp8bpp_ConvolveCompoundVertical LIBGAV1_CPU_AVX2
 #endif

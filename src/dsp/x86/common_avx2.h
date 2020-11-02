@@ -131,6 +131,12 @@ inline __m256i RightShiftWithRounding_S16(const __m256i v_val_d, int bits) {
   return _mm256_srai_epi16(v_tmp_d, bits);
 }
 
+inline __m256i RightShiftWithRounding_S32(const __m256i v_val_d, int bits) {
+  const __m256i v_bias_d = _mm256_set1_epi32((1 << bits) >> 1);
+  const __m256i v_tmp_d = _mm256_add_epi32(v_val_d, v_bias_d);
+  return _mm256_srai_epi32(v_tmp_d, bits);
+}
+
 }  // namespace dsp
 }  // namespace libgav1
 
