@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/intrapred.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -24,6 +24,8 @@
 #include <cstdint>
 
 #include "src/dsp/arm/common_neon.h"
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/utils/common.h"
 
 namespace libgav1 {
@@ -46,42 +48,42 @@ namespace {
 //
 // We take this into account when summing the values by subtracting the product
 // of the first row.
-const uint8_t kTransposedTaps[kNumFilterIntraPredictors][7][8] = {
-    {{6, 5, 3, 3, 4, 3, 3, 3},  // Original values are negative.
-     {10, 2, 1, 1, 6, 2, 2, 1},
-     {0, 10, 1, 1, 0, 6, 2, 2},
-     {0, 0, 10, 2, 0, 0, 6, 2},
-     {0, 0, 0, 10, 0, 0, 0, 6},
-     {12, 9, 7, 5, 2, 2, 2, 3},
-     {0, 0, 0, 0, 12, 9, 7, 5}},
-    {{10, 6, 4, 2, 10, 6, 4, 2},  // Original values are negative.
-     {16, 0, 0, 0, 16, 0, 0, 0},
-     {0, 16, 0, 0, 0, 16, 0, 0},
-     {0, 0, 16, 0, 0, 0, 16, 0},
-     {0, 0, 0, 16, 0, 0, 0, 16},
-     {10, 6, 4, 2, 0, 0, 0, 0},
-     {0, 0, 0, 0, 10, 6, 4, 2}},
-    {{8, 8, 8, 8, 4, 4, 4, 4},  // Original values are negative.
-     {8, 0, 0, 0, 4, 0, 0, 0},
-     {0, 8, 0, 0, 0, 4, 0, 0},
-     {0, 0, 8, 0, 0, 0, 4, 0},
-     {0, 0, 0, 8, 0, 0, 0, 4},
-     {16, 16, 16, 16, 0, 0, 0, 0},
-     {0, 0, 0, 0, 16, 16, 16, 16}},
-    {{2, 1, 1, 0, 1, 1, 1, 1},  // Original values are negative.
-     {8, 3, 2, 1, 4, 3, 2, 2},
-     {0, 8, 3, 2, 0, 4, 3, 2},
-     {0, 0, 8, 3, 0, 0, 4, 3},
-     {0, 0, 0, 8, 0, 0, 0, 4},
-     {10, 6, 4, 2, 3, 4, 4, 3},
-     {0, 0, 0, 0, 10, 6, 4, 3}},
-    {{12, 10, 9, 8, 10, 9, 8, 7},  // Original values are negative.
-     {14, 0, 0, 0, 12, 1, 0, 0},
-     {0, 14, 0, 0, 0, 12, 0, 0},
-     {0, 0, 14, 0, 0, 0, 12, 1},
-     {0, 0, 0, 14, 0, 0, 0, 12},
-     {14, 12, 11, 10, 0, 0, 1, 1},
-     {0, 0, 0, 0, 14, 12, 11, 9}}};
+alignas(8) constexpr uint8_t kTransposedTaps[kNumFilterIntraPredictors][7][8] =
+    {{{6, 5, 3, 3, 4, 3, 3, 3},  // Original values are negative.
+      {10, 2, 1, 1, 6, 2, 2, 1},
+      {0, 10, 1, 1, 0, 6, 2, 2},
+      {0, 0, 10, 2, 0, 0, 6, 2},
+      {0, 0, 0, 10, 0, 0, 0, 6},
+      {12, 9, 7, 5, 2, 2, 2, 3},
+      {0, 0, 0, 0, 12, 9, 7, 5}},
+     {{10, 6, 4, 2, 10, 6, 4, 2},  // Original values are negative.
+      {16, 0, 0, 0, 16, 0, 0, 0},
+      {0, 16, 0, 0, 0, 16, 0, 0},
+      {0, 0, 16, 0, 0, 0, 16, 0},
+      {0, 0, 0, 16, 0, 0, 0, 16},
+      {10, 6, 4, 2, 0, 0, 0, 0},
+      {0, 0, 0, 0, 10, 6, 4, 2}},
+     {{8, 8, 8, 8, 4, 4, 4, 4},  // Original values are negative.
+      {8, 0, 0, 0, 4, 0, 0, 0},
+      {0, 8, 0, 0, 0, 4, 0, 0},
+      {0, 0, 8, 0, 0, 0, 4, 0},
+      {0, 0, 0, 8, 0, 0, 0, 4},
+      {16, 16, 16, 16, 0, 0, 0, 0},
+      {0, 0, 0, 0, 16, 16, 16, 16}},
+     {{2, 1, 1, 0, 1, 1, 1, 1},  // Original values are negative.
+      {8, 3, 2, 1, 4, 3, 2, 2},
+      {0, 8, 3, 2, 0, 4, 3, 2},
+      {0, 0, 8, 3, 0, 0, 4, 3},
+      {0, 0, 0, 8, 0, 0, 0, 4},
+      {10, 6, 4, 2, 3, 4, 4, 3},
+      {0, 0, 0, 0, 10, 6, 4, 3}},
+     {{12, 10, 9, 8, 10, 9, 8, 7},  // Original values are negative.
+      {14, 0, 0, 0, 12, 1, 0, 0},
+      {0, 14, 0, 0, 0, 12, 0, 0},
+      {0, 0, 14, 0, 0, 0, 12, 1},
+      {0, 0, 0, 14, 0, 0, 0, 12},
+      {14, 12, 11, 10, 0, 0, 1, 1},
+      {0, 0, 0, 0, 14, 12, 11, 9}}};
 
 void FilterIntraPredictor_NEON(void* const dest, ptrdiff_t stride,
                                const void* const top_row,
@@ -150,7 +152,7 @@ void FilterIntraPredictor_NEON(void* const dest, ptrdiff_t stride,
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
   dsp->filter_intra_predictor = FilterIntraPredictor_NEON;
 }
@@ -163,7 +165,7 @@ void IntraPredFilterIntraInit_NEON() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_NEON
+#else  // !LIBGAV1_ENABLE_NEON
 namespace libgav1 {
 namespace dsp {
 
