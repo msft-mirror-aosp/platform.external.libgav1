@@ -1184,9 +1184,10 @@ void TransformLoop_C(TransformType tx_type, TransformSize tx_size,
   Residual tx_buffer[64];
   for (int j = 0; j < tx_width; ++j) {
     const int flipped_j = flip_columns ? tx_width - j - 1 : j;
-    for (int i = 0; i < tx_height; ++i) {
+    int i = 0;
+    do {
       tx_buffer[i] = residual[i][flipped_j];
-    }
+    } while (++i != tx_height);
     if (adjusted_tx_height == 1) {
       dconly_transform1d(tx_buffer, column_clamp_range, false, 0, false);
     } else {
