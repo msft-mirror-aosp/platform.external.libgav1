@@ -2230,6 +2230,105 @@ void ConvolveCompoundHorizontal_AVX2(
       filter_index);
 }
 
+void ConvolveCompound2D_AVX2(const void* const reference,
+                             const ptrdiff_t reference_stride,
+                             const int horizontal_filter_index,
+                             const int vertical_filter_index,
+                             const int horizontal_filter_id,
+                             const int vertical_filter_id, const int width,
+                             const int height, void* prediction,
+                             const ptrdiff_t pred_stride) {
+  const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
+  const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
+  const int vertical_taps = GetNumTapsInFilter(vert_filter_index);
+
+  // The output of the horizontal filter is guaranteed to fit in 16 bits.
+  alignas(32) uint16_t
+      intermediate_result[kMaxSuperBlockSizeInPixels *
+                          (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1)];
+  const int intermediate_height = height + vertical_taps - 1;
+
+  const ptrdiff_t src_stride = reference_stride;
+  const auto* src = static_cast<const uint8_t*>(reference) -
+                    (vertical_taps / 2 - 1) * src_stride - kHorizontalOffset;
+  DoHorizontalPass</*is_2d=*/true, /*is_compound=*/true>(
+      src, src_stride, intermediate_result, width, width, intermediate_height,
+      horizontal_filter_id, horiz_filter_index);
+
+  // Vertical filter.
+  auto* dest = static_cast<uint8_t*>(prediction);
+  const ptrdiff_t dest_stride = pred_stride;
+  assert(vertical_filter_id != 0);
+
+  const __m128i v_filter =
+      LoadLo8(kHalfSubPixelFilters[vert_filter_index][vertical_filter_id]);
+
+  // Use 256 bits for width > 8.
+  if (width > 8) {
+    __m256i taps_256[4];
+    const __m128i v_filter_ext = _mm_cvtepi8_epi16(v_filter);
+
+    if (vertical_taps == 8) {
+      SetupTaps<8, /*is_2d_vertical=*/true>(&v_filter_ext, taps_256);
+      Filter2DVertical16xH<8, /*is_compound=*/true>(
+          intermediate_result, dest, dest_stride, width, height, taps_256);
+    } else if (vertical_taps == 6) {
+      SetupTaps<6, /*is_2d_vertical=*/true>(&v_filter_ext, taps_256);
+      Filter2DVertical16xH<6, /*is_compound=*/true>(
+          intermediate_result, dest, dest_stride, width, height, taps_256);
+    } else if (vertical_taps == 4) {
+      SetupTaps<4, /*is_2d_vertical=*/true>(&v_filter_ext, taps_256);
+      Filter2DVertical16xH<4, /*is_compound=*/true>(
+          intermediate_result, dest, dest_stride, width, height, taps_256);
+    } else {  // |vertical_taps| == 2
+      SetupTaps<2, /*is_2d_vertical=*/true>(&v_filter_ext, taps_256);
+      Filter2DVertical16xH<2, /*is_compound=*/true>(
+          intermediate_result, dest, dest_stride, width, height, taps_256);
+    }
+  } else {  // width <= 8
+    __m128i taps[4];
+    // Use 128 bit code.  Copied from convolve_sse4.cc.
+    // TODO(slavarnway): Move sse4 code to convolve_sse4.inc.
+    if (vertical_taps == 8) {
+      SetupTaps<8, /*is_2d_vertical=*/true>(&v_filter, taps);
+      if (width == 4) {
+        Filter2DVertical4xH<8, /*is_compound=*/true>(intermediate_result, dest,
+                                                     dest_stride, height, taps);
+      } else {
+        Filter2DVertical<8, /*is_compound=*/true>(
+            intermediate_result, dest, dest_stride, width, height, taps);
+      }
+    } else if (vertical_taps == 6) {
+      SetupTaps<6, /*is_2d_vertical=*/true>(&v_filter, taps);
+      if (width == 4) {
+        Filter2DVertical4xH<6, /*is_compound=*/true>(intermediate_result, dest,
+                                                     dest_stride, height, taps);
+      } else {
+        Filter2DVertical<6, /*is_compound=*/true>(
+            intermediate_result, dest, dest_stride, width, height, taps);
+      }
+    } else if (vertical_taps == 4) {
+      SetupTaps<4, /*is_2d_vertical=*/true>(&v_filter, taps);
+      if (width == 4) {
+        Filter2DVertical4xH<4, /*is_compound=*/true>(intermediate_result, dest,
+                                                     dest_stride, height, taps);
+      } else {
+        Filter2DVertical<4, /*is_compound=*/true>(
+            intermediate_result, dest, dest_stride, width, height, taps);
+      }
+    } else {  // |vertical_taps| == 2
+      SetupTaps<2, /*is_2d_vertical=*/true>(&v_filter, taps);
+      if (width == 4) {
+        Filter2DVertical4xH<2, /*is_compound=*/true>(intermediate_result, dest,
+                                                     dest_stride, height, taps);
+      } else {
+        Filter2DVertical<2, /*is_compound=*/true>(
+            intermediate_result, dest, dest_stride, width, height, taps);
+      }
+    }
+  }
+}
+
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
@@ -2239,6 +2338,7 @@ void Init8bpp() {
 
   dsp->convolve[0][1][0][1] = ConvolveCompoundHorizontal_AVX2;
   dsp->convolve[0][1][1][0] = ConvolveCompoundVertical_AVX2;
+  dsp->convolve[0][1][1][1] = ConvolveCompound2D_AVX2;
 }
 
 }  // namespace
