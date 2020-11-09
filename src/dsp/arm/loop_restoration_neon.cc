@@ -990,6 +990,14 @@ inline uint16x4_t CalculateMa(const uint16x4_t sum, const uint32x4_t sum_sq,
   return vmovn_u32(shifted);
 }
 
+inline uint8x8_t AdjustValue(const uint8x8_t value, const uint8x8_t index,
+                             const int threshold) {
+  const uint8x8_t thresholds = vdup_n_u8(threshold);
+  const uint8x8_t offset = vcgt_u8(index, thresholds);
+  // Adding 255 is equivalent to subtracting 1 for 8-bit data.
+  return vadd_u8(value, offset);
+}
+
 template <int n, int offset>
 inline void CalculateIntermediate(const uint16x8_t sum,
                                   const uint32x4x2_t sum_sq,
@@ -1001,21 +1009,39 @@ inline void CalculateIntermediate(const uint16x8_t sum,
   const uint16x4_t z1 =
       CalculateMa<n>(vget_high_u16(sum), sum_sq.val[1], scale);
   const uint16x8_t z01 = vcombine_u16(z0, z1);
-  // Using vqmovn_u16() needs an extra sign extension instruction.
-  const uint16x8_t z = vminq_u16(z01, vdupq_n_u16(255));
-  // Using vgetq_lane_s16() can save the sign extension instruction.
-  const uint8_t lookup[8] = {
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 0)],
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 1)],
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 2)],
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 3)],
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 4)],
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 5)],
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 6)],
-      kSgrMaLookup[vgetq_lane_s16(vreinterpretq_s16_u16(z), 7)]};
-  *ma = vreinterpretq_u8_u64(
-      vld1q_lane_u64(reinterpret_cast<const uint64_t*>(lookup),
-                     vreinterpretq_u64_u8(*ma), (offset == 0) ? 0 : 1));
+  const uint8x8_t idx = vqmovn_u16(z01);
+  // Use table lookup to read elements whose indices are less than 48.
+  // Using one uint8x8x4_t vector and one uint8x8x2_t vector is faster than
+  // using two uint8x8x3_t vectors.
+  uint8x8x4_t table0;
+  uint8x8x2_t table1;
+  table0.val[0] = vld1_u8(kSgrMaLookup + 0 * 8);
+  table0.val[1] = vld1_u8(kSgrMaLookup + 1 * 8);
+  table0.val[2] = vld1_u8(kSgrMaLookup + 2 * 8);
+  table0.val[3] = vld1_u8(kSgrMaLookup + 3 * 8);
+  table1.val[0] = vld1_u8(kSgrMaLookup + 4 * 8);
+  table1.val[1] = vld1_u8(kSgrMaLookup + 5 * 8);
+  // All elements whose indices are out of range [0, 47] are set to 0.
+  uint8x8_t val = vtbl4_u8(table0, idx);  // Range [0, 31].
+  // Subtract 8 to shuffle the next index range.
+  const uint8x8_t index = vsub_u8(idx, vdup_n_u8(32));
+  const uint8x8_t res = vtbl2_u8(table1, index);  // Range [32, 47].
+  // Use OR instruction to combine shuffle results together.
+  val = vorr_u8(val, res);
+
+  // For elements whose indices are larger than 47, since they seldom change
+  // values with the increase of the index, we use comparison and arithmetic
+  // operations to calculate their values.
+  // Elements whose indices are larger than 47 (with value 0) are set to 5.
+  val = vmax_u8(val, vdup_n_u8(5));
+  val = AdjustValue(val, idx, 55);   // 55 is the last index which value is 5.
+  val = AdjustValue(val, idx, 72);   // 72 is the last index which value is 4.
+  val = AdjustValue(val, idx, 101);  // 101 is the last index which value is 3.
+  val = AdjustValue(val, idx, 169);  // 169 is the last index which value is 2.
+  val = AdjustValue(val, idx, 254);  // 254 is the last index which value is 1.
+  *ma = (offset == 0) ? vcombine_u8(val, vget_high_u8(*ma))
+                      : vcombine_u8(vget_low_u8(*ma), val);
+
   // b = ma * b * one_over_n
   // |ma| = [0, 255]
   // |sum| is a box sum with radius 1 or 2.
