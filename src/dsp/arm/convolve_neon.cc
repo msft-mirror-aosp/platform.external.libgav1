@@ -223,9 +223,8 @@ uint16x8_t HorizontalTaps8To16_2x2(const uint8_t* src,
       vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
 }
 
-template <int num_taps, int step, int filter_index,
-          bool negative_outside_taps = true, bool is_2d = false,
-          bool is_compound = false>
+template <int num_taps, int filter_index, bool negative_outside_taps = true,
+          bool is_2d = false, bool is_compound = false>
 void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
                       void* const dest, const ptrdiff_t pred_stride,
                       const int width, const int height,
@@ -250,7 +249,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
                                                                         v_tap);
           vst1_u8(&dest8[x], result);
         }
-        x += step;
+        x += 8;
       } while (x < width);
       src += src_stride;
       dest8 += pred_stride;
@@ -672,28 +671,28 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
   }
 
   if (filter_index == 2) {  // 8 tap.
-    FilterHorizontal<8, 8, 2, true, is_2d, is_compound>(
+    FilterHorizontal<8, 2, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else if (filter_index == 1) {  // 6 tap.
     // Check if outside taps are positive.
     if ((filter_id == 1) | (filter_id == 15)) {
-      FilterHorizontal<6, 8, 1, false, is_2d, is_compound>(
+      FilterHorizontal<6, 1, false, is_2d, is_compound>(
           src, src_stride, dst, dst_stride, width, height, v_tap);
     } else {
-      FilterHorizontal<6, 8, 1, true, is_2d, is_compound>(
+      FilterHorizontal<6, 1, true, is_2d, is_compound>(
           src, src_stride, dst, dst_stride, width, height, v_tap);
     }
   } else if (filter_index == 0) {  // 6 tap.
-    FilterHorizontal<6, 8, 0, true, is_2d, is_compound>(
+    FilterHorizontal<6, 0, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else if (filter_index == 4) {  // 4 tap.
-    FilterHorizontal<4, 8, 4, true, is_2d, is_compound>(
+    FilterHorizontal<4, 4, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else if (filter_index == 5) {  // 4 tap.
-    FilterHorizontal<4, 8, 5, true, is_2d, is_compound>(
+    FilterHorizontal<4, 5, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else {  // 2 tap.
-    FilterHorizontal<2, 8, 3, true, is_2d, is_compound>(
+    FilterHorizontal<2, 3, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   }
 }
