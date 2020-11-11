@@ -1265,7 +1265,7 @@ inline __m128i AdjustValue(const __m128i value, const __m128i index,
 inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
                                   __m128i* const ma, __m128i* const b0,
                                   __m128i* const b1) {
-  // Use table lookup to read elements which indices are less than 48.
+  // Use table lookup to read elements whose indices are less than 48.
   const __m128i c0 = LoadAligned16(kSgrMaLookup + 0 * 16);
   const __m128i c1 = LoadAligned16(kSgrMaLookup + 1 * 16);
   const __m128i c2 = LoadAligned16(kSgrMaLookup + 2 * 16);
@@ -1273,7 +1273,7 @@ inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
   __m128i idx;
   // Clip idx to 127 to apply signed comparison instructions.
   idx = _mm_min_epu8(indices, _mm_set1_epi8(127));
-  // All elements which indices are less than 48 are set to 0.
+  // All elements whose indices are less than 48 are set to 0.
   // Get shuffle results for indices in range [0, 15].
   *ma = ShuffleIndex(c0, idx);
   // Get shuffle results for indices in range [16, 31].
@@ -1288,12 +1288,12 @@ inline void CalculateIntermediate(const __m128i sum[2], const __m128i index[2],
   const __m128i res2 = ShuffleIndex(c2, idx);
   *ma = _mm_or_si128(*ma, res2);
 
-  // For elements which indices are larger than 47, since they seldom change
+  // For elements whose indices are larger than 47, since they seldom change
   // values with the increase of the index, we use comparison and arithmetic
   // operations to calculate their values.
   // Add -128 to apply signed comparison instructions.
   idx = _mm_add_epi8(indices, _mm_set1_epi8(-128));
-  // Elements which indices are larger than 47 (with value 0) are set to 5.
+  // Elements whose indices are larger than 47 (with value 0) are set to 5.
   *ma = _mm_max_epu8(*ma, _mm_set1_epi8(5));
   *ma = AdjustValue(*ma, idx, 55);   // 55 is the last index which value is 5.
   *ma = AdjustValue(*ma, idx, 72);   // 72 is the last index which value is 4.
