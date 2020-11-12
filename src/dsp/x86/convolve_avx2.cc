@@ -1375,13 +1375,109 @@ template <int filter_index, bool is_compound = false>
 void FilterVertical8xH(const uint8_t* src, const ptrdiff_t src_stride,
                        void* const dst, const ptrdiff_t dst_stride,
                        const int /*width*/, const int height,
+                       const __m256i* const v_tap) {
+  const int num_taps = GetNumTapsInFilter(filter_index);
+  const int next_row = num_taps;
+  auto* dst8 = static_cast<uint8_t*>(dst);
+  auto* dst16 = static_cast<uint16_t*>(dst);
+
+  const uint8_t* src_x = src;
+  __m256i srcs[8 + 1];
+  // The upper 128 bits hold the filter data for the next row.
+  srcs[0] = _mm256_castsi128_si256(LoadLo8(src_x));
+  src_x += src_stride;
+  if (num_taps >= 4) {
+    srcs[1] = _mm256_castsi128_si256(LoadLo8(src_x));
+    src_x += src_stride;
+    srcs[0] =
+        _mm256_inserti128_si256(srcs[0], _mm256_castsi256_si128(srcs[1]), 1);
+    srcs[2] = _mm256_castsi128_si256(LoadLo8(src_x));
+    src_x += src_stride;
+    srcs[1] =
+        _mm256_inserti128_si256(srcs[1], _mm256_castsi256_si128(srcs[2]), 1);
+    if (num_taps >= 6) {
+      srcs[3] = _mm256_castsi128_si256(LoadLo8(src_x));
+      src_x += src_stride;
+      srcs[2] =
+          _mm256_inserti128_si256(srcs[2], _mm256_castsi256_si128(srcs[3]), 1);
+      srcs[4] = _mm256_castsi128_si256(LoadLo8(src_x));
+      src_x += src_stride;
+      srcs[3] =
+          _mm256_inserti128_si256(srcs[3], _mm256_castsi256_si128(srcs[4]), 1);
+      if (num_taps == 8) {
+        srcs[5] = _mm256_castsi128_si256(LoadLo8(src_x));
+        src_x += src_stride;
+        srcs[4] = _mm256_inserti128_si256(srcs[4],
+                                          _mm256_castsi256_si128(srcs[5]), 1);
+        srcs[6] = _mm256_castsi128_si256(LoadLo8(src_x));
+        src_x += src_stride;
+        srcs[5] = _mm256_inserti128_si256(srcs[5],
+                                          _mm256_castsi256_si128(srcs[6]), 1);
+      }
+    }
+  }
+
+  int y = height;
+  do {
+    srcs[next_row - 1] = _mm256_castsi128_si256(LoadLo8(src_x));
+    src_x += src_stride;
+
+    srcs[next_row - 2] = _mm256_inserti128_si256(
+        srcs[next_row - 2], _mm256_castsi256_si128(srcs[next_row - 1]), 1);
+
+    srcs[next_row] = _mm256_castsi128_si256(LoadLo8(src_x));
+    src_x += src_stride;
+
+    srcs[next_row - 1] = _mm256_inserti128_si256(
+        srcs[next_row - 1], _mm256_castsi256_si128(srcs[next_row]), 1);
+
+    const __m256i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+    if (is_compound) {
+      const __m256i results = Compound1DShift(sums);
+      const __m128i this_dst = _mm256_castsi256_si128(results);
+      const auto next_dst = _mm256_extracti128_si256(results, 1);
+
+      StoreUnaligned16(dst16, this_dst);
+      StoreUnaligned16(dst16 + dst_stride, next_dst);
+      dst16 += dst_stride << 1;
+    } else {
+      const __m256i results = RightShiftWithRounding_S16(sums, kFilterBits - 1);
+      const __m256i packed_results = _mm256_packus_epi16(results, results);
+      const __m128i this_dst = _mm256_castsi256_si128(packed_results);
+      const auto next_dst = _mm256_extracti128_si256(packed_results, 1);
+
+      StoreLo8(dst8, this_dst);
+      StoreLo8(dst8 + dst_stride, next_dst);
+      dst8 += dst_stride << 1;
+    }
+
+    srcs[0] = srcs[2];
+    if (num_taps >= 4) {
+      srcs[1] = srcs[3];
+      srcs[2] = srcs[4];
+      if (num_taps >= 6) {
+        srcs[3] = srcs[5];
+        srcs[4] = srcs[6];
+        if (num_taps == 8) {
+          srcs[5] = srcs[7];
+          srcs[6] = srcs[8];
+        }
+      }
+    }
+    y -= 2;
+  } while (y != 0);
+}
+
+template <int filter_index, bool is_compound = false>
+void FilterVertical8xH(const uint8_t* src, const ptrdiff_t src_stride,
+                       void* const dst, const ptrdiff_t dst_stride,
+                       const int /*width*/, const int height,
                        const __m128i* const v_tap) {
   const int num_taps = GetNumTapsInFilter(filter_index);
   const int next_row = num_taps - 1;
   auto* dst8 = static_cast<uint8_t*>(dst);
   auto* dst16 = static_cast<uint16_t*>(dst);
 
-  // TODO(slavarnway): Write 256 bit version, processing two rows per iteration.
   const uint8_t* src_x = src;
   __m128i srcs[8];
   srcs[0] = LoadLo8(src_x);
@@ -1952,12 +2048,15 @@ void ConvolveVertical_AVX2(const void* const reference,
   const __m128i v_filter =
       LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
 
-  // Use 256 bits for width > 8.
-  if (width > 8) {
+  // Use 256 bits for width > 4.
+  if (width > 4) {
     __m256i taps_256[4];
     if (filter_index < 2) {  // 6 tap.
       SetupTaps<6>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<0>(src, src_stride, dest, dest_stride, width, height,
+                             taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<0>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       } else {
@@ -1966,7 +2065,10 @@ void ConvolveVertical_AVX2(const void* const reference,
       }
     } else if (filter_index == 2) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<2>(src, src_stride, dest, dest_stride, width, height,
+                             taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<2>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       } else {
@@ -1975,7 +2077,10 @@ void ConvolveVertical_AVX2(const void* const reference,
       }
     } else if (filter_index == 3) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<3>(src, src_stride, dest, dest_stride, width, height,
+                             taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<3>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       } else {
@@ -1984,7 +2089,10 @@ void ConvolveVertical_AVX2(const void* const reference,
       }
     } else if (filter_index == 4) {  // 4 tap.
       SetupTaps<4>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<4>(src, src_stride, dest, dest_stride, width, height,
+                             taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<4>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       } else {
@@ -1993,7 +2101,10 @@ void ConvolveVertical_AVX2(const void* const reference,
       }
     } else {
       SetupTaps<4>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<5>(src, src_stride, dest, dest_stride, width, height,
+                             taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<5>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       } else {
@@ -2010,51 +2121,36 @@ void ConvolveVertical_AVX2(const void* const reference,
       SetupTaps<6>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<0>(src, src_stride, dest, dest_stride, height, taps);
-      } else if (width == 4) {
-        FilterVertical4xH<0>(src, src_stride, dest, dest_stride, height, taps);
       } else {
-        FilterVertical8xH<0>(src, src_stride, dest, dest_stride, width, height,
-                             taps);
+        FilterVertical4xH<0>(src, src_stride, dest, dest_stride, height, taps);
       }
     } else if (filter_index == 2) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<2>(src, src_stride, dest, dest_stride, height, taps);
-      } else if (width == 4) {
-        FilterVertical4xH<2>(src, src_stride, dest, dest_stride, height, taps);
       } else {
-        FilterVertical8xH<2>(src, src_stride, dest, dest_stride, width, height,
-                             taps);
+        FilterVertical4xH<2>(src, src_stride, dest, dest_stride, height, taps);
       }
     } else if (filter_index == 3) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<3>(src, src_stride, dest, dest_stride, height, taps);
-      } else if (width == 4) {
-        FilterVertical4xH<3>(src, src_stride, dest, dest_stride, height, taps);
       } else {
-        FilterVertical8xH<3>(src, src_stride, dest, dest_stride, width, height,
-                             taps);
+        FilterVertical4xH<3>(src, src_stride, dest, dest_stride, height, taps);
       }
     } else if (filter_index == 4) {  // 4 tap.
       SetupTaps<4>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<4>(src, src_stride, dest, dest_stride, height, taps);
-      } else if (width == 4) {
-        FilterVertical4xH<4>(src, src_stride, dest, dest_stride, height, taps);
       } else {
-        FilterVertical8xH<4>(src, src_stride, dest, dest_stride, width, height,
-                             taps);
+        FilterVertical4xH<4>(src, src_stride, dest, dest_stride, height, taps);
       }
     } else {
       SetupTaps<4>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<5>(src, src_stride, dest, dest_stride, height, taps);
-      } else if (width == 4) {
-        FilterVertical4xH<5>(src, src_stride, dest, dest_stride, height, taps);
       } else {
-        FilterVertical8xH<5>(src, src_stride, dest, dest_stride, width, height,
-                             taps);
+        FilterVertical4xH<5>(src, src_stride, dest, dest_stride, height, taps);
       }
     }
   }
@@ -2078,12 +2174,15 @@ void ConvolveCompoundVertical_AVX2(
   const __m128i v_filter =
       LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
 
-  // Use 256 bits for width > 8.
-  if (width > 8) {
+  // Use 256 bits for width > 4.
+  if (width > 4) {
     __m256i taps_256[4];
     if (filter_index < 2) {  // 6 tap.
       SetupTaps<6>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<0, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<0, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       } else {
@@ -2092,7 +2191,10 @@ void ConvolveCompoundVertical_AVX2(
       }
     } else if (filter_index == 2) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<2, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<2, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       } else {
@@ -2101,7 +2203,10 @@ void ConvolveCompoundVertical_AVX2(
       }
     } else if (filter_index == 3) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<3, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<3, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       } else {
@@ -2110,7 +2215,10 @@ void ConvolveCompoundVertical_AVX2(
       }
     } else if (filter_index == 4) {  // 4 tap.
       SetupTaps<4>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<4, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<4, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       } else {
@@ -2119,7 +2227,10 @@ void ConvolveCompoundVertical_AVX2(
       }
     } else {
       SetupTaps<4>(&v_filter, taps_256);
-      if (width == 16) {
+      if (width == 8) {
+        FilterVertical8xH<5, /*is_compound=*/true>(
+            src, src_stride, dest, dest_stride, width, height, taps_256);
+      } else if (width == 16) {
         FilterVertical16xH<5, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       } else {
@@ -2127,56 +2238,31 @@ void ConvolveCompoundVertical_AVX2(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       }
     }
-  } else {  // width <= 8
+  } else {  // width <= 4
     // Use 128 bit code.  Copied from convolve_sse4.cc.
     // TODO(slavarnway): Move sse4 code to convolve_sse4.inc.
     __m128i taps[4];
 
     if (filter_index < 2) {  // 6 tap.
       SetupTaps<6>(&v_filter, taps);
-      if (width == 4) {
-        FilterVertical4xH<0, /*is_compound=*/true>(src, src_stride, dest,
-                                                   dest_stride, height, taps);
-      } else {
-        FilterVertical8xH<0, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps);
-      }
+      FilterVertical4xH<0, /*is_compound=*/true>(src, src_stride, dest,
+                                                 dest_stride, height, taps);
     } else if (filter_index == 2) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps);
-      if (width == 4) {
-        FilterVertical4xH<2, /*is_compound=*/true>(src, src_stride, dest,
-                                                   dest_stride, height, taps);
-      } else {
-        FilterVertical8xH<2, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps);
-      }
+      FilterVertical4xH<2, /*is_compound=*/true>(src, src_stride, dest,
+                                                 dest_stride, height, taps);
     } else if (filter_index == 3) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps);
-      if (width == 4) {
-        FilterVertical4xH<3, /*is_compound=*/true>(src, src_stride, dest,
-                                                   dest_stride, height, taps);
-      } else {
-        FilterVertical8xH<3, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps);
-      }
+      FilterVertical4xH<3, /*is_compound=*/true>(src, src_stride, dest,
+                                                 dest_stride, height, taps);
     } else if (filter_index == 4) {  // 4 tap.
       SetupTaps<4>(&v_filter, taps);
-      if (width == 4) {
-        FilterVertical4xH<4, /*is_compound=*/true>(src, src_stride, dest,
-                                                   dest_stride, height, taps);
-      } else {
-        FilterVertical8xH<4, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps);
-      }
+      FilterVertical4xH<4, /*is_compound=*/true>(src, src_stride, dest,
+                                                 dest_stride, height, taps);
     } else {
       SetupTaps<4>(&v_filter, taps);
-      if (width == 4) {
-        FilterVertical4xH<5, /*is_compound=*/true>(src, src_stride, dest,
-                                                   dest_stride, height, taps);
-      } else {
-        FilterVertical8xH<5, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps);
-      }
+      FilterVertical4xH<5, /*is_compound=*/true>(src, src_stride, dest,
+                                                 dest_stride, height, taps);
     }
   }
 }
