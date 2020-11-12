@@ -125,17 +125,17 @@ int16x8_t SumHorizontalTaps(const uint8_t* const src,
     v_src[5] = vget_low_u8(vextq_u8(src_long, src_long, 5));
     v_src[6] = vget_low_u8(vextq_u8(src_long, src_long, 6));
     v_src[7] = vget_low_u8(vextq_u8(src_long, src_long, 7));
-    sum = SumOnePassTaps<filter_index, negative_outside_taps>(v_src, v_tap);
+    sum = SumOnePassTaps<filter_index, false>(v_src, v_tap);
   } else if (filter_index == 3) {
     v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 3));
     v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 4));
-    sum = SumOnePassTaps<filter_index, negative_outside_taps>(v_src, v_tap + 3);
+    sum = SumOnePassTaps<filter_index, false>(v_src, v_tap + 3);
   } else if (filter_index > 3) {
     v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 2));
     v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 3));
     v_src[2] = vget_low_u8(vextq_u8(src_long, src_long, 4));
     v_src[3] = vget_low_u8(vextq_u8(src_long, src_long, 5));
-    sum = SumOnePassTaps<filter_index, negative_outside_taps>(v_src, v_tap + 2);
+    sum = SumOnePassTaps<filter_index, false>(v_src, v_tap + 2);
   }
   return sum;
 }
@@ -223,7 +223,7 @@ uint16x8_t HorizontalTaps8To16_2x2(const uint8_t* src,
       vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
 }
 
-template <int num_taps, int filter_index, bool negative_outside_taps = true,
+template <int filter_index, bool negative_outside_taps = true,
           bool is_2d = false, bool is_compound = false>
 void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
                       void* const dest, const ptrdiff_t pred_stride,
@@ -232,8 +232,8 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
   auto* dest8 = static_cast<uint8_t*>(dest);
   auto* dest16 = static_cast<uint16_t*>(dest);
 
-  // 4 tap filters are never used when width > 4.
-  if (num_taps != 4 && width > 4) {
+  assert(width <= 4 || filter_index <= 3);
+  if (filter_index <= 3 && width > 4) {
     int y = height;
     do {
       int x = 0;
@@ -258,23 +258,21 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
     return;
   }
 
-  // Horizontal passes only needs to account for |num_taps| 2 and 4 when
+  // Horizontal passes only needs to account for number of taps 2 and 4 when
   // |width| <= 4.
   assert(width <= 4);
-  assert(num_taps <= 4);
-  if (num_taps <= 4) {
+  assert(filter_index >= 3 && filter_index <= 5);
+  if (filter_index >= 3 && filter_index <= 5) {
     if (width == 4) {
       int y = height;
       do {
         if (is_2d || is_compound) {
           const uint16x8_t v_sum =
-              HorizontalTaps8To16<filter_index, negative_outside_taps>(src,
-                                                                       v_tap);
+              HorizontalTaps8To16<filter_index, false>(src, v_tap);
           vst1_u16(dest16, vget_low_u16(v_sum));
         } else {
           const uint8x8_t result =
-              SimpleHorizontalTaps<filter_index, negative_outside_taps>(src,
-                                                                        v_tap);
+              SimpleHorizontalTaps<filter_index, false>(src, v_tap);
           StoreLo4(&dest8[0], result);
         }
         src += src_stride;
@@ -317,7 +315,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
         assert(height % 2 == 1);
         uint16x8_t sum;
         const uint8x8_t input = vld1_u8(src);
-        if (filter_index == 3) {  // |num_taps| == 2
+        if (filter_index == 3) {
           sum = vmull_u8(RightShift<3 * 8>(input), v_tap[3]);
           sum = vmlal_u8(sum, RightShift<4 * 8>(input), v_tap[4]);
         } else if (filter_index == 4) {
@@ -673,28 +671,28 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
   }
 
   if (filter_index == 2) {  // 8 tap.
-    FilterHorizontal<8, 2, true, is_2d, is_compound>(
+    FilterHorizontal<2, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else if (filter_index == 1) {  // 6 tap.
     // Check if outside taps are positive.
     if ((filter_id == 1) | (filter_id == 15)) {
-      FilterHorizontal<6, 1, false, is_2d, is_compound>(
+      FilterHorizontal<1, false, is_2d, is_compound>(
           src, src_stride, dst, dst_stride, width, height, v_tap);
     } else {
-      FilterHorizontal<6, 1, true, is_2d, is_compound>(
+      FilterHorizontal<1, true, is_2d, is_compound>(
           src, src_stride, dst, dst_stride, width, height, v_tap);
     }
   } else if (filter_index == 0) {  // 6 tap.
-    FilterHorizontal<6, 0, true, is_2d, is_compound>(
+    FilterHorizontal<0, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else if (filter_index == 4) {  // 4 tap.
-    FilterHorizontal<4, 4, true, is_2d, is_compound>(
+    FilterHorizontal<4, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else if (filter_index == 5) {  // 4 tap.
-    FilterHorizontal<4, 5, true, is_2d, is_compound>(
+    FilterHorizontal<5, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   } else {  // 2 tap.
-    FilterHorizontal<2, 3, true, is_2d, is_compound>(
+    FilterHorizontal<3, true, is_2d, is_compound>(
         src, src_stride, dst, dst_stride, width, height, v_tap);
   }
 }
