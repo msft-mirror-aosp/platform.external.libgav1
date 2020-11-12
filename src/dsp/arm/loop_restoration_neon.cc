@@ -1765,8 +1765,8 @@ inline uint8x8_t SelfGuidedFinal(const uint8x8_t src, const int32x4_t v[2]) {
   const int16x4_t v_hi =
       vrshrn_n_s32(v[1], kSgrProjRestoreBits + kSgrProjPrecisionBits);
   const int16x8_t vv = vcombine_s16(v_lo, v_hi);
-  const int16x8_t s = ZeroExtend(src);
-  const int16x8_t d = vaddq_s16(s, vv);
+  const int16x8_t d =
+      vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(vv), src));
   return vqmovun_s16(d);
 }
 
