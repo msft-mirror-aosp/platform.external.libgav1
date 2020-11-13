@@ -101,75 +101,6 @@ int16x8_t SumOnePassTaps(const uint8x8_t* const src,
   return vreinterpretq_s16_u16(sum);
 }
 
-template <int filter_index, bool negative_outside_taps>
-int16x8_t SumHorizontalTaps(const uint8_t* const src,
-                            const uint8x8_t* const v_tap) {
-  uint8x8_t v_src[8];
-  const uint8x16_t src_long = vld1q_u8(src);
-  int16x8_t sum;
-
-  if (filter_index < 2) {
-    v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 1));
-    v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 2));
-    v_src[2] = vget_low_u8(vextq_u8(src_long, src_long, 3));
-    v_src[3] = vget_low_u8(vextq_u8(src_long, src_long, 4));
-    v_src[4] = vget_low_u8(vextq_u8(src_long, src_long, 5));
-    v_src[5] = vget_low_u8(vextq_u8(src_long, src_long, 6));
-    sum = SumOnePassTaps<filter_index, negative_outside_taps>(v_src, v_tap + 1);
-  } else if (filter_index == 2) {
-    v_src[0] = vget_low_u8(src_long);
-    v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 1));
-    v_src[2] = vget_low_u8(vextq_u8(src_long, src_long, 2));
-    v_src[3] = vget_low_u8(vextq_u8(src_long, src_long, 3));
-    v_src[4] = vget_low_u8(vextq_u8(src_long, src_long, 4));
-    v_src[5] = vget_low_u8(vextq_u8(src_long, src_long, 5));
-    v_src[6] = vget_low_u8(vextq_u8(src_long, src_long, 6));
-    v_src[7] = vget_low_u8(vextq_u8(src_long, src_long, 7));
-    sum = SumOnePassTaps<filter_index, false>(v_src, v_tap);
-  } else if (filter_index == 3) {
-    v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 3));
-    v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 4));
-    sum = SumOnePassTaps<filter_index, false>(v_src, v_tap + 3);
-  } else if (filter_index > 3) {
-    v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 2));
-    v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 3));
-    v_src[2] = vget_low_u8(vextq_u8(src_long, src_long, 4));
-    v_src[3] = vget_low_u8(vextq_u8(src_long, src_long, 5));
-    sum = SumOnePassTaps<filter_index, false>(v_src, v_tap + 2);
-  }
-  return sum;
-}
-
-template <int filter_index>
-int16x8_t SumHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
-                               const uint8x8_t* const v_tap) {
-  uint16x8_t sum;
-  const uint8x8_t input0 = vld1_u8(src);
-  src += src_stride;
-  const uint8x8_t input1 = vld1_u8(src);
-  uint8x8x2_t input = vzip_u8(input0, input1);
-
-  if (filter_index == 3) {
-    // tap signs : + +
-    sum = vmull_u8(vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
-    sum = vmlal_u8(sum, input.val[1], v_tap[4]);
-  } else if (filter_index == 4) {
-    // tap signs : - + + -
-    sum = vmull_u8(vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
-    sum = vmlsl_u8(sum, RightShift<4 * 8>(input.val[0]), v_tap[2]);
-    sum = vmlal_u8(sum, input.val[1], v_tap[4]);
-    sum = vmlsl_u8(sum, RightShift<2 * 8>(input.val[1]), v_tap[5]);
-  } else {
-    // tap signs : + + + +
-    sum = vmull_u8(RightShift<4 * 8>(input.val[0]), v_tap[2]);
-    sum = vmlal_u8(sum, vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
-    sum = vmlal_u8(sum, input.val[1], v_tap[4]);
-    sum = vmlal_u8(sum, RightShift<2 * 8>(input.val[1]), v_tap[5]);
-  }
-
-  return vreinterpretq_s16_u16(sum);
-}
-
 template <int filter_index, bool negative_outside_taps, bool is_2d,
           bool is_compound>
 void FilterHorizontalWidth8AndUp(const uint8_t* src, const ptrdiff_t src_stride,
@@ -182,8 +113,39 @@ void FilterHorizontalWidth8AndUp(const uint8_t* src, const ptrdiff_t src_stride,
   do {
     int x = 0;
     do {  // Increasing loop counter x is better.
-      int16x8_t sum = SumHorizontalTaps<filter_index, negative_outside_taps>(
-          src + x, v_tap);
+      uint8x8_t v_src[8];
+      const uint8x16_t src_long = vld1q_u8(src + x);
+      int16x8_t sum;
+      if (filter_index < 2) {
+        v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 1));
+        v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 2));
+        v_src[2] = vget_low_u8(vextq_u8(src_long, src_long, 3));
+        v_src[3] = vget_low_u8(vextq_u8(src_long, src_long, 4));
+        v_src[4] = vget_low_u8(vextq_u8(src_long, src_long, 5));
+        v_src[5] = vget_low_u8(vextq_u8(src_long, src_long, 6));
+        sum = SumOnePassTaps<filter_index, negative_outside_taps>(v_src,
+                                                                  v_tap + 1);
+      } else if (filter_index == 2) {
+        v_src[0] = vget_low_u8(src_long);
+        v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 1));
+        v_src[2] = vget_low_u8(vextq_u8(src_long, src_long, 2));
+        v_src[3] = vget_low_u8(vextq_u8(src_long, src_long, 3));
+        v_src[4] = vget_low_u8(vextq_u8(src_long, src_long, 4));
+        v_src[5] = vget_low_u8(vextq_u8(src_long, src_long, 5));
+        v_src[6] = vget_low_u8(vextq_u8(src_long, src_long, 6));
+        v_src[7] = vget_low_u8(vextq_u8(src_long, src_long, 7));
+        sum = SumOnePassTaps<filter_index, false>(v_src, v_tap);
+      } else if (filter_index == 3) {
+        v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 3));
+        v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 4));
+        sum = SumOnePassTaps<filter_index, false>(v_src, v_tap + 3);
+      } else if (filter_index > 3) {
+        v_src[0] = vget_low_u8(vextq_u8(src_long, src_long, 2));
+        v_src[1] = vget_low_u8(vextq_u8(src_long, src_long, 3));
+        v_src[2] = vget_low_u8(vextq_u8(src_long, src_long, 4));
+        v_src[3] = vget_low_u8(vextq_u8(src_long, src_long, 5));
+        sum = SumOnePassTaps<filter_index, false>(v_src, v_tap + 2);
+      }
       if (is_2d || is_compound) {
         const uint16x8_t v_sum = vreinterpretq_u16_s16(
             vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
@@ -254,10 +216,31 @@ void FilterHorizontalWidth2(const uint8_t* src, const ptrdiff_t src_stride,
   auto* dest16 = static_cast<uint16_t*>(dest);
   int y = height >> 1;
   do {
-    int16x8_t sum = SumHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
+    const uint8x8_t input0 = vld1_u8(src);
+    const uint8x8_t input1 = vld1_u8(src + src_stride);
+    const uint8x8x2_t input = vzip_u8(input0, input1);
+    uint16x8_t sum;
+    if (filter_index == 3) {
+      // tap signs : + +
+      sum = vmull_u8(vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
+      sum = vmlal_u8(sum, input.val[1], v_tap[4]);
+    } else if (filter_index == 4) {
+      // tap signs : - + + -
+      sum = vmull_u8(vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
+      sum = vmlsl_u8(sum, RightShift<4 * 8>(input.val[0]), v_tap[2]);
+      sum = vmlal_u8(sum, input.val[1], v_tap[4]);
+      sum = vmlsl_u8(sum, RightShift<2 * 8>(input.val[1]), v_tap[5]);
+    } else {
+      // tap signs : + + + +
+      sum = vmull_u8(RightShift<4 * 8>(input.val[0]), v_tap[2]);
+      sum = vmlal_u8(sum, vext_u8(input.val[0], input.val[1], 6), v_tap[3]);
+      sum = vmlal_u8(sum, input.val[1], v_tap[4]);
+      sum = vmlal_u8(sum, RightShift<2 * 8>(input.val[1]), v_tap[5]);
+    }
+    int16x8_t s = vreinterpretq_s16_u16(sum);
     if (is_2d) {
-      const uint16x8_t v_sum = vreinterpretq_u16_s16(
-          vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
+      const uint16x8_t v_sum =
+          vreinterpretq_u16_s16(vrshrq_n_s16(s, kInterRoundBitsHorizontal - 1));
       dest16[0] = vgetq_lane_u16(v_sum, 0);
       dest16[1] = vgetq_lane_u16(v_sum, 2);
       dest16 += pred_stride;
@@ -272,8 +255,8 @@ void FilterHorizontalWidth2(const uint8_t* src, const ptrdiff_t src_stride,
       // shift.
       constexpr int first_shift_rounding_bit =
           1 << (kInterRoundBitsHorizontal - 2);
-      sum = vaddq_s16(sum, vdupq_n_s16(first_shift_rounding_bit));
-      const uint8x8_t result = vqrshrun_n_s16(sum, kFilterBits - 1);
+      s = vaddq_s16(s, vdupq_n_s16(first_shift_rounding_bit));
+      const uint8x8_t result = vqrshrun_n_s16(s, kFilterBits - 1);
       dest8[0] = vget_lane_u8(result, 0);
       dest8[1] = vget_lane_u8(result, 2);
       dest8 += pred_stride;
