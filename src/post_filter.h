@@ -272,8 +272,6 @@ class PostFilter {
   void CopyBordersForOneSuperBlockRow(int row4x4, int sb4x4,
                                       bool for_loop_restoration);
   // Sets up the |loop_restoration_border_| for loop restoration.
-  // TODO(linfengz): Unify duplicates in the following two functions if
-  // possible.
   // This is called when there is no CDEF filter. We copy rows from
   // |superres_buffer_| and do the line extension.
   void SetupLoopRestorationBorder(int row4x4_start);
