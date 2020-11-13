@@ -140,32 +140,6 @@ int16x8_t SumHorizontalTaps(const uint8_t* const src,
   return sum;
 }
 
-template <int filter_index, bool negative_outside_taps>
-uint8x8_t SimpleHorizontalTaps(const uint8_t* const src,
-                               const uint8x8_t* const v_tap) {
-  int16x8_t sum =
-      SumHorizontalTaps<filter_index, negative_outside_taps>(src, v_tap);
-
-  // Normally the Horizontal pass does the downshift in two passes:
-  // kInterRoundBitsHorizontal - 1 and then (kFilterBits -
-  // kInterRoundBitsHorizontal). Each one uses a rounding shift. Combining them
-  // requires adding the rounding offset from the skipped shift.
-  constexpr int first_shift_rounding_bit = 1 << (kInterRoundBitsHorizontal - 2);
-
-  sum = vaddq_s16(sum, vdupq_n_s16(first_shift_rounding_bit));
-  return vqrshrun_n_s16(sum, kFilterBits - 1);
-}
-
-template <int filter_index, bool negative_outside_taps>
-uint16x8_t HorizontalTaps8To16(const uint8_t* const src,
-                               const uint8x8_t* const v_tap) {
-  const int16x8_t sum =
-      SumHorizontalTaps<filter_index, negative_outside_taps>(src, v_tap);
-
-  return vreinterpretq_u16_s16(
-      vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
-}
-
 template <int filter_index>
 int16x8_t SumHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
                                const uint8x8_t* const v_tap) {
@@ -196,33 +170,6 @@ int16x8_t SumHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
   return vreinterpretq_s16_u16(sum);
 }
 
-template <int filter_index>
-uint8x8_t SimpleHorizontalTaps2x2(const uint8_t* src,
-                                  const ptrdiff_t src_stride,
-                                  const uint8x8_t* const v_tap) {
-  int16x8_t sum = SumHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
-
-  // Normally the Horizontal pass does the downshift in two passes:
-  // kInterRoundBitsHorizontal - 1 and then (kFilterBits -
-  // kInterRoundBitsHorizontal). Each one uses a rounding shift. Combining them
-  // requires adding the rounding offset from the skipped shift.
-  constexpr int first_shift_rounding_bit = 1 << (kInterRoundBitsHorizontal - 2);
-
-  sum = vaddq_s16(sum, vdupq_n_s16(first_shift_rounding_bit));
-  return vqrshrun_n_s16(sum, kFilterBits - 1);
-}
-
-template <int filter_index>
-uint16x8_t HorizontalTaps8To16_2x2(const uint8_t* src,
-                                   const ptrdiff_t src_stride,
-                                   const uint8x8_t* const v_tap) {
-  const int16x8_t sum =
-      SumHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
-
-  return vreinterpretq_u16_s16(
-      vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
-}
-
 template <int filter_index, bool negative_outside_taps = true,
           bool is_2d = false, bool is_compound = false>
 void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
@@ -238,15 +185,22 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
     do {
       int x = 0;
       do {  // Increasing loop counter x is better.
+        int16x8_t sum = SumHorizontalTaps<filter_index, negative_outside_taps>(
+            src + x, v_tap);
         if (is_2d || is_compound) {
-          const uint16x8_t v_sum =
-              HorizontalTaps8To16<filter_index, negative_outside_taps>(&src[x],
-                                                                       v_tap);
+          const uint16x8_t v_sum = vreinterpretq_u16_s16(
+              vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
           vst1q_u16(&dest16[x], v_sum);
         } else {
-          const uint8x8_t result =
-              SimpleHorizontalTaps<filter_index, negative_outside_taps>(&src[x],
-                                                                        v_tap);
+          // Normally the Horizontal pass does the downshift in two passes:
+          // kInterRoundBitsHorizontal - 1 and then (kFilterBits -
+          // kInterRoundBitsHorizontal). Each one uses a rounding shift.
+          // Combining them requires adding the rounding offset from the skipped
+          // shift.
+          constexpr int first_shift_rounding_bit =
+              1 << (kInterRoundBitsHorizontal - 2);
+          sum = vaddq_s16(sum, vdupq_n_s16(first_shift_rounding_bit));
+          const uint8x8_t result = vqrshrun_n_s16(sum, kFilterBits - 1);
           vst1_u8(&dest8[x], result);
         }
         x += 8;
@@ -300,25 +254,32 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
     if (!is_compound) {
       int y = height >> 1;
       do {
+        int16x8_t sum =
+            SumHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
         if (is_2d) {
-          const uint16x8_t sum =
-              HorizontalTaps8To16_2x2<filter_index>(src, src_stride, v_tap);
-          dest16[0] = vgetq_lane_u16(sum, 0);
-          dest16[1] = vgetq_lane_u16(sum, 2);
+          const uint16x8_t v_sum = vreinterpretq_u16_s16(
+              vrshrq_n_s16(sum, kInterRoundBitsHorizontal - 1));
+          dest16[0] = vgetq_lane_u16(v_sum, 0);
+          dest16[1] = vgetq_lane_u16(v_sum, 2);
           dest16 += pred_stride;
-          dest16[0] = vgetq_lane_u16(sum, 1);
-          dest16[1] = vgetq_lane_u16(sum, 3);
+          dest16[0] = vgetq_lane_u16(v_sum, 1);
+          dest16[1] = vgetq_lane_u16(v_sum, 3);
           dest16 += pred_stride;
         } else {
-          const uint8x8_t sum =
-              SimpleHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
-
-          dest8[0] = vget_lane_u8(sum, 0);
-          dest8[1] = vget_lane_u8(sum, 2);
+          // Normally the Horizontal pass does the downshift in two passes:
+          // kInterRoundBitsHorizontal - 1 and then (kFilterBits -
+          // kInterRoundBitsHorizontal). Each one uses a rounding shift.
+          // Combining them requires adding the rounding offset from the skipped
+          // shift.
+          constexpr int first_shift_rounding_bit =
+              1 << (kInterRoundBitsHorizontal - 2);
+          sum = vaddq_s16(sum, vdupq_n_s16(first_shift_rounding_bit));
+          const uint8x8_t result = vqrshrun_n_s16(sum, kFilterBits - 1);
+          dest8[0] = vget_lane_u8(result, 0);
+          dest8[1] = vget_lane_u8(result, 2);
           dest8 += pred_stride;
-
-          dest8[0] = vget_lane_u8(sum, 1);
-          dest8[1] = vget_lane_u8(sum, 3);
+          dest8[0] = vget_lane_u8(result, 1);
+          dest8[1] = vget_lane_u8(result, 3);
           dest8 += pred_stride;
         }
         src += src_stride << 1;
