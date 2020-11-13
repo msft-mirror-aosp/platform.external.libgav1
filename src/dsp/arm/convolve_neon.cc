@@ -494,7 +494,7 @@ void Filter2DVertical(const uint16_t* src, void* const dst,
 
   int x = 0;
   do {
-    int16x8_t srcs[8];
+    int16x8_t srcs[9];
     srcs[0] = vreinterpretq_s16_u16(vld1q_u16(src));
     src += 8;
     if (num_taps >= 4) {
@@ -522,31 +522,38 @@ void Filter2DVertical(const uint16_t* src, void* const dst,
     do {
       srcs[next_row] = vreinterpretq_s16_u16(vld1q_u16(src));
       src += 8;
-
-      const int16x8_t sum =
-          SimpleSum2DVerticalTaps<num_taps, is_compound>(srcs, taps);
+      srcs[next_row + 1] = vreinterpretq_s16_u16(vld1q_u16(src));
+      src += 8;
+      const int16x8_t sum0 =
+          SimpleSum2DVerticalTaps<num_taps, is_compound>(srcs + 0, taps);
+      const int16x8_t sum1 =
+          SimpleSum2DVerticalTaps<num_taps, is_compound>(srcs + 1, taps);
       if (is_compound) {
-        vst1q_u16(d16, vreinterpretq_u16_s16(sum));
+        vst1q_u16(d16, vreinterpretq_u16_s16(sum0));
+        d16 += dst_stride;
+        vst1q_u16(d16, vreinterpretq_u16_s16(sum1));
         d16 += dst_stride;
       } else {
-        vst1_u8(d8, vqmovun_s16(sum));
+        vst1_u8(d8, vqmovun_s16(sum0));
+        d8 += dst_stride;
+        vst1_u8(d8, vqmovun_s16(sum1));
         d8 += dst_stride;
       }
-
-      srcs[0] = srcs[1];
+      srcs[0] = srcs[2];
       if (num_taps >= 4) {
-        srcs[1] = srcs[2];
-        srcs[2] = srcs[3];
+        srcs[1] = srcs[3];
+        srcs[2] = srcs[4];
         if (num_taps >= 6) {
-          srcs[3] = srcs[4];
-          srcs[4] = srcs[5];
+          srcs[3] = srcs[5];
+          srcs[4] = srcs[6];
           if (num_taps == 8) {
-            srcs[5] = srcs[6];
-            srcs[6] = srcs[7];
+            srcs[5] = srcs[7];
+            srcs[6] = srcs[8];
           }
         }
       }
-    } while (--y != 0);
+      y -= 2;
+    } while (y != 0);
     x += 8;
   } while (x < width);
 }
