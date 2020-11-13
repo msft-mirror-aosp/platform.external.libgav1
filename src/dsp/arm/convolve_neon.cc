@@ -312,14 +312,16 @@ void FilterHorizontalWidth2(const uint8_t* src, const ptrdiff_t src_stride,
   }
 }
 
-template <int filter_index, bool negative_outside_taps = true,
-          bool is_2d = false, bool is_compound = false>
+template <int filter_index, bool negative_outside_taps, bool is_2d,
+          bool is_compound>
 void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
                       void* const dest, const ptrdiff_t pred_stride,
                       const int width, const int height,
                       const uint8x8_t* const v_tap) {
-  assert(width <= 4 || filter_index <= 3);
-  if (filter_index <= 3 && width > 4) {
+  assert(width < 8 || filter_index <= 3);
+  // Don't simplify the redundant if conditions with the template parameters,
+  // which helps the compiler generate compact code.
+  if (width >= 8 && filter_index <= 3) {
     FilterHorizontalWidth8AndUp<filter_index, negative_outside_taps, is_2d,
                                 is_compound>(src, src_stride, dest, pred_stride,
                                              width, height, v_tap);
@@ -336,6 +338,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
           src, src_stride, dest, pred_stride, height, v_tap);
       return;
     }
+    assert(width == 2);
     if (!is_compound) {
       FilterHorizontalWidth2<filter_index, is_2d>(src, src_stride, dest,
                                                   pred_stride, height, v_tap);
