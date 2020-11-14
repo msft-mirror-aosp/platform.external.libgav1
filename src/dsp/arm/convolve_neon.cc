@@ -1777,6 +1777,8 @@ void FilterVertical(const uint8_t* const src, const ptrdiff_t src_stride,
     }
 
     // Decreasing the y loop counter produces worse code with clang.
+    // Don't unroll this loop since it generates too much code and the decoder
+    // is even slower.
     int y = 0;
     do {
       srcs[next_row] = vld1_u8(src_x);
