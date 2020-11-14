@@ -738,6 +738,23 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
   }
 }
 
+template <int vertical_taps>
+void Filter2DVertical(const uint16_t* const intermediate_result,
+                      const int width, const int height, const int16x8_t taps,
+                      void* const prediction, const ptrdiff_t pred_stride) {
+  auto* const dest = static_cast<uint8_t*>(prediction);
+  if (width == 2) {
+    Filter2DVertical2xH<vertical_taps>(intermediate_result, dest, pred_stride,
+                                       height, taps);
+  } else if (width == 4) {
+    Filter2DVertical4xH<vertical_taps>(intermediate_result, dest, pred_stride,
+                                       height, taps);
+  } else {
+    Filter2DVertical<vertical_taps>(intermediate_result, dest, pred_stride,
+                                    width, height, taps);
+  }
+}
+
 void Convolve2D_NEON(const void* const reference,
                      const ptrdiff_t reference_stride,
                      const int horizontal_filter_index,
@@ -755,7 +772,6 @@ void Convolve2D_NEON(const void* const reference,
       intermediate_result[kMaxSuperBlockSizeInPixels *
                           (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1)];
   const int intermediate_height = height + vertical_taps - 1;
-
   const ptrdiff_t src_stride = reference_stride;
   const auto* src = static_cast<const uint8_t*>(reference) -
                     (vertical_taps / 2 - 1) * src_stride - kHorizontalOffset;
@@ -765,57 +781,21 @@ void Convolve2D_NEON(const void* const reference,
                                    horizontal_filter_id, horiz_filter_index);
 
   // Vertical filter.
-  auto* dest = static_cast<uint8_t*>(prediction);
-  const ptrdiff_t dest_stride = pred_stride;
   assert(vertical_filter_id != 0);
-
   const int16x8_t taps = vmovl_s8(
       vld1_s8(kHalfSubPixelFilters[vert_filter_index][vertical_filter_id]));
-
   if (vertical_taps == 8) {
-    if (width == 2) {
-      Filter2DVertical2xH<8>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else if (width == 4) {
-      Filter2DVertical4xH<8>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else {
-      Filter2DVertical<8>(intermediate_result, dest, dest_stride, width, height,
-                          taps);
-    }
+    Filter2DVertical<8>(intermediate_result, width, height, taps, prediction,
+                        pred_stride);
   } else if (vertical_taps == 6) {
-    if (width == 2) {
-      Filter2DVertical2xH<6>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else if (width == 4) {
-      Filter2DVertical4xH<6>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else {
-      Filter2DVertical<6>(intermediate_result, dest, dest_stride, width, height,
-                          taps);
-    }
+    Filter2DVertical<6>(intermediate_result, width, height, taps, prediction,
+                        pred_stride);
   } else if (vertical_taps == 4) {
-    if (width == 2) {
-      Filter2DVertical2xH<4>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else if (width == 4) {
-      Filter2DVertical4xH<4>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else {
-      Filter2DVertical<4>(intermediate_result, dest, dest_stride, width, height,
-                          taps);
-    }
+    Filter2DVertical<4>(intermediate_result, width, height, taps, prediction,
+                        pred_stride);
   } else {  // |vertical_taps| == 2
-    if (width == 2) {
-      Filter2DVertical2xH<2>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else if (width == 4) {
-      Filter2DVertical4xH<2>(intermediate_result, dest, dest_stride, height,
-                             taps);
-    } else {
-      Filter2DVertical<2>(intermediate_result, dest, dest_stride, width, height,
-                          taps);
-    }
+    Filter2DVertical<2>(intermediate_result, width, height, taps, prediction,
+                        pred_stride);
   }
 }
 
@@ -2504,6 +2484,20 @@ void ConvolveCompoundHorizontal_NEON(
       filter_index);
 }
 
+template <int vertical_taps>
+void Compound2DVertical(const uint16_t* const intermediate_result,
+                        const int width, const int height, const int16x8_t taps,
+                        void* const prediction) {
+  auto* const dest = static_cast<uint16_t*>(prediction);
+  if (width == 4) {
+    Filter2DVertical4xH<vertical_taps, /*is_compound=*/true>(
+        intermediate_result, dest, width, height, taps);
+  } else {
+    Filter2DVertical<vertical_taps, /*is_compound=*/true>(
+        intermediate_result, dest, width, width, height, taps);
+  }
+}
+
 void ConvolveCompound2D_NEON(const void* const reference,
                              const ptrdiff_t reference_stride,
                              const int horizontal_filter_index,
@@ -2531,51 +2525,22 @@ void ConvolveCompound2D_NEON(const void* const reference,
   const auto* const src = static_cast<const uint8_t*>(reference) -
                           (vertical_taps / 2 - 1) * src_stride -
                           kHorizontalOffset;
-
   DoHorizontalPass</*is_2d=*/true, /*is_compound=*/true>(
       src, src_stride, intermediate_result, width, width, intermediate_height,
       horizontal_filter_id, horiz_filter_index);
 
   // Vertical filter.
-  auto* dest = static_cast<uint16_t*>(prediction);
   assert(vertical_filter_id != 0);
-
-  const ptrdiff_t dest_stride = width;
   const int16x8_t taps = vmovl_s8(
       vld1_s8(kHalfSubPixelFilters[vert_filter_index][vertical_filter_id]));
-
   if (vertical_taps == 8) {
-    if (width == 4) {
-      Filter2DVertical4xH<8, /*is_compound=*/true>(intermediate_result, dest,
-                                                   dest_stride, height, taps);
-    } else {
-      Filter2DVertical<8, /*is_compound=*/true>(
-          intermediate_result, dest, dest_stride, width, height, taps);
-    }
+    Compound2DVertical<8>(intermediate_result, width, height, taps, prediction);
   } else if (vertical_taps == 6) {
-    if (width == 4) {
-      Filter2DVertical4xH<6, /*is_compound=*/true>(intermediate_result, dest,
-                                                   dest_stride, height, taps);
-    } else {
-      Filter2DVertical<6, /*is_compound=*/true>(
-          intermediate_result, dest, dest_stride, width, height, taps);
-    }
+    Compound2DVertical<6>(intermediate_result, width, height, taps, prediction);
   } else if (vertical_taps == 4) {
-    if (width == 4) {
-      Filter2DVertical4xH<4, /*is_compound=*/true>(intermediate_result, dest,
-                                                   dest_stride, height, taps);
-    } else {
-      Filter2DVertical<4, /*is_compound=*/true>(
-          intermediate_result, dest, dest_stride, width, height, taps);
-    }
+    Compound2DVertical<4>(intermediate_result, width, height, taps, prediction);
   } else {  // |vertical_taps| == 2
-    if (width == 4) {
-      Filter2DVertical4xH<2, /*is_compound=*/true>(intermediate_result, dest,
-                                                   dest_stride, height, taps);
-    } else {
-      Filter2DVertical<2, /*is_compound=*/true>(
-          intermediate_result, dest, dest_stride, width, height, taps);
-    }
+    Compound2DVertical<2>(intermediate_result, width, height, taps, prediction);
   }
 }
 
