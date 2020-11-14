@@ -484,9 +484,9 @@ int16x8_t SimpleSum2DVerticalTaps(const int16x8_t* const src,
 }
 
 template <int num_taps, bool is_compound = false>
-void Filter2DVertical(const uint16_t* src, void* const dst,
-                      const ptrdiff_t dst_stride, const int width,
-                      const int height, const int16x8_t taps) {
+void Filter2DVerticalWidth8AndUp(const uint16_t* src, void* const dst,
+                                 const ptrdiff_t dst_stride, const int width,
+                                 const int height, const int16x8_t taps) {
   assert(width >= 8);
   constexpr int next_row = num_taps - 1;
   auto* dst8 = static_cast<uint8_t*>(dst);
@@ -560,9 +560,9 @@ void Filter2DVertical(const uint16_t* src, void* const dst,
 
 // Take advantage of |src_stride| == |width| to process two rows at a time.
 template <int num_taps, bool is_compound = false>
-void Filter2DVertical4xH(const uint16_t* src, void* const dst,
-                         const ptrdiff_t dst_stride, const int height,
-                         const int16x8_t taps) {
+void Filter2DVerticalWidth4(const uint16_t* src, void* const dst,
+                            const ptrdiff_t dst_stride, const int height,
+                            const int16x8_t taps) {
   auto* dst8 = static_cast<uint8_t*>(dst);
   auto* dst16 = static_cast<uint16_t*>(dst);
 
@@ -626,9 +626,9 @@ void Filter2DVertical4xH(const uint16_t* src, void* const dst,
 
 // Take advantage of |src_stride| == |width| to process four rows at a time.
 template <int num_taps>
-void Filter2DVertical2xH(const uint16_t* src, void* const dst,
-                         const ptrdiff_t dst_stride, const int height,
-                         const int16x8_t taps) {
+void Filter2DVerticalWidth2(const uint16_t* src, void* const dst,
+                            const ptrdiff_t dst_stride, const int height,
+                            const int16x8_t taps) {
   constexpr int next_row = (num_taps < 6) ? 4 : 8;
 
   auto* dst8 = static_cast<uint8_t*>(dst);
@@ -744,14 +744,14 @@ void Filter2DVertical(const uint16_t* const intermediate_result,
                       void* const prediction, const ptrdiff_t pred_stride) {
   auto* const dest = static_cast<uint8_t*>(prediction);
   if (width == 2) {
-    Filter2DVertical2xH<vertical_taps>(intermediate_result, dest, pred_stride,
-                                       height, taps);
+    Filter2DVerticalWidth2<vertical_taps>(intermediate_result, dest,
+                                          pred_stride, height, taps);
   } else if (width == 4) {
-    Filter2DVertical4xH<vertical_taps>(intermediate_result, dest, pred_stride,
-                                       height, taps);
+    Filter2DVerticalWidth4<vertical_taps>(intermediate_result, dest,
+                                          pred_stride, height, taps);
   } else {
-    Filter2DVertical<vertical_taps>(intermediate_result, dest, pred_stride,
-                                    width, height, taps);
+    Filter2DVerticalWidth8AndUp<vertical_taps>(
+        intermediate_result, dest, pred_stride, width, height, taps);
   }
 }
 
@@ -2490,10 +2490,10 @@ void Compound2DVertical(const uint16_t* const intermediate_result,
                         void* const prediction) {
   auto* const dest = static_cast<uint16_t*>(prediction);
   if (width == 4) {
-    Filter2DVertical4xH<vertical_taps, /*is_compound=*/true>(
+    Filter2DVerticalWidth4<vertical_taps, /*is_compound=*/true>(
         intermediate_result, dest, width, height, taps);
   } else {
-    Filter2DVertical<vertical_taps, /*is_compound=*/true>(
+    Filter2DVerticalWidth8AndUp<vertical_taps, /*is_compound=*/true>(
         intermediate_result, dest, width, width, height, taps);
   }
 }
