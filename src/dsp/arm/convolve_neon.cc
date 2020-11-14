@@ -743,15 +743,16 @@ void Filter2DVertical(const uint16_t* const intermediate_result,
                       const int width, const int height, const int16x8_t taps,
                       void* const prediction, const ptrdiff_t pred_stride) {
   auto* const dest = static_cast<uint8_t*>(prediction);
-  if (width == 2) {
-    Filter2DVerticalWidth2<vertical_taps>(intermediate_result, dest,
-                                          pred_stride, height, taps);
+  if (width >= 8) {
+    Filter2DVerticalWidth8AndUp<vertical_taps>(
+        intermediate_result, dest, pred_stride, width, height, taps);
   } else if (width == 4) {
     Filter2DVerticalWidth4<vertical_taps>(intermediate_result, dest,
                                           pred_stride, height, taps);
   } else {
-    Filter2DVerticalWidth8AndUp<vertical_taps>(
-        intermediate_result, dest, pred_stride, width, height, taps);
+    assert(width == 2);
+    Filter2DVerticalWidth2<vertical_taps>(intermediate_result, dest,
+                                          pred_stride, height, taps);
   }
 }
 
