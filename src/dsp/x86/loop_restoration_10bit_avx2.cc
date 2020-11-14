@@ -2271,9 +2271,9 @@ inline void BoxSumFilterPreProcess(
     const uint16_t* const src0, const uint16_t* const src1, const int width,
     const uint16_t scales[2], uint16_t* const sum3[4], uint16_t* const sum5[5],
     uint32_t* const square_sum3[4], uint32_t* const square_sum5[5],
-    const ptrdiff_t sum_width, uint16_t* const ma343[4],
-    uint16_t* const ma444[2], uint16_t* ma565, uint32_t* const b343[4],
-    uint32_t* const b444[2], uint32_t* b565) {
+    const ptrdiff_t sum_width, uint16_t* const ma343[4], uint16_t* const ma444,
+    uint16_t* ma565, uint32_t* const b343[4], uint32_t* const b444,
+    uint32_t* b565) {
   const ptrdiff_t overread_in_bytes =
       kOverreadInBytesPass1_128 - sizeof(*src0) * width;
   __m128i s[2][4], ma3_128[2][3], ma5_128[3], sq_128[2][8], b3_128[2][10],
@@ -2318,9 +2318,9 @@ inline void BoxSumFilterPreProcess(
     StoreAligned64(b343[0] + x, b);
     StoreAligned64(b343[0] + x + 16, b + 2);
     Prepare3_8(ma3[1], ma3x);
-    Store343_444Lo(ma3x, b3[1], x, ma343[1], ma444[0], b343[1], b444[0]);
-    Store343_444Hi(ma3x, b3[1] + 3, x + kMaStoreOffset, ma343[1], ma444[0],
-                   b343[1], b444[0]);
+    Store343_444Lo(ma3x, b3[1], x, ma343[1], ma444, b343[1], b444);
+    Store343_444Hi(ma3x, b3[1] + 3, x + kMaStoreOffset, ma343[1], ma444,
+                   b343[1], b444);
     Prepare3_8(ma5, ma5x);
     ma[0] = Sum565Lo(ma5x);
     ma[1] = Sum565Hi(ma5x);
@@ -2741,9 +2741,9 @@ inline void BoxFilterLastRow(
     const ptrdiff_t sum_width, const uint16_t scales[2], const int16_t w0,
     const int16_t w2, uint16_t* const sum3[4], uint16_t* const sum5[5],
     uint32_t* const square_sum3[4], uint32_t* const square_sum5[5],
-    uint16_t* const ma343[4], uint16_t* const ma444[3],
-    uint16_t* const ma565[2], uint32_t* const b343[4], uint32_t* const b444[3],
-    uint32_t* const b565[2], uint16_t* const dst) {
+    uint16_t* const ma343, uint16_t* const ma444, uint16_t* const ma565,
+    uint32_t* const b343, uint32_t* const b444, uint32_t* const b565,
+    uint16_t* const dst) {
   const ptrdiff_t overread_in_bytes =
       kOverreadInBytesPass1_128 - sizeof(*src0) * width;
   __m128i s[2], ma3_0, ma5_0, sq_128[4], b3_128[2], b5_128[2];
@@ -2782,28 +2782,28 @@ inline void BoxFilterLastRow(
     Sum343(b3 + 3, bt[2]);
 
     const __m256i sr_lo = LoadUnaligned32(src + x);
-    ma[0] = LoadAligned32(ma565[0] + x);
+    ma[0] = LoadAligned32(ma565 + x);
     ma[1] = _mm256_permute2x128_si256(ma[2], mat[1], 0x20);
     mat[1] = _mm256_permute2x128_si256(ma[2], mat[1], 0x31);
-    LoadAligned64(b565[0] + x, b[0]);
+    LoadAligned64(b565 + x, b[0]);
     p[0] = CalculateFilteredOutputPass1(sr_lo, ma, b);
-    ma[0] = LoadAligned32(ma343[0] + x);
-    ma[1] = LoadAligned32(ma444[0] + x);
+    ma[0] = LoadAligned32(ma343 + x);
+    ma[1] = LoadAligned32(ma444 + x);
     ma[2] = _mm256_permute2x128_si256(ma[3], mat[2], 0x20);
-    LoadAligned64(b343[0] + x, b[0]);
-    LoadAligned64(b444[0] + x, b[1]);
+    LoadAligned64(b343 + x, b[0]);
+    LoadAligned64(b444 + x, b[1]);
     p[1] = CalculateFilteredOutputPass2(sr_lo, ma, b);
     const __m256i d0 = SelfGuidedDoubleMultiplier(sr_lo, p, w0, w2);
 
     const __m256i sr_hi = LoadUnaligned32(src + x + 16);
-    mat[0] = LoadAligned32(ma565[0] + x + 16);
-    LoadAligned64(b565[0] + x + 16, bt[0]);
+    mat[0] = LoadAligned32(ma565 + x + 16);
+    LoadAligned64(b565 + x + 16, bt[0]);
     p[0] = CalculateFilteredOutputPass1(sr_hi, mat, bt);
-    mat[0] = LoadAligned32(ma343[0] + x + 16);
-    mat[1] = LoadAligned32(ma444[0] + x + 16);
+    mat[0] = LoadAligned32(ma343 + x + 16);
+    mat[1] = LoadAligned32(ma444 + x + 16);
     mat[2] = _mm256_permute2x128_si256(ma[3], mat[2], 0x31);
-    LoadAligned64(b343[0] + x + 16, bt[0]);
-    LoadAligned64(b444[0] + x + 16, bt[1]);
+    LoadAligned64(b343 + x + 16, bt[0]);
+    LoadAligned64(b444 + x + 16, bt[1]);
     p[1] = CalculateFilteredOutputPass2(sr_hi, mat, bt);
     const __m256i d1 = SelfGuidedDoubleMultiplier(sr_hi, p, w0, w2);
     ClipAndStore(dst + x + 0, d0);
@@ -2870,8 +2870,8 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterProcess(
   square_sum5[0] = square_sum5[1];
   const uint16_t* const s = (height > 1) ? src + stride : bottom_border;
   BoxSumFilterPreProcess(src, s, width, scales, sum3, sum5, square_sum3,
-                         square_sum5, sum_width, ma343, ma444, ma565[0], b343,
-                         b444, b565[0]);
+                         square_sum5, sum_width, ma343, ma444[0], ma565[0],
+                         b343, b444[0], b565[0]);
   sum5[0] = sgr_buffer->sum5 + kSumOffset;
   square_sum5[0] = sgr_buffer->square_sum5 + kSumOffset;
 
@@ -2926,8 +2926,8 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterProcess(
       std::swap(b565[0], b565[1]);
     }
     BoxFilterLastRow(src + 3, bottom_border + stride, width, sum_width, scales,
-                     w0, w2, sum3, sum5, square_sum3, square_sum5, ma343, ma444,
-                     ma565, b343, b444, b565, dst);
+                     w0, w2, sum3, sum5, square_sum3, square_sum5, ma343[0],
+                     ma444[0], ma565[0], b343[0], b444[0], b565[0], dst);
   }
 }
 
