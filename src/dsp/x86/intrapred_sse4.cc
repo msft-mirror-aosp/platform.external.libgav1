@@ -2460,10 +2460,10 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
                       const uint8_t* const top_ptr,
                       const uint8_t* const left_ptr, FilterIntraPredictor pred,
                       const int height) {
-  const __m128i taps_0_1 = LoadUnaligned16(kFilterIntraTaps[pred][0]);
-  const __m128i taps_2_3 = LoadUnaligned16(kFilterIntraTaps[pred][2]);
-  const __m128i taps_4_5 = LoadUnaligned16(kFilterIntraTaps[pred][4]);
-  const __m128i taps_6_7 = LoadUnaligned16(kFilterIntraTaps[pred][6]);
+  const __m128i taps_0_1 = LoadAligned16(kFilterIntraTaps[pred][0]);
+  const __m128i taps_2_3 = LoadAligned16(kFilterIntraTaps[pred][2]);
+  const __m128i taps_4_5 = LoadAligned16(kFilterIntraTaps[pred][4]);
+  const __m128i taps_6_7 = LoadAligned16(kFilterIntraTaps[pred][6]);
   __m128i top = Load4(top_ptr - 1);
   __m128i pixels = _mm_insert_epi8(top, top_ptr[3], 4);
   __m128i left = (height == 4 ? Load4(left_ptr) : LoadLo8(left_ptr));
@@ -2622,10 +2622,10 @@ void FilterIntraPredictor_SSE4_1(void* const dest, ptrdiff_t stride,
   }
 
   // There is one set of 7 taps for each of the 4x2 output pixels.
-  const __m128i taps_0_1 = LoadUnaligned16(kFilterIntraTaps[pred][0]);
-  const __m128i taps_2_3 = LoadUnaligned16(kFilterIntraTaps[pred][2]);
-  const __m128i taps_4_5 = LoadUnaligned16(kFilterIntraTaps[pred][4]);
-  const __m128i taps_6_7 = LoadUnaligned16(kFilterIntraTaps[pred][6]);
+  const __m128i taps_0_1 = LoadAligned16(kFilterIntraTaps[pred][0]);
+  const __m128i taps_2_3 = LoadAligned16(kFilterIntraTaps[pred][2]);
+  const __m128i taps_4_5 = LoadAligned16(kFilterIntraTaps[pred][4]);
+  const __m128i taps_6_7 = LoadAligned16(kFilterIntraTaps[pred][6]);
 
   // This mask rearranges bytes in the order: 0, 1, 2, 3, 4, 8, 9, 15. The 15 at
   // the end is an unused value, which shall be multiplied by 0 when we apply
