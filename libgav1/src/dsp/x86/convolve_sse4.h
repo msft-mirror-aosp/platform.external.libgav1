@@ -17,8 +17,8 @@
 #ifndef LIBGAV1_SRC_DSP_X86_CONVOLVE_SSE4_H_
 #define LIBGAV1_SRC_DSP_X86_CONVOLVE_SSE4_H_
 
-#include "src/dsp/cpu.h"
 #include "src/dsp/dsp.h"
+#include "src/utils/cpu.h"
 
 namespace libgav1 {
 namespace dsp {
@@ -34,8 +34,40 @@ void ConvolveInit_SSE4_1();
 // optimization being enabled, signal the sse4 implementation should be used.
 #if LIBGAV1_ENABLE_SSE4_1
 
+#ifndef LIBGAV1_Dsp8bpp_ConvolveHorizontal
+#define LIBGAV1_Dsp8bpp_ConvolveHorizontal LIBGAV1_CPU_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_ConvolveVertical
+#define LIBGAV1_Dsp8bpp_ConvolveVertical LIBGAV1_CPU_SSE4_1
+#endif
+
 #ifndef LIBGAV1_Dsp8bpp_Convolve2D
-// #define LIBGAV1_Dsp8bpp_Convolve2D LIBGAV1_DSP_SSE4_1
+#define LIBGAV1_Dsp8bpp_Convolve2D LIBGAV1_CPU_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_ConvolveCompoundCopy
+#define LIBGAV1_Dsp8bpp_ConvolveCompoundCopy LIBGAV1_CPU_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_ConvolveCompoundHorizontal
+#define LIBGAV1_Dsp8bpp_ConvolveCompoundHorizontal LIBGAV1_CPU_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_ConvolveCompoundVertical
+#define LIBGAV1_Dsp8bpp_ConvolveCompoundVertical LIBGAV1_CPU_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_ConvolveCompound2D
+#define LIBGAV1_Dsp8bpp_ConvolveCompound2D LIBGAV1_CPU_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_ConvolveScale2D
+#define LIBGAV1_Dsp8bpp_ConvolveScale2D LIBGAV1_CPU_SSE4_1
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_ConvolveCompoundScale2D
+#define LIBGAV1_Dsp8bpp_ConvolveCompoundScale2D LIBGAV1_CPU_SSE4_1
 #endif
 
 #endif  // LIBGAV1_ENABLE_SSE4_1
