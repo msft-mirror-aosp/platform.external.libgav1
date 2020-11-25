@@ -227,7 +227,7 @@ inline __m128i RightShiftWithRounding_U16(const __m128i v_val_d, int bits) {
 }
 
 inline __m128i RightShiftWithRounding_S16(const __m128i v_val_d, int bits) {
-  assert(bits <= 16);
+  assert(bits < 16);
   const __m128i v_bias_d =
       _mm_set1_epi16(static_cast<int16_t>((1 << bits) >> 1));
   const __m128i v_tmp_d = _mm_add_epi16(v_val_d, v_bias_d);
