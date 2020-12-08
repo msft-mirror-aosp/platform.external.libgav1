@@ -46,6 +46,7 @@ libgav1_option(NAME LIBGAV1_ENABLE_NEON HELPSTRING "Enables neon optimizations."
                VALUE ON)
 libgav1_option(NAME LIBGAV1_ENABLE_SSE4_1 HELPSTRING
                "Enables sse4.1 optimizations." VALUE ON)
+libgav1_option(NAME LIBGAV1_ENABLE_TESTS HELPSTRING "Enables tests." VALUE ON)
 libgav1_option(
   NAME LIBGAV1_VERBOSE HELPSTRING
   "Enables verbose build system output. Higher numbers are more verbose." VALUE
@@ -67,6 +68,7 @@ include("${libgav1_root}/cmake/libgav1_intrinsics.cmake")
 include("${libgav1_root}/cmake/libgav1_sanitizer.cmake")
 include("${libgav1_root}/cmake/libgav1_targets.cmake")
 include("${libgav1_root}/cmake/libgav1_variables.cmake")
+include("${libgav1_root}/tests/libgav1_tests.cmake")
 include("${libgav1_source}/dsp/libgav1_dsp.cmake")
 include("${libgav1_source}/libgav1_decoder.cmake")
 include("${libgav1_source}/utils/libgav1_utils.cmake")
@@ -115,8 +117,8 @@ if(NOT EXISTS "${libgav1_abseil}")
   message(
     FATAL_ERROR
       "Abseil not found. This dependency is required by the"
-      " examples and libgav1 when LIBGAV1_THREADPOOL_USE_STD_MUTEX is not"
-      " defined. To continue, download the Abseil repository to"
+      " examples & tests and libgav1 when LIBGAV1_THREADPOOL_USE_STD_MUTEX is"
+      " not defined. To continue, download the Abseil repository to"
       " third_party/abseil-cpp:\n  git \\\n    -C ${libgav1_root} \\\n"
       "    clone \\\n"
       "    https://github.com/abseil/abseil-cpp.git third_party/abseil-cpp")
@@ -127,6 +129,7 @@ libgav1_reset_target_lists()
 libgav1_add_dsp_targets()
 libgav1_add_decoder_targets()
 libgav1_add_examples_targets()
+libgav1_add_tests_targets()
 libgav1_add_utils_targets()
 libgav1_setup_install_target()
 

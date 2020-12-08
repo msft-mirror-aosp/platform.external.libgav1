@@ -1,0 +1,107 @@
+# Copyright 2020 The libgav1 Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+if(LIBGAV1_LIBGAV1_TESTS_CMAKE_)
+  return()
+endif() # LIBGAV1_LIBGAV1_TESTS_CMAKE_
+set(LIBGAV1_LIBGAV1_TESTS_CMAKE_ 1)
+
+set(libgav1_googletest "${libgav1_root}/third_party/googletest")
+if(NOT LIBGAV1_ENABLE_TESTS OR NOT EXISTS "${libgav1_googletest}")
+  macro(libgav1_add_tests_targets)
+
+  endmacro()
+
+  if(LIBGAV1_ENABLE_TESTS AND NOT EXISTS "${libgav1_googletest}")
+    message(
+      "GoogleTest not found, setting LIBGAV1_ENABLE_TESTS to false.\n"
+      "To enable tests download the GoogleTest repository to"
+      " third_party/googletest:\n\n  git \\\n    -C ${libgav1_root} \\\n"
+      "    clone \\\n"
+      "    https://github.com/google/googletest.git third_party/googletest\n")
+    set(LIBGAV1_ENABLE_TESTS FALSE CACHE BOOL "Enables tests." FORCE)
+  endif()
+  return()
+endif()
+
+list(APPEND libgav1_dsp_test_sources "${libgav1_source}/dsp/dsp_test.cc")
+
+macro(libgav1_add_tests_targets)
+  if(NOT LIBGAV1_ENABLE_TESTS)
+    message(
+      FATAL_ERROR
+        "This version of libgav1_add_tests_targets() should only be used with"
+        " LIBGAV1_ENABLE_TESTS set to true.")
+  endif()
+  libgav1_add_library(TEST
+                      NAME
+                      libgav1_gtest
+                      TYPE
+                      STATIC
+                      SOURCES
+                      "${libgav1_googletest}/googletest/src/gtest-all.cc"
+                      DEFINES
+                      ${libgav1_defines}
+                      INCLUDES
+                      ${libgav1_gtest_include_paths}
+                      ${libgav1_include_paths})
+
+  libgav1_add_library(TEST
+                      NAME
+                      libgav1_gtest_main
+                      TYPE
+                      STATIC
+                      SOURCES
+                      "${libgav1_googletest}/googletest/src/gtest_main.cc"
+                      DEFINES
+                      ${libgav1_defines}
+                      INCLUDES
+                      ${libgav1_gtest_include_paths}
+                      ${libgav1_include_paths})
+
+  if(ANDROID OR IOS)
+    if(DEFINED LIBGAV1_THREADPOOL_USE_STD_MUTEX
+       AND NOT LIBGAV1_THREADPOOL_USE_STD_MUTEX)
+      set(use_absl_threading TRUE)
+    endif()
+  elseif(NOT
+         (DEFINED
+          LIBGAV1_THREADPOOL_USE_STD_MUTEX
+          AND LIBGAV1_THREADPOOL_USE_STD_MUTEX))
+    set(use_absl_threading TRUE)
+  endif()
+
+  if(use_absl_threading)
+    list(APPEND libgav1_common_test_absl_deps absl::synchronization)
+  endif()
+
+  libgav1_add_executable(TEST
+                         NAME
+                         dsp_test
+                         SOURCES
+                         ${libgav1_dsp_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_decoder
+                         libgav1_dsp
+                         libgav1_utils
+                         LIB_DEPS
+                         absl::strings
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+endmacro()

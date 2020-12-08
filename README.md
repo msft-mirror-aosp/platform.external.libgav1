@@ -20,7 +20,15 @@ information on the AV1 video format can be found at
     From within the libgav1 directory:
 
     ```shell
-      $ git clone https://github.com/abseil/abseil-cpp.git third_party/abseil-cpp
+    $ git clone https://github.com/abseil/abseil-cpp.git third_party/abseil-cpp
+    ```
+
+4.  (Optional) [GoogleTest](https://github.com/google/googletest)
+
+    From within the libgav1 directory:
+
+    ```shell
+    $ git clone https://github.com/google/googletest.git third_party/googletest
     ```
 
 ### Compile
