@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/dsp.h"
 #include "src/dsp/intrapred.h"
+#include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_NEON
 
@@ -24,6 +24,8 @@
 #include <cstdint>
 
 #include "src/dsp/arm/common_neon.h"
+#include "src/dsp/constants.h"
+#include "src/dsp/dsp.h"
 #include "src/utils/common.h"
 
 namespace libgav1 {
@@ -36,35 +38,36 @@ uint8x16_t Set2ValuesQ(const uint8_t* a) {
   return vreinterpretq_u8_u16(vdupq_n_u16(combined_values));
 }
 
-int SumVector(uint32x2_t a) {
+uint32_t SumVector(uint32x2_t a) {
 #if defined(__aarch64__)
   return vaddv_u32(a);
 #else
   const uint64x1_t b = vpaddl_u32(a);
-  return vget_lane_u64(b, 0);
+  return vget_lane_u32(vreinterpret_u32_u64(b), 0);
 #endif  // defined(__aarch64__)
 }
 
-int SumVector(uint32x4_t a) {
+uint32_t SumVector(uint32x4_t a) {
 #if defined(__aarch64__)
   return vaddvq_u32(a);
 #else
   const uint64x2_t b = vpaddlq_u32(a);
   const uint64x1_t c = vadd_u64(vget_low_u64(b), vget_high_u64(b));
-  return vget_lane_u64(c, 0);
+  return vget_lane_u32(vreinterpret_u32_u64(c), 0);
 #endif  // defined(__aarch64__)
 }
 
 // Divide by the number of elements.
-int Average(const int sum, const int width, const int height) {
+uint32_t Average(const uint32_t sum, const int width, const int height) {
   return RightShiftWithRounding(sum, FloorLog2(width) + FloorLog2(height));
 }
 
 // Subtract |val| from every element in |a|.
-void BlockSubtract(const int val,
+void BlockSubtract(const uint32_t val,
                    int16_t a[kCflLumaBufferStride][kCflLumaBufferStride],
                    const int width, const int height) {
-  const int16x8_t val_v = vdupq_n_s16(val);
+  assert(val <= INT16_MAX);
+  const int16x8_t val_v = vdupq_n_s16(static_cast<int16_t>(val));
 
   for (int y = 0; y < height; ++y) {
     if (width == 4) {
@@ -97,7 +100,7 @@ void CflSubsampler420_NEON(
     const int max_luma_width, const int max_luma_height,
     const void* const source, const ptrdiff_t stride) {
   const auto* src = static_cast<const uint8_t*>(source);
-  int sum;
+  uint32_t sum;
   if (block_width == 4) {
     assert(max_luma_width >= 8);
     uint32x2_t running_sum = vdup_n_u32(0);
@@ -193,7 +196,7 @@ void CflSubsampler420_NEON(
     sum = SumVector(running_sum);
   }
 
-  const int average = Average(sum, block_width, block_height);
+  const uint32_t average = Average(sum, block_width, block_height);
   BlockSubtract(average, luma, block_width, block_height);
 }
 
@@ -203,15 +206,15 @@ void CflSubsampler444_NEON(
     const int max_luma_width, const int max_luma_height,
     const void* const source, const ptrdiff_t stride) {
   const auto* src = static_cast<const uint8_t*>(source);
-  int sum;
+  uint32_t sum;
   if (block_width == 4) {
     assert(max_luma_width >= 4);
     uint32x4_t running_sum = vdupq_n_u32(0);
+    uint8x8_t row = vdup_n_u8(0);
 
     for (int y = 0; y < block_height; y += 2) {
-      uint8x8_t row = vdup_n_u8(0);
-      row = LoadLo4(src, row);
-      row = LoadHi4(src + stride, row);
+      row = Load4<0>(src, row);
+      row = Load4<1>(src + stride, row);
       if (y < (max_luma_height - 1)) {
         src += stride << 1;
       }
@@ -272,7 +275,7 @@ void CflSubsampler444_NEON(
     sum = SumVector(running_sum);
   }
 
-  const int average = Average(sum, block_width, block_height);
+  const uint32_t average = Average(sum, block_width, block_height);
   BlockSubtract(average, luma, block_width, block_height);
 }
 
@@ -281,8 +284,7 @@ inline uint8x8_t Combine8(const int16x8_t luma, const int alpha,
                           const int16x8_t dc) {
   const int16x8_t la = vmulq_n_s16(luma, alpha);
   // Subtract the sign bit to round towards zero.
-  const int16x8_t sub_sign = vsubq_s16(
-      la, vreinterpretq_s16_u16(vshrq_n_u16(vreinterpretq_u16_s16(la), 15)));
+  const int16x8_t sub_sign = vsraq_n_s16(la, la, 15);
   // Shift and accumulate.
   const int16x8_t result = vrsraq_n_s16(dc, sub_sign, 6);
   return vqmovun_s16(result);
@@ -367,7 +369,7 @@ inline void CflIntraPredictor32xN_NEON(
 }
 
 void Init8bpp() {
-  Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
 
   dsp->cfl_subsamplers[kTransformSize4x4][kSubsamplingType420] =
@@ -466,7 +468,7 @@ void IntraPredCflInit_NEON() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_NEON
+#else  // !LIBGAV1_ENABLE_NEON
 namespace libgav1 {
 namespace dsp {
 
