@@ -23,7 +23,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>  // memcpy
+#include <cstring>
 
 #include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"

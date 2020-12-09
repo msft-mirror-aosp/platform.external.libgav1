@@ -17,7 +17,7 @@
 #ifndef LIBGAV1_SRC_DSP_DSP_H_
 #define LIBGAV1_SRC_DSP_DSP_H_
 
-#include <cstddef>  // ptrdiff_t
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 
