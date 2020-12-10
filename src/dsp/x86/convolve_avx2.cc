@@ -126,7 +126,7 @@ __m256i HorizontalTaps8To16(const __m256i* const src,
 }
 
 // Filter 2xh sizes.
-template <int num_taps, int step, int filter_index, bool is_2d = false,
+template <int num_taps, int filter_index, bool is_2d = false,
           bool is_compound = false>
 void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
                       void* const dest, const ptrdiff_t pred_stride,
@@ -194,7 +194,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
 }
 
 // Filter widths >= 4.
-template <int num_taps, int step, int filter_index, bool is_2d = false,
+template <int num_taps, int filter_index, bool is_2d = false,
           bool is_compound = false>
 void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
                       void* const dest, const ptrdiff_t pred_stride,
@@ -237,7 +237,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
           // Combine results and store.
           StoreUnaligned32(&dest8[x], _mm256_unpacklo_epi64(result, result2));
         }
-        x += step * 4;
+        x += 32;
       } while (x < width);
       src += src_stride;
       dest8 += pred_stride;
@@ -553,16 +553,16 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass2xH(
 
   if (filter_index == 4) {  // 4 tap.
     SetupTaps<4>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<4, 8, 4, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<4, 4, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   } else if (filter_index == 5) {  // 4 tap.
     SetupTaps<4>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<4, 8, 5, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<4, 5, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   } else {  // 2 tap.
     SetupTaps<2>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<2, 8, 3, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<2, 3, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   }
 }
 
@@ -578,28 +578,28 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
 
   if (filter_index == 2) {  // 8 tap.
     SetupTaps<8>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<8, 8, 2, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<8, 2, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   } else if (filter_index == 1) {  // 6 tap.
     SetupTaps<6>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<6, 8, 1, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<6, 1, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   } else if (filter_index == 0) {  // 6 tap.
     SetupTaps<6>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<6, 8, 0, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<6, 0, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   } else if (filter_index == 4) {  // 4 tap.
     SetupTaps<4>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<4, 8, 4, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<4, 4, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   } else if (filter_index == 5) {  // 4 tap.
     SetupTaps<4>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<4, 8, 5, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<4, 5, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   } else {  // 2 tap.
     SetupTaps<2>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<2, 8, 3, is_2d, is_compound>(
-        src, src_stride, dst, dst_stride, width, height, v_tap);
+    FilterHorizontal<2, 3, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                               width, height, v_tap);
   }
 }
 
