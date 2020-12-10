@@ -294,7 +294,7 @@ void Filter2DVertical4xH(const uint16_t* src, void* const dst,
     }
   }
 
-  int y = 0;
+  int y = height;
   do {
     srcs[num_taps] = LoadAligned16(src);
     src += 8;
@@ -327,8 +327,8 @@ void Filter2DVertical4xH(const uint16_t* src, void* const dst,
         }
       }
     }
-    y += 2;
-  } while (y < height);
+    y -= 2;
+  } while (y != 0);
 }
 
 // Take advantage of |src_stride| == |width| to process four rows at a time.
@@ -353,7 +353,7 @@ void Filter2DVertical2xH(const uint16_t* src, void* const dst,
     }
   }
 
-  int y = 0;
+  int y = height;
   do {
     srcs[next_row] = LoadAligned16(src);
     src += 8;
@@ -400,8 +400,8 @@ void Filter2DVertical2xH(const uint16_t* src, void* const dst,
       srcs[4] = srcs[8];
     }
 
-    y += 4;
-  } while (y < height);
+    y -= 4;
+  } while (y != 0);
 }
 
 // The 1D compound shift is always |kInterRoundBitsHorizontal|, even for 1D
@@ -454,7 +454,7 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
     srcs[0] = Load4(src);
     src += src_stride;
 
-    int y = 0;
+    int y = height;
     do {
       // 10 11 12 13
       const __m128i a = Load4(src);
@@ -483,8 +483,8 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
       }
 
       srcs[0] = srcs[2];
-      y += 2;
-    } while (y < height);
+      y -= 2;
+    } while (y != 0);
   } else if (num_taps == 4) {
     srcs[4] = _mm_setzero_si128();
     // 00 01 02 03
@@ -501,7 +501,7 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
     // 10 11 12 13 20 21 22 23
     srcs[1] = _mm_unpacklo_epi32(a, srcs[2]);
 
-    int y = 0;
+    int y = height;
     do {
       // 30 31 32 33
       const __m128i b = Load4(src);
@@ -532,8 +532,8 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
       srcs[0] = srcs[2];
       srcs[1] = srcs[3];
       srcs[2] = srcs[4];
-      y += 2;
-    } while (y < height);
+      y -= 2;
+    } while (y != 0);
   } else if (num_taps == 6) {
     srcs[6] = _mm_setzero_si128();
     // 00 01 02 03
@@ -560,7 +560,7 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
     // 30 31 32 33 40 41 42 43
     srcs[3] = _mm_unpacklo_epi32(b, srcs[4]);
 
-    int y = 0;
+    int y = height;
     do {
       // 50 51 52 53
       const __m128i c = Load4(src);
@@ -593,8 +593,8 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
       srcs[2] = srcs[4];
       srcs[3] = srcs[5];
       srcs[4] = srcs[6];
-      y += 2;
-    } while (y < height);
+      y -= 2;
+    } while (y != 0);
   } else if (num_taps == 8) {
     srcs[8] = _mm_setzero_si128();
     // 00 01 02 03
@@ -631,7 +631,7 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
     // 50 51 52 53 60 61 62 63
     srcs[5] = _mm_unpacklo_epi32(c, srcs[6]);
 
-    int y = 0;
+    int y = height;
     do {
       // 70 71 72 73
       const __m128i d = Load4(src);
@@ -666,8 +666,8 @@ void FilterVertical4xH(const uint8_t* src, const ptrdiff_t src_stride,
       srcs[4] = srcs[6];
       srcs[5] = srcs[7];
       srcs[6] = srcs[8];
-      y += 2;
-    } while (y < height);
+      y -= 2;
+    } while (y != 0);
   }
 }
 
@@ -685,7 +685,7 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
     srcs[0] = Load2(src);
     src += src_stride;
 
-    int y = 0;
+    int y = height;
     do {
       // 00 01 10 11
       srcs[0] = Load2<1>(src, srcs[0]);
@@ -720,8 +720,8 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
       dst8 += dst_stride;
 
       srcs[0] = srcs[2];
-      y += 4;
-    } while (y < height);
+      y -= 4;
+    } while (y != 0);
   } else if (num_taps == 4) {
     srcs[4] = _mm_setzero_si128();
 
@@ -735,7 +735,7 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
     srcs[0] = Load2<2>(src, srcs[0]);
     src += src_stride;
 
-    int y = 0;
+    int y = height;
     do {
       // 00 01 10 11 20 21 30 31
       srcs[0] = Load2<3>(src, srcs[0]);
@@ -775,8 +775,8 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
       dst8 += dst_stride;
 
       srcs[0] = srcs[4];
-      y += 4;
-    } while (y < height);
+      y -= 4;
+    } while (y != 0);
   } else if (num_taps == 6) {
     // During the vertical pass the number of taps is restricted when
     // |height| <= 4.
@@ -803,7 +803,7 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
     // 10 11 20 21 30 31 40 41
     srcs[1] = _mm_srli_si128(srcs_0_4x, 2);
 
-    int y = 0;
+    int y = height;
     do {
       // 40 41 50 51
       srcs[4] = Load2<1>(src, srcs[4]);
@@ -845,8 +845,8 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
       srcs[0] = srcs[4];
       srcs[1] = srcs[5];
       srcs[4] = srcs[8];
-      y += 4;
-    } while (y < height);
+      y -= 4;
+    } while (y != 0);
   } else if (num_taps == 8) {
     // During the vertical pass the number of taps is restricted when
     // |height| <= 4.
@@ -883,7 +883,7 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
     // 30 31 40 41 50 51 60 61
     srcs[3] = _mm_srli_si128(srcs_0_4, 6);
 
-    int y = 0;
+    int y = height;
     do {
       // 40 41 50 51 60 61 70 71
       srcs[4] = Load2<3>(src, srcs[4]);
@@ -927,7 +927,7 @@ void FilterVertical2xH(const uint8_t* src, const ptrdiff_t src_stride,
       srcs[2] = srcs[6];
       srcs[3] = srcs[7];
       srcs[4] = srcs[8];
-      y += 4;
-    } while (y < height);
+      y -= 4;
+    } while (y != 0);
   }
 }

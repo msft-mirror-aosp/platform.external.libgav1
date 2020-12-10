@@ -102,7 +102,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
 
   // 4 tap filters are never used when width > 4.
   if (num_taps != 4 && width > 4) {
-    int y = 0;
+    int y = height;
     do {
       int x = 0;
       do {
@@ -124,7 +124,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
       src += src_stride;
       dest8 += pred_stride;
       dest16 += pred_stride;
-    } while (++y < height);
+    } while (--y != 0);
     return;
   }
 
@@ -134,7 +134,7 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
   assert(num_taps <= 4);
   if (num_taps <= 4) {
     if (width == 4) {
-      int y = 0;
+      int y = height;
       do {
         if (is_2d || is_compound) {
           const __m128i v_sum = HorizontalTaps8To16<filter_index>(src, v_tap);
@@ -146,12 +146,13 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
         src += src_stride;
         dest8 += pred_stride;
         dest16 += pred_stride;
-      } while (++y < height);
+      } while (--y != 0);
       return;
     }
 
     if (!is_compound) {
-      int y = 0;
+      int y = height;
+      if (is_2d) y -= 1;
       do {
         if (is_2d) {
           const __m128i sum =
@@ -170,8 +171,8 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
         }
 
         src += src_stride << 1;
-        y += 2;
-      } while (y < height - 1);
+        y -= 2;
+      } while (y != 0);
 
       // The 2d filters have an odd |height| because the horizontal pass
       // generates context for the vertical pass.

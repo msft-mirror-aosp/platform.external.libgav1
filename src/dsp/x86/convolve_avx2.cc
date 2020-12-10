@@ -140,7 +140,8 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
   assert(num_taps <= 4);
   if (num_taps <= 4) {
     if (!is_compound) {
-      int y = 0;
+      int y = height;
+      if (is_2d) y -= 1;
       do {
         if (is_2d) {
           const __m128i sum =
@@ -159,8 +160,8 @@ void FilterHorizontal(const uint8_t* src, const ptrdiff_t src_stride,
         }
 
         src += src_stride << 1;
-        y += 2;
-      } while (y < height - 1);
+        y -= 2;
+      } while (y != 0);
 
       // The 2d filters have an odd |height| because the horizontal pass
       // generates context for the vertical pass.
