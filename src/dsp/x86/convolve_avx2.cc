@@ -1534,7 +1534,7 @@ void ConvolveInit_AVX2() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else  // !LIBGAV1_TARGETING_AVX2
+#else   // !LIBGAV1_TARGETING_AVX2
 namespace libgav1 {
 namespace dsp {
 

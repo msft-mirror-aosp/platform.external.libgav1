@@ -2508,7 +2508,7 @@ void LoopRestorationInit10bpp_SSE4_1() { Init10bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else  // !(LIBGAV1_TARGETING_SSE4_1 && LIBGAV1_MAX_BITDEPTH >= 10)
+#else   // !(LIBGAV1_TARGETING_SSE4_1 && LIBGAV1_MAX_BITDEPTH >= 10)
 namespace libgav1 {
 namespace dsp {
 

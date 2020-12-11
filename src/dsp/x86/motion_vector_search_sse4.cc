@@ -251,7 +251,7 @@ void MotionVectorSearchInit_SSE4_1() {
 }  // namespace dsp
 }  // namespace libgav1
 
-#else  // !LIBGAV1_TARGETING_SSE4_1
+#else   // !LIBGAV1_TARGETING_SSE4_1
 namespace libgav1 {
 namespace dsp {
 

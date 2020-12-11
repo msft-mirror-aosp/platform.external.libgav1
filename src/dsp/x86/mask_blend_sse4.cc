@@ -435,7 +435,7 @@ void MaskBlendInit_SSE4_1() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else  // !LIBGAV1_TARGETING_SSE4_1
+#else   // !LIBGAV1_TARGETING_SSE4_1
 
 namespace libgav1 {
 namespace dsp {
