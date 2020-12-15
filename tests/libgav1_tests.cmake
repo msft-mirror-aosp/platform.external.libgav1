@@ -51,6 +51,8 @@ list(APPEND libgav1_tests_utils_test_sources
 
 list(APPEND libgav1_average_blend_test_sources
             "${libgav1_source}/dsp/average_blend_test.cc")
+list(APPEND libgav1_distance_weighted_blend_test_sources
+            "${libgav1_source}/dsp/distance_weighted_blend_test.cc")
 list(APPEND libgav1_dsp_test_sources "${libgav1_source}/dsp/dsp_test.cc")
 list(APPEND libgav1_intrapred_test_sources
             "${libgav1_source}/dsp/intrapred_test.cc")
@@ -165,6 +167,27 @@ macro(libgav1_add_tests_targets)
                          LIB_DEPS
                          absl::str_format_internal
                          absl::strings
+                         absl::time
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         distance_weighted_blend_test
+                         SOURCES
+                         ${libgav1_distance_weighted_blend_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_decoder
+                         libgav1_dsp
+                         libgav1_tests_utils
+                         libgav1_utils
+                         LIB_DEPS
+                         absl::str_format_internal
                          absl::time
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest
