@@ -29,7 +29,7 @@ endmacro()
 
 # Creates an executable target. The target name is passed as a parameter to the
 # NAME argument, and the sources passed as a parameter to the SOURCES argument:
-# libgav1_add_test(NAME <name> SOURCES <sources> [optional args])
+# libgav1_add_executable(NAME <name> SOURCES <sources> [optional args])
 #
 # Optional args:
 # cmake-format: off
