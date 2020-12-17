@@ -137,7 +137,7 @@ macro(libgav1_add_executable)
   endif()
 
   if(BUILD_SHARED_LIBS AND (MSVC OR WIN32))
-    target_compile_definitions(${lib_NAME} PRIVATE "LIBGAV1_BUILDING_DLL=0")
+    target_compile_definitions(${exe_NAME} PRIVATE "LIBGAV1_BUILDING_DLL=0")
   endif()
 
   if(exe_LIB_DEPS)
