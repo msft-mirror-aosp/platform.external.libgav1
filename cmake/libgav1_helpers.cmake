@@ -20,7 +20,13 @@ set(LIBGAV1_CMAKE_LIBGAV1_HELPERS_CMAKE_ 1)
 # Kills build generation using message(FATAL_ERROR) and outputs all data passed
 # to the console via use of $ARGN.
 macro(libgav1_die)
-  message(FATAL_ERROR ${ARGN})
+  # macro parameters are not variables so a temporary is needed to work with
+  # list().
+  set(msg ${ARGN})
+  # message(${ARGN}) will merge all list elements with no separator while
+  # "${ARGN}" will output the list as a ';' delimited string.
+  list(JOIN msg " " msg)
+  message(FATAL_ERROR "${msg}")
 endmacro()
 
 # Converts semi-colon delimited list variable(s) to string. Output is written to
