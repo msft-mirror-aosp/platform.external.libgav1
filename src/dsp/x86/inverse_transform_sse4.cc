@@ -2918,77 +2918,11 @@ void Wht4TransformLoopColumn_SSE4_1(TransformType tx_type,
 
 //------------------------------------------------------------------------------
 
-#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
-template <typename Residual, typename Pixel>
-void InitAll(Dsp* const dsp) {
-  // Maximum transform size for Dct is 64.
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize4][kRow] =
-      Dct4TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize4][kColumn] =
-      Dct4TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize8][kRow] =
-      Dct8TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize8][kColumn] =
-      Dct8TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize16][kRow] =
-      Dct16TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize16][kColumn] =
-      Dct16TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kRow] =
-      Dct32TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kColumn] =
-      Dct32TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize64][kRow] =
-      Dct64TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize64][kColumn] =
-      Dct64TransformLoopColumn_SSE4_1;
-
-  // Maximum transform size for Adst is 16.
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kRow] =
-      Adst4TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kColumn] =
-      Adst4TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize8][kRow] =
-      Adst8TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize8][kColumn] =
-      Adst8TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize16][kRow] =
-      Adst16TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize16][kColumn] =
-      Adst16TransformLoopColumn_SSE4_1;
-
-  // Maximum transform size for Identity transform is 32.
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize4][kRow] =
-      Identity4TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize4][kColumn] =
-      Identity4TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize8][kRow] =
-      Identity8TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize8][kColumn] =
-      Identity8TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize16][kRow] =
-      Identity16TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize16][kColumn] =
-      Identity16TransformLoopColumn_SSE4_1;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kRow] =
-      Identity32TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kColumn] =
-      Identity32TransformLoopColumn_SSE4_1;
-
-  // Maximum transform size for Wht is 4.
-  dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kRow] =
-      Wht4TransformLoopRow_SSE4_1;
-  dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kColumn] =
-      Wht4TransformLoopColumn_SSE4_1;
-}
-#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
-
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
-#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
-  InitAll<int16_t, uint8_t>(dsp);
-#else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+
+  // Maximum transform size for Dct is 64.
 #if DSP_ENABLED_8BPP_SSE4_1(1DTransformSize4_1DTransformDct)
   dsp->inverse_transforms[k1DTransformDct][k1DTransformSize4][kRow] =
       Dct4TransformLoopRow_SSE4_1;
@@ -3019,6 +2953,8 @@ void Init8bpp() {
   dsp->inverse_transforms[k1DTransformDct][k1DTransformSize64][kColumn] =
       Dct64TransformLoopColumn_SSE4_1;
 #endif
+
+  // Maximum transform size for Adst is 16.
 #if DSP_ENABLED_8BPP_SSE4_1(1DTransformSize4_1DTransformAdst)
   dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kRow] =
       Adst4TransformLoopRow_SSE4_1;
@@ -3037,6 +2973,8 @@ void Init8bpp() {
   dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize16][kColumn] =
       Adst16TransformLoopColumn_SSE4_1;
 #endif
+
+  // Maximum transform size for Identity transform is 32.
 #if DSP_ENABLED_8BPP_SSE4_1(1DTransformSize4_1DTransformIdentity)
   dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize4][kRow] =
       Identity4TransformLoopRow_SSE4_1;
@@ -3061,12 +2999,13 @@ void Init8bpp() {
   dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kColumn] =
       Identity32TransformLoopColumn_SSE4_1;
 #endif
+
+  // Maximum transform size for Wht is 4.
 #if DSP_ENABLED_8BPP_SSE4_1(1DTransformSize4_1DTransformWht)
   dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kRow] =
       Wht4TransformLoopRow_SSE4_1;
   dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kColumn] =
       Wht4TransformLoopColumn_SSE4_1;
-#endif
 #endif
 }
 
