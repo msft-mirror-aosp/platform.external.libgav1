@@ -16,7 +16,6 @@
 
 #include <mutex>  // NOLINT (unapproved c++11 header)
 
-#include "src/dsp/arm/weight_mask_neon.h"
 #include "src/dsp/average_blend.h"
 #include "src/dsp/cdef.h"
 #include "src/dsp/convolve.h"
