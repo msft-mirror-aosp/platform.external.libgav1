@@ -900,6 +900,11 @@ namespace dsp_internal {
   (LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS || \
    LIBGAV1_Dsp10bpp_##func == LIBGAV1_CPU_SSE4_1)
 
+// Initializes C-only function pointers. Note some entries may be set to
+// nullptr if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS is not defined. This is meant
+// for use in tests only, it is not thread-safe.
+void DspInit_C();
+
 // Returns the appropriate Dsp table for |bitdepth| or nullptr if one doesn't
 // exist. This version is meant for use by test or dsp/*Init() functions only.
 dsp::Dsp* GetWritableDspTable(int bitdepth);

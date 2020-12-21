@@ -24,6 +24,10 @@
 #include "src/utils/constants.h"
 #include "src/utils/cpu.h"
 
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+#include "tests/utils.h"
+#endif
+
 namespace libgav1 {
 namespace dsp {
 namespace {
@@ -36,15 +40,14 @@ constexpr int kMax1DTransformSize[kNum1DTransforms] = {
     k1DTransformSize4,   // Wht.
 };
 
-TEST(Dsp, TablesArePopulated) {
+void CheckTables(bool c_only) {
 #if LIBGAV1_MAX_BITDEPTH >= 10
-  const int bitdepths[] = {8, 10};
+  static constexpr int kBitdepths[] = {kBitdepth8, kBitdepth10};
 #else
-  const int bitdepths[] = {8};
+  static constexpr int kBitdepths[] = {kBitdepth8};
 #endif
-  DspInit();
 
-  for (const auto& bitdepth : bitdepths) {
+  for (const auto& bitdepth : kBitdepths) {
     const Dsp* const dsp = GetDspTable(bitdepth);
     ASSERT_NE(dsp, nullptr);
     SCOPED_TRACE(absl::StrCat("bitdepth: ", bitdepth));
@@ -105,6 +108,7 @@ TEST(Dsp, TablesArePopulated) {
     const uint32_t cpu_features = GetCpuInfo();
     super_res_coefficients_is_nonnull = (cpu_features & kSSE4_1) != 0;
 #endif
+    if (c_only) super_res_coefficients_is_nonnull = false;
     if (bitdepth == 8 && super_res_coefficients_is_nonnull) {
       EXPECT_NE(dsp->super_res_coefficients, nullptr);
     } else {
@@ -208,6 +212,22 @@ TEST(Dsp, TablesArePopulated) {
     EXPECT_NE(dsp->mv_projection_single[2], nullptr);
   }
 }
+
+TEST(Dsp, TablesArePopulated) {
+  DspInit();
+  CheckTables(/*c_only=*/false);
+}
+
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+TEST(Dsp, TablesArePopulatedCOnly) {
+  test_utils::ResetDspTable(kBitdepth8);
+#if LIBGAV1_MAX_BITDEPTH >= 10
+  test_utils::ResetDspTable(kBitdepth10);
+#endif
+  dsp_internal::DspInit_C();
+  CheckTables(/*c_only=*/true);
+}
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 
 TEST(Dsp, GetDspTable) {
   EXPECT_EQ(GetDspTable(1), nullptr);

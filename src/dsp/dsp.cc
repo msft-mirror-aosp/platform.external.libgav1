@@ -39,6 +39,26 @@
 namespace libgav1 {
 namespace dsp_internal {
 
+void DspInit_C() {
+  dsp::AverageBlendInit_C();
+  dsp::CdefInit_C();
+  dsp::ConvolveInit_C();
+  dsp::DistanceWeightedBlendInit_C();
+  dsp::FilmGrainInit_C();
+  dsp::IntraEdgeInit_C();
+  dsp::IntraPredInit_C();
+  dsp::InverseTransformInit_C();
+  dsp::LoopFilterInit_C();
+  dsp::LoopRestorationInit_C();
+  dsp::MaskBlendInit_C();
+  dsp::MotionFieldProjectionInit_C();
+  dsp::MotionVectorSearchInit_C();
+  dsp::ObmcInit_C();
+  dsp::SuperResInit_C();
+  dsp::WarpInit_C();
+  dsp::WeightMaskInit_C();
+}
+
 dsp::Dsp* GetWritableDspTable(int bitdepth) {
   switch (bitdepth) {
     case 8: {
@@ -62,23 +82,7 @@ namespace dsp {
 void DspInit() {
   static std::once_flag once;
   std::call_once(once, []() {
-    AverageBlendInit_C();
-    CdefInit_C();
-    ConvolveInit_C();
-    DistanceWeightedBlendInit_C();
-    FilmGrainInit_C();
-    IntraEdgeInit_C();
-    IntraPredInit_C();
-    InverseTransformInit_C();
-    LoopFilterInit_C();
-    LoopRestorationInit_C();
-    MaskBlendInit_C();
-    MotionFieldProjectionInit_C();
-    MotionVectorSearchInit_C();
-    ObmcInit_C();
-    SuperResInit_C();
-    WarpInit_C();
-    WeightMaskInit_C();
+    dsp_internal::DspInit_C();
 #if LIBGAV1_ENABLE_SSE4_1 || LIBGAV1_ENABLE_AVX2
     const uint32_t cpu_features = GetCpuInfo();
 #if LIBGAV1_ENABLE_SSE4_1

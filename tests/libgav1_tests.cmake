@@ -210,6 +210,7 @@ macro(libgav1_add_tests_targets)
                          OBJLIB_DEPS
                          libgav1_decoder
                          libgav1_dsp
+                         libgav1_tests_utils
                          libgav1_utils
                          LIB_DEPS
                          absl::strings
