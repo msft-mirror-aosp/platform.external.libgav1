@@ -402,6 +402,10 @@ void FilterIntraPredictor_C(void* const dest, ptrdiff_t stride,
                           kFilterIntraTaps[pred][i][4] * p4 +
                           kFilterIntraTaps[pred][i][5] * p5 +
                           kFilterIntraTaps[pred][i][6] * p6;
+        // Section 7.11.2.3 specifies the right-hand side of the assignment as
+        //   Clip1( Round2Signed( pr, INTRA_FILTER_SCALE_BITS ) ).
+        // Since Clip1() clips a negative value to 0, it is safe to replace
+        // Round2Signed() with Round2().
         buffer[1 + yoffset][x + xoffset] = static_cast<Pixel>(
             Clip3(RightShiftWithRounding(value, 4), 0, kMaxPixel));
       }
