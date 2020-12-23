@@ -560,7 +560,7 @@ void WeightMask8x16_10bpp_SSE4(const void* prediction_0,
   do {
     WEIGHT8_PAIR_AND_STRIDE_10BPP;
     WEIGHT8_PAIR_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT8_PAIR_AND_STRIDE_10BPP;
   WEIGHT8_PAIR_WITHOUT_STRIDE_10BPP;
 }
@@ -576,7 +576,7 @@ void WeightMask8x32_10bpp_SSE4(const void* prediction_0,
     WEIGHT8_PAIR_AND_STRIDE_10BPP;
     WEIGHT8_PAIR_AND_STRIDE_10BPP;
     WEIGHT8_PAIR_AND_STRIDE_10BPP;
-  } while (--y5);
+  } while (--y5 != 0);
   WEIGHT8_PAIR_WITHOUT_STRIDE_10BPP;
 }
 
@@ -599,7 +599,7 @@ void WeightMask16x8_10bpp_SSE4(const void* prediction_0,
   int y = 7;
   do {
     WEIGHT16_AND_STRIDE_10BPP;
-  } while (--y);
+  } while (--y != 0);
   WEIGHT16_WITHOUT_STRIDE_10BPP;
 }
 
@@ -614,7 +614,7 @@ void WeightMask16x16_10bpp_SSE4(const void* prediction_0,
     WEIGHT16_AND_STRIDE_10BPP;
     WEIGHT16_AND_STRIDE_10BPP;
     WEIGHT16_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT16_WITHOUT_STRIDE_10BPP;
 }
 
@@ -631,7 +631,7 @@ void WeightMask16x32_10bpp_SSE4(const void* prediction_0,
     WEIGHT16_AND_STRIDE_10BPP;
     WEIGHT16_AND_STRIDE_10BPP;
     WEIGHT16_AND_STRIDE_10BPP;
-  } while (--y5);
+  } while (--y5 != 0);
   WEIGHT16_AND_STRIDE_10BPP;
   WEIGHT16_WITHOUT_STRIDE_10BPP;
 }
@@ -647,7 +647,7 @@ void WeightMask16x64_10bpp_SSE4(const void* prediction_0,
     WEIGHT16_AND_STRIDE_10BPP;
     WEIGHT16_AND_STRIDE_10BPP;
     WEIGHT16_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT16_WITHOUT_STRIDE_10BPP;
 }
 
@@ -690,7 +690,7 @@ void WeightMask32x16_10bpp_SSE4(const void* prediction_0,
     WEIGHT32_AND_STRIDE_10BPP;
     WEIGHT32_AND_STRIDE_10BPP;
     WEIGHT32_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT32_WITHOUT_STRIDE_10BPP;
 }
 
@@ -707,7 +707,7 @@ void WeightMask32x32_10bpp_SSE4(const void* prediction_0,
     WEIGHT32_AND_STRIDE_10BPP;
     WEIGHT32_AND_STRIDE_10BPP;
     WEIGHT32_AND_STRIDE_10BPP;
-  } while (--y5);
+  } while (--y5 != 0);
   WEIGHT32_AND_STRIDE_10BPP;
   WEIGHT32_WITHOUT_STRIDE_10BPP;
 }
@@ -723,7 +723,7 @@ void WeightMask32x64_10bpp_SSE4(const void* prediction_0,
     WEIGHT32_AND_STRIDE_10BPP;
     WEIGHT32_AND_STRIDE_10BPP;
     WEIGHT32_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT32_WITHOUT_STRIDE_10BPP;
 }
 
@@ -754,7 +754,7 @@ void WeightMask64x16_10bpp_SSE4(const void* prediction_0,
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT64_WITHOUT_STRIDE_10BPP;
 }
 
@@ -771,7 +771,7 @@ void WeightMask64x32_10bpp_SSE4(const void* prediction_0,
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
-  } while (--y5);
+  } while (--y5 != 0);
   WEIGHT64_AND_STRIDE_10BPP;
   WEIGHT64_WITHOUT_STRIDE_10BPP;
 }
@@ -787,7 +787,7 @@ void WeightMask64x64_10bpp_SSE4(const void* prediction_0,
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT64_WITHOUT_STRIDE_10BPP;
 }
 
@@ -802,7 +802,7 @@ void WeightMask64x128_10bpp_SSE4(const void* prediction_0,
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
     WEIGHT64_AND_STRIDE_10BPP;
-  } while (--y3);
+  } while (--y3 != 0);
   WEIGHT64_AND_STRIDE_10BPP;
   WEIGHT64_WITHOUT_STRIDE_10BPP;
 }
@@ -813,7 +813,7 @@ void WeightMask128x64_10bpp_SSE4(const void* prediction_0,
                                  ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
-  int y3 = 0;
+  int y3 = 21;
   const ptrdiff_t adjusted_mask_stride = mask_stride - 64;
   do {
     WEIGHT64_WITHOUT_STRIDE_10BPP;
@@ -842,7 +842,7 @@ void WeightMask128x64_10bpp_SSE4(const void* prediction_0,
     pred_0 += 64;
     pred_1 += 64;
     mask += adjusted_mask_stride;
-  } while (++y3 < 21);
+  } while (--y3 != 0);
   WEIGHT64_WITHOUT_STRIDE_10BPP;
   pred_0 += 64;
   pred_1 += 64;
@@ -856,7 +856,7 @@ void WeightMask128x128_10bpp_SSE4(const void* prediction_0,
                                   ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
-  int y3 = 0;
+  int y3 = 42;
   const ptrdiff_t adjusted_mask_stride = mask_stride - 64;
   do {
     WEIGHT64_WITHOUT_STRIDE_10BPP;
@@ -885,7 +885,7 @@ void WeightMask128x128_10bpp_SSE4(const void* prediction_0,
     pred_0 += 64;
     pred_1 += 64;
     mask += adjusted_mask_stride;
-  } while (++y3 < 42);
+  } while (--y3 != 0);
   WEIGHT64_WITHOUT_STRIDE_10BPP;
   pred_0 += 64;
   pred_1 += 64;
