@@ -41,8 +41,8 @@ namespace {
 
 inline __m128i CflPredictUnclipped(const __m128i* input, __m128i alpha_q12,
                                    __m128i alpha_sign, __m128i dc_q0) {
-  __m128i ac_q3 = LoadUnaligned16(input);
-  __m128i ac_sign = _mm_sign_epi16(alpha_sign, ac_q3);
+  const __m128i ac_q3 = LoadUnaligned16(input);
+  const __m128i ac_sign = _mm_sign_epi16(alpha_sign, ac_q3);
   __m128i scaled_luma_q0 = _mm_mulhrs_epi16(_mm_abs_epi16(ac_q3), alpha_q12);
   scaled_luma_q0 = _mm_sign_epi16(scaled_luma_q0, ac_sign);
   return _mm_add_epi16(scaled_luma_q0, dc_q0);
@@ -968,8 +968,8 @@ namespace {
 
 inline __m128i CflPredictUnclipped(const __m128i* input, __m128i alpha_q12,
                                    __m128i alpha_sign, __m128i dc_q0) {
-  __m128i ac_q3 = LoadUnaligned16(input);
-  __m128i ac_sign = _mm_sign_epi16(alpha_sign, ac_q3);
+  const __m128i ac_q3 = LoadUnaligned16(input);
+  const __m128i ac_sign = _mm_sign_epi16(alpha_sign, ac_q3);
   __m128i scaled_luma_q0 = _mm_mulhrs_epi16(_mm_abs_epi16(ac_q3), alpha_q12);
   scaled_luma_q0 = _mm_sign_epi16(scaled_luma_q0, ac_sign);
   return _mm_add_epi16(scaled_luma_q0, dc_q0);
