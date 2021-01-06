@@ -115,9 +115,23 @@ macro(libgav1_add_executable)
     target_include_directories(${exe_NAME} PRIVATE ${exe_INCLUDES})
   endif()
 
-  if(exe_COMPILE_FLAGS OR LIBGAV1_CXX_FLAGS)
+  unset(exe_LIBGAV1_COMPILE_FLAGS)
+  if(exe_TEST)
+    list(FILTER exe_SOURCES INCLUDE REGEX "\\.c$")
+    list(LENGTH exe_SOURCES exe_SOURCES_length)
+    if(exe_SOURCES_length EQUAL 0)
+      set(exe_LIBGAV1_COMPILE_FLAGS ${LIBGAV1_TEST_CXX_FLAGS})
+    else()
+      set(exe_LIBGAV1_COMPILE_FLAGS ${LIBGAV1_TEST_C_FLAGS})
+    endif()
+  else()
+    set(exe_LIBGAV1_COMPILE_FLAGS ${LIBGAV1_CXX_FLAGS})
+  endif()
+
+  if(exe_COMPILE_FLAGS OR exe_LIBGAV1_COMPILE_FLAGS)
     target_compile_options(${exe_NAME}
-                           PRIVATE ${exe_COMPILE_FLAGS} ${LIBGAV1_CXX_FLAGS})
+                           PRIVATE ${exe_COMPILE_FLAGS}
+                                   ${exe_LIBGAV1_COMPILE_FLAGS})
   endif()
 
   if(exe_LINK_FLAGS OR LIBGAV1_EXE_LINKER_FLAGS)

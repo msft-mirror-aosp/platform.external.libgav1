@@ -89,8 +89,6 @@ macro(libgav1_set_build_definitions)
   endif()
 
   if(build_type_lowercase MATCHES "rel")
-    # TODO(tomfinegan): this value is only a concern for the core library and
-    # can be made smaller if the test targets are avoided.
     list(APPEND libgav1_base_cxx_flags "-Wframe-larger-than=196608")
   endif()
 

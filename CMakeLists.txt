@@ -112,6 +112,9 @@ if(NOT "${LIBGAV1_EXE_LINKER_FLAGS}" STREQUAL "")
   separate_arguments(LIBGAV1_EXE_LINKER_FLAGS)
 endif()
 
+# Set test-only flags based on LIBGAV1_CXX_FLAGS.
+libgav1_set_test_flags()
+
 set(libgav1_abseil "${libgav1_root}/third_party/abseil-cpp")
 if(NOT EXISTS "${libgav1_abseil}")
   message(

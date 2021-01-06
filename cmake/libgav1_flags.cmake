@@ -249,3 +249,15 @@ macro(libgav1_set_cxx_flags)
 
   libgav1_test_cxx_flag(FLAG_LIST_VAR_NAMES ${cxx_flag_lists})
 endmacro()
+
+# Sets LIBGAV1_TEST_C_FLAGS and LIBGAV1_TEST_CXX_FLAGS.
+#
+# Note: libgav1_set_cxx_flags() must be called before this macro. Furthermore,
+# the call to this macro should be made after all additions to LIBGAV1_CXX_FLAGS
+# are complete.
+macro(libgav1_set_test_flags)
+  if(LIBGAV1_ENABLE_TESTS)
+    set(LIBGAV1_TEST_CXX_FLAGS ${LIBGAV1_CXX_FLAGS})
+    list(FILTER LIBGAV1_TEST_CXX_FLAGS EXCLUDE REGEX "-Wframe-larger-than")
+  endif()
+endmacro()
