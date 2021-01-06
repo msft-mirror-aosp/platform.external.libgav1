@@ -285,9 +285,8 @@ LIBGAV1_ALWAYS_INLINE void AddPartial(const void* const source,
   // 50 51 52 53 54 55 56 57  00 00 00 00 00 00 00 00
   // 60 61 62 63 64 65 66 67  00 00 00 00 00 00 00 00
   // 70 71 72 73 74 75 76 77  00 00 00 00 00 00 00 00
-  const uint8x8_t v_zero = vdup_n_u8(0);
-  partial_lo[6] = vaddl_u8(v_zero, v_src[0]);
-  for (int i = 1; i < 8; ++i) {
+  partial_lo[6] = vaddl_u8(v_src[0], v_src[1]);
+  for (int i = 2; i < 8; ++i) {
     partial_lo[6] = vaddw_u8(partial_lo[6], v_src[i]);
   }
 
