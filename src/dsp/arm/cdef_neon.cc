@@ -450,7 +450,7 @@ void LoadDirection4(const uint16_t* const src, const ptrdiff_t stride,
 
 int16x8_t Constrain(const uint16x8_t pixel, const uint16x8_t reference,
                     const uint16x8_t threshold, const int16x8_t damping) {
-  // If reference > pixel, the difference will be negative, so covert to 0 or
+  // If reference > pixel, the difference will be negative, so convert to 0 or
   // -1.
   const uint16x8_t sign = vcgtq_u16(reference, pixel);
   const uint16x8_t abs_diff = vabdq_u16(pixel, reference);
