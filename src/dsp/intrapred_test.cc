@@ -1116,7 +1116,7 @@ void CflSubsamplerTest<bitdepth, Pixel,
   const int height = GetLumaHeight(block_height_, subsampling_type);
   const ptrdiff_t stride = kMaxBlockSize * sizeof(Pixel);
   Memset(intra_pred_mem_.ref_src, (1 << bitdepth) - 1,
-         sizeof(intra_pred_mem_.ref_src));
+         sizeof(intra_pred_mem_.ref_src) / sizeof(intra_pred_mem_.ref_src[0]));
   int16_t luma_base[kCflLumaBufferStride][kCflLumaBufferStride] = {};
   int16_t luma_cur[kCflLumaBufferStride][kCflLumaBufferStride] = {};
   base_cfl_subsampler_(luma_base, width, height, intra_pred_mem_.ref_src,
