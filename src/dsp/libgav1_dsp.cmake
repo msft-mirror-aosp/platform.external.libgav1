@@ -127,8 +127,6 @@ list(APPEND libgav1_dsp_sources_sse4
             "${libgav1_source}/dsp/x86/convolve_sse4.inc"
             "${libgav1_source}/dsp/x86/distance_weighted_blend_sse4.cc"
             "${libgav1_source}/dsp/x86/distance_weighted_blend_sse4.h"
-            "${libgav1_source}/dsp/x86/film_grain_sse4.cc"
-            "${libgav1_source}/dsp/x86/film_grain_sse4.h"
             "${libgav1_source}/dsp/x86/intra_edge_sse4.cc"
             "${libgav1_source}/dsp/x86/intra_edge_sse4.h"
             "${libgav1_source}/dsp/x86/intrapred_sse4.cc"

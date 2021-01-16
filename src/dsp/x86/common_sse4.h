@@ -245,15 +245,6 @@ inline __m128i RightShiftWithRounding_S32(const __m128i v_val_d, int bits) {
   return _mm_srai_epi32(v_tmp_d, bits);
 }
 
-// Use this when |bits| is not an immediate value.
-inline __m128i VariableRightShiftWithRounding_S32(const __m128i v_val_d,
-                                                  int bits) {
-  const __m128i v_bias_d =
-      _mm_set1_epi32(static_cast<int32_t>((1 << bits) >> 1));
-  const __m128i v_tmp_d = _mm_add_epi32(v_val_d, v_bias_d);
-  return _mm_sra_epi32(v_tmp_d, _mm_cvtsi32_si128(bits));
-}
-
 //------------------------------------------------------------------------------
 // Masking utilities
 inline __m128i MaskHighNBytes(int n) {
