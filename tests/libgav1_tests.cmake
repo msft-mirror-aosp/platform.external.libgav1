@@ -35,6 +35,26 @@ if(NOT LIBGAV1_ENABLE_TESTS OR NOT EXISTS "${libgav1_googletest}")
   return()
 endif()
 
+# Check GoogleTest compiler requirements.
+if((CMAKE_CXX_COMPILER_ID
+    MATCHES
+    "Clang|GNU"
+    AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "5")
+   OR (MSVC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19"))
+  macro(libgav1_add_tests_targets)
+
+  endmacro()
+
+  message(
+    WARNING
+      "${CMAKE_CXX_COMPILER} (${CMAKE_CXX_COMPILER_ID} version"
+      " ${CMAKE_CXX_COMPILER_VERSION}) is below the minimum requirements for"
+      " GoogleTest; disabling unit tests. See"
+      " https://github.com/google/googletest#compilers for more detail.")
+  set(LIBGAV1_ENABLE_TESTS FALSE CACHE BOOL "Enables tests." FORCE)
+  return()
+endif()
+
 list(APPEND libgav1_tests_block_utils_sources
             "${libgav1_root}/tests/block_utils.h"
             "${libgav1_root}/tests/block_utils.cc")
