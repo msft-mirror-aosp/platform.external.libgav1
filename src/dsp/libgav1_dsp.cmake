@@ -67,6 +67,8 @@ list(APPEND libgav1_dsp_sources
 
 list(APPEND libgav1_dsp_sources_avx2
             ${libgav1_dsp_sources_avx2}
+            "${libgav1_source}/dsp/x86/cdef_avx2.cc"
+            "${libgav1_source}/dsp/x86/cdef_avx2.h"
             "${libgav1_source}/dsp/x86/convolve_avx2.cc"
             "${libgav1_source}/dsp/x86/convolve_avx2.h"
             "${libgav1_source}/dsp/x86/loop_restoration_10bit_avx2.cc"
