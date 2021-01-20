@@ -1112,50 +1112,76 @@ template <int bitdepth, typename Pixel, SubsamplingType subsampling_type>
 void CflSubsamplerTest<bitdepth, Pixel,
                        subsampling_type>::TestSaturatedValues() {
   if (base_cfl_subsampler_ == nullptr) return;
-  const int width = GetLumaWidth(block_width_, subsampling_type);
-  const int height = GetLumaHeight(block_height_, subsampling_type);
   const ptrdiff_t stride = kMaxBlockSize * sizeof(Pixel);
-  Memset(intra_pred_mem_.ref_src, (1 << bitdepth) - 1,
-         sizeof(intra_pred_mem_.ref_src) / sizeof(intra_pred_mem_.ref_src[0]));
-  int16_t luma_base[kCflLumaBufferStride][kCflLumaBufferStride] = {};
-  int16_t luma_cur[kCflLumaBufferStride][kCflLumaBufferStride] = {};
-  base_cfl_subsampler_(luma_base, width, height, intra_pred_mem_.ref_src,
-                       stride);
-  cur_cfl_subsampler_(luma_cur, width, height, intra_pred_mem_.ref_src, stride);
-  if (!test_utils::CompareBlocks(
-          reinterpret_cast<uint16_t*>(luma_cur[0]),
-          reinterpret_cast<uint16_t*>(luma_base[0]), block_width_,
-          block_height_, kCflLumaBufferStride, kCflLumaBufferStride, true)) {
-    ADD_FAILURE() << "Result from optimized version of CFL subsampler"
-                  << " differs from reference.";
+  for (int width = GetLumaWidth(block_width_, subsampling_type); width > 0;
+       width -= 8) {
+    for (int height = GetLumaHeight(block_height_, subsampling_type);
+         height > 0; height -= 8) {
+      Pixel* src = intra_pred_mem_.ref_src;
+      for (int y = 0; y < height; ++y) {
+        Memset(src, (1 << bitdepth) - 1, width);
+        Memset(src + width, 0, kMaxBlockSize - width);
+        src += kMaxBlockSize;
+      }
+      Memset(intra_pred_mem_.ref_src + kMaxBlockSize * height, 0,
+             kMaxBlockSize * (kMaxBlockSize - height));
+
+      int16_t luma_base[kCflLumaBufferStride][kCflLumaBufferStride] = {};
+      int16_t luma_cur[kCflLumaBufferStride][kCflLumaBufferStride] = {};
+      base_cfl_subsampler_(luma_base, width, height, intra_pred_mem_.ref_src,
+                           stride);
+      cur_cfl_subsampler_(luma_cur, width, height, intra_pred_mem_.ref_src,
+                          stride);
+      if (!test_utils::CompareBlocks(reinterpret_cast<uint16_t*>(luma_cur[0]),
+                                     reinterpret_cast<uint16_t*>(luma_base[0]),
+                                     block_width_, block_height_,
+                                     kCflLumaBufferStride, kCflLumaBufferStride,
+                                     true)) {
+        FAIL() << "Result from optimized version of CFL subsampler"
+               << " differs from reference. max_luma_width: " << width
+               << " max_luma_height: " << height;
+      }
+    }
   }
 }
 
 template <int bitdepth, typename Pixel, SubsamplingType subsampling_type>
 void CflSubsamplerTest<bitdepth, Pixel, subsampling_type>::TestRandomValues() {
   if (base_cfl_subsampler_ == nullptr) return;
-  const int width = GetLumaWidth(block_width_, subsampling_type);
-  const int height = GetLumaHeight(block_height_, subsampling_type);
-  Pixel* src = intra_pred_mem_.ref_src;
   const ptrdiff_t stride = kMaxBlockSize * sizeof(Pixel);
-  libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
-  for (int i = 0; i < height; ++i) {
-    for (int j = 0; j < width; ++j) {
-      src[j] = rnd.RandRange(1 << bitdepth);
+  // Use an alternate seed to differentiate this test from TestSpeed().
+  libvpx_test::ACMRandom rnd(0x9571);
+  for (int width = GetLumaWidth(block_width_, subsampling_type); width > 0;
+       width -= 8) {
+    for (int height = GetLumaHeight(block_height_, subsampling_type);
+         height > 0; height -= 8) {
+      Pixel* src = intra_pred_mem_.ref_src;
+      for (int i = 0; i < height; ++i) {
+        for (int j = 0; j < width; ++j) {
+          src[j] = rnd.RandRange(1 << bitdepth);
+        }
+        Memset(src + width, 0, kMaxBlockSize - width);
+        src += kMaxBlockSize;
+      }
+      Memset(intra_pred_mem_.ref_src + kMaxBlockSize * height, 0,
+             kMaxBlockSize * (kMaxBlockSize - height));
+
+      int16_t luma_base[kCflLumaBufferStride][kCflLumaBufferStride] = {};
+      int16_t luma_cur[kCflLumaBufferStride][kCflLumaBufferStride] = {};
+      base_cfl_subsampler_(luma_base, width, height, intra_pred_mem_.ref_src,
+                           stride);
+      cur_cfl_subsampler_(luma_cur, width, height, intra_pred_mem_.ref_src,
+                          stride);
+      if (!test_utils::CompareBlocks(reinterpret_cast<uint16_t*>(luma_cur[0]),
+                                     reinterpret_cast<uint16_t*>(luma_base[0]),
+                                     block_width_, block_height_,
+                                     kCflLumaBufferStride, kCflLumaBufferStride,
+                                     true)) {
+        FAIL() << "Result from optimized version of CFL subsampler"
+               << " differs from reference. max_luma_width: " << width
+               << " max_luma_height: " << height;
+      }
     }
-    src += kMaxBlockSize;
-  }
-  int16_t luma_base[kCflLumaBufferStride][kCflLumaBufferStride] = {};
-  int16_t luma_cur[kCflLumaBufferStride][kCflLumaBufferStride] = {};
-  base_cfl_subsampler_(luma_base, width, height, intra_pred_mem_.ref_src,
-                       stride);
-  cur_cfl_subsampler_(luma_cur, width, height, intra_pred_mem_.ref_src, stride);
-  if (!test_utils::CompareBlocks(
-          reinterpret_cast<uint16_t*>(luma_cur[0]),
-          reinterpret_cast<uint16_t*>(luma_base[0]), block_width_,
-          block_height_, kCflLumaBufferStride, kCflLumaBufferStride, true)) {
-    ADD_FAILURE() << "Result from optimized version of CFL subsampler"
-                  << " differs from reference.";
   }
 }
 

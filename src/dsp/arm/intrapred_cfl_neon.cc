@@ -210,17 +210,30 @@ void CflSubsampler444_NEON(
   uint32_t sum;
   if (block_width == 4) {
     assert(max_luma_width >= 4);
+    assert(max_luma_height <= block_height);
+    assert((max_luma_height % 2) == 0);
     uint32x4_t running_sum = vdupq_n_u32(0);
     uint8x8_t row = vdup_n_u8(0);
 
-    for (int y = 0; y < block_height; y += 2) {
+    uint16x8_t row_shifted;
+    int y = 0;
+    do {
       row = Load4<0>(src, row);
       row = Load4<1>(src + stride, row);
       if (y < (max_luma_height - 1)) {
         src += stride << 1;
       }
 
-      const uint16x8_t row_shifted = vshll_n_u8(row, 3);
+      row_shifted = vshll_n_u8(row, 3);
+      running_sum = vpadalq_u16(running_sum, row_shifted);
+      vst1_s16(luma[y], vreinterpret_s16_u16(vget_low_u16(row_shifted)));
+      vst1_s16(luma[y + 1], vreinterpret_s16_u16(vget_high_u16(row_shifted)));
+      y += 2;
+    } while (y < max_luma_height);
+
+    row_shifted =
+        vcombine_u16(vget_high_u16(row_shifted), vget_high_u16(row_shifted));
+    for (; y < block_height; y += 2) {
       running_sum = vpadalq_u16(running_sum, row_shifted);
       vst1_s16(luma[y], vreinterpret_s16_u16(vget_low_u16(row_shifted)));
       vst1_s16(luma[y + 1], vreinterpret_s16_u16(vget_high_u16(row_shifted)));

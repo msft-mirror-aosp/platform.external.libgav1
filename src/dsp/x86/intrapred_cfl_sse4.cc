@@ -120,12 +120,15 @@ void CflSubsampler444_4xH_SSE4_1(
   } while (y < visible_height);
 
   if (!is_inside) {
-    int y = visible_height;
+    // Replicate the 2 high lanes.
+    samples = _mm_shuffle_epi32(samples, 0xee);
     do {
+      StoreLo8(luma_ptr, samples);
+      luma_ptr += kCflLumaBufferStride;
       StoreHi8(luma_ptr, samples);
       luma_ptr += kCflLumaBufferStride;
       sum = _mm_add_epi16(sum, samples);
-      ++y;
+      y += 2;
     } while (y < block_height);
   }
 
@@ -656,10 +659,11 @@ inline void CflSubsampler420Impl_WxH_SSE4_1(
   __m128i final_sum = zero;
   const int block_height = 1 << block_height_log2;
   const int luma_height = std::min(block_height, max_luma_height >> 1);
+  static_assert(max_luma_width <= 32, "");
 
   int16_t* luma_ptr = luma[0];
   __m128i final_row_result;
-  // Begin first y section, covering width up to 16.
+  // Begin first y section, covering width up to 32.
   int y = 0;
   do {
     const uint8_t* src_next = src + stride;
@@ -695,22 +699,16 @@ inline void CflSubsampler420Impl_WxH_SSE4_1(
     final_row_result =
         StoreLumaResults8_420(luma_sum2, luma_sum3, luma_ptr + 8);
     sum = _mm_add_epi16(sum, final_row_result);
+    if (block_width_log2 == 5) {
+      const __m128i wide_fill = LastRowResult(final_row_result);
+      sum = _mm_add_epi16(sum, wide_fill);
+      sum = _mm_add_epi16(sum, wide_fill);
+    }
     final_sum = _mm_add_epi32(final_sum, _mm_cvtepu16_epi32(sum));
     final_sum = _mm_add_epi32(final_sum, _mm_unpackhi_epi16(sum, zero));
     src += stride << 1;
     luma_ptr += kCflLumaBufferStride;
   } while (++y < luma_height);
-
-  // Because max_luma_width is at most 32, any values beyond x=16 will
-  // necessarily be duplicated.
-  if (block_width_log2 == 5) {
-    const __m128i wide_fill = LastRowResult(final_row_result);
-    // Multiply duplicated value by number of occurrences, height * 4, since
-    // there are 16 in each row and the value appears in the vector 4 times.
-    final_sum = _mm_add_epi32(
-        final_sum,
-        _mm_slli_epi32(_mm_cvtepi16_epi32(wide_fill), block_height_log2 + 2));
-  }
 
   // Begin second y section.
   if (y < block_height) {
@@ -718,6 +716,15 @@ inline void CflSubsampler420Impl_WxH_SSE4_1(
         LoadUnaligned16(luma_ptr - kCflLumaBufferStride);
     const __m128i final_fill1 =
         LoadUnaligned16(luma_ptr - kCflLumaBufferStride + 8);
+    __m128i wide_fill;
+
+    if (block_width_log2 == 5) {
+      // There are 16 16-bit fill values per row, shifting by 2 accounts for
+      // the widening to 32-bit.
+      wide_fill =
+          _mm_slli_epi32(_mm_cvtepi16_epi32(LastRowResult(final_fill1)), 2);
+    }
+
     const __m128i final_inner_sum = _mm_add_epi16(final_fill0, final_fill1);
     const __m128i final_inner_sum0 = _mm_cvtepu16_epi32(final_inner_sum);
     const __m128i final_inner_sum1 = _mm_unpackhi_epi16(final_inner_sum, zero);
@@ -727,6 +734,9 @@ inline void CflSubsampler420Impl_WxH_SSE4_1(
     do {
       StoreUnaligned16(luma_ptr, final_fill0);
       StoreUnaligned16(luma_ptr + 8, final_fill1);
+      if (block_width_log2 == 5) {
+        final_sum = _mm_add_epi32(final_sum, wide_fill);
+      }
       luma_ptr += kCflLumaBufferStride;
 
       final_sum = _mm_add_epi32(final_sum, final_fill_to_sum);
@@ -748,14 +758,10 @@ inline void CflSubsampler420Impl_WxH_SSE4_1(
     const __m128i samples1 = LoadUnaligned16(luma_ptr + 8);
     final_row_result = _mm_sub_epi16(samples1, averages);
     StoreUnaligned16(luma_ptr + 8, final_row_result);
-  }
-  if (block_width_log2 == 5) {
-    int16_t* wide_luma_ptr = luma[0] + 16;
-    const __m128i wide_fill = LastRowResult(final_row_result);
-    for (int i = 0; i < block_height;
-         ++i, wide_luma_ptr += kCflLumaBufferStride) {
-      StoreUnaligned16(wide_luma_ptr, wide_fill);
-      StoreUnaligned16(wide_luma_ptr + 8, wide_fill);
+    if (block_width_log2 == 5) {
+      const __m128i wide_fill = LastRowResult(final_row_result);
+      StoreUnaligned16(luma_ptr + 16, wide_fill);
+      StoreUnaligned16(luma_ptr + 24, wide_fill);
     }
   }
 }
