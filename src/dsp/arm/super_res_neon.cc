@@ -93,14 +93,14 @@ void SuperRes_NEON(const void* const coefficients, void* const source,
     const auto* filter = static_cast<const uint8_t*>(coefficients);
     uint8_t* dst_ptr = dst;
     ExtendLine<uint8_t>(src + DivideBy2(kSuperResFilterTaps), downscaled_width,
-                        kSuperResHorizontalBorder, kSuperResHorizontalBorder);
+                        kSuperResHorizontalBorder, kSuperResHorizontalPadding);
     int subpixel_x = initial_subpixel_x;
     uint8x8_t sr[8];
     uint8x16_t s[8];
     int x = RightShiftWithCeiling(upscaled_width, 4);
     // The below code calculates up to 15 extra upscaled
     // pixels which will over-read up to 15 downscaled pixels in the end of each
-    // row. kSuperResHorizontalBorder accounts for this.
+    // row. kSuperResHorizontalPadding accounts for this.
     do {
       for (int i = 0; i < 8; ++i, subpixel_x += step) {
         sr[i] = vld1_u8(&src[subpixel_x >> kSuperResScaleBits]);
