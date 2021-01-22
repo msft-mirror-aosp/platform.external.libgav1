@@ -33,7 +33,6 @@ struct DecoderState {
     for (int ref_index = 0, mask = refresh_frame_flags; mask != 0;
          ++ref_index, mask >>= 1) {
       if ((mask & 1) != 0) {
-        reference_valid[ref_index] = true;
         reference_frame_id[ref_index] = current_frame_id;
         reference_frame[ref_index] = current_frame;
         reference_order_hint[ref_index] = order_hint;
@@ -43,7 +42,6 @@ struct DecoderState {
 
   // Clears all the reference frames.
   void ClearReferenceFrames() {
-    reference_valid = {};
     reference_frame_id = {};
     reference_order_hint = {};
     for (int ref_index = 0; ref_index < kNumReferenceFrameTypes; ++ref_index) {
@@ -51,12 +49,8 @@ struct DecoderState {
     }
   }
 
-  // reference_valid and reference_frame_id are used only if
+  // reference_frame_id is used only if
   // sequence_header_.frame_id_numbers_present is true.
-  // The reference_valid array is indexed by a reference picture slot number.
-  // A value (boolean) in the array signifies whether the corresponding
-  // reference picture slot is valid for use as a reference picture.
-  std::array<bool, kNumReferenceFrameTypes> reference_valid = {};
   std::array<uint16_t, kNumReferenceFrameTypes> reference_frame_id = {};
   // A valid value of current_frame_id is an unsigned integer of at most 16
   // bits. -1 indicates current_frame_id is not initialized.
@@ -81,6 +75,9 @@ struct DecoderState {
   // * |true| indicates that the reference frame is a backwards reference.
   // Note: reference_frame_sign_bias[0] (for kReferenceFrameIntra) is not used.
   std::array<bool, kNumReferenceFrameTypes> reference_frame_sign_bias = {};
+  // If the RefValid[i] variable in the spec is 0, then reference_frame[i] is a
+  // null pointer. If the RefValid[i] variable in the spec is 1, then
+  // reference_frame[i] contains a frame buffer pointer.
   std::array<RefCountedBufferPtr, kNumReferenceFrameTypes> reference_frame;
 };
 
