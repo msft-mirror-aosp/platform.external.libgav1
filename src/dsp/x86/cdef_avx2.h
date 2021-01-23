@@ -23,7 +23,8 @@
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::cdef_direction. This function is not thread-safe.
+// Initializes Dsp::cdef_direction and Dsp::cdef_filters. This function is not
+// thread-safe.
 void CdefInit_AVX2();
 
 }  // namespace dsp
@@ -33,6 +34,10 @@ void CdefInit_AVX2();
 
 #ifndef LIBGAV1_Dsp8bpp_CdefDirection
 #define LIBGAV1_Dsp8bpp_CdefDirection LIBGAV1_CPU_AVX2
+#endif
+
+#ifndef LIBGAV1_Dsp8bpp_CdefFilters
+#define LIBGAV1_Dsp8bpp_CdefFilters LIBGAV1_CPU_AVX2
 #endif
 
 #endif  // LIBGAV1_TARGETING_AVX2

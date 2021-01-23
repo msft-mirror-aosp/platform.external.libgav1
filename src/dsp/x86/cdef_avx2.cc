@@ -493,10 +493,274 @@ void CdefDirection_AVX2(const void* const source, ptrdiff_t stride,
   *variance = (best_cost - cost[(*direction + 4) & 7]) >> 10;
 }
 
+// -------------------------------------------------------------------------
+// CdefFilter
+
+// Load 4 vectors based on the given |direction|.
+inline void LoadDirection(const uint16_t* const src, const ptrdiff_t stride,
+                          __m128i* output, const int direction) {
+  // Each |direction| describes a different set of source values. Expand this
+  // set by negating each set. For |direction| == 0 this gives a diagonal line
+  // from top right to bottom left. The first value is y, the second x. Negative
+  // y values move up.
+  //    a       b         c       d
+  // {-1, 1}, {1, -1}, {-2, 2}, {2, -2}
+  //         c
+  //       a
+  //     0
+  //   b
+  // d
+  const int y_0 = kCdefDirections[direction][0][0];
+  const int x_0 = kCdefDirections[direction][0][1];
+  const int y_1 = kCdefDirections[direction][1][0];
+  const int x_1 = kCdefDirections[direction][1][1];
+  output[0] = LoadUnaligned16(src - y_0 * stride - x_0);
+  output[1] = LoadUnaligned16(src + y_0 * stride + x_0);
+  output[2] = LoadUnaligned16(src - y_1 * stride - x_1);
+  output[3] = LoadUnaligned16(src + y_1 * stride + x_1);
+}
+
+// Load 4 vectors based on the given |direction|. Use when |block_width| == 4 to
+// do 2 rows at a time.
+void LoadDirection4(const uint16_t* const src, const ptrdiff_t stride,
+                    __m128i* output, const int direction) {
+  const int y_0 = kCdefDirections[direction][0][0];
+  const int x_0 = kCdefDirections[direction][0][1];
+  const int y_1 = kCdefDirections[direction][1][0];
+  const int x_1 = kCdefDirections[direction][1][1];
+  output[0] = LoadHi8(LoadLo8(src - y_0 * stride - x_0),
+                      src - y_0 * stride + stride - x_0);
+  output[1] = LoadHi8(LoadLo8(src + y_0 * stride + x_0),
+                      src + y_0 * stride + stride + x_0);
+  output[2] = LoadHi8(LoadLo8(src - y_1 * stride - x_1),
+                      src - y_1 * stride + stride - x_1);
+  output[3] = LoadHi8(LoadLo8(src + y_1 * stride + x_1),
+                      src + y_1 * stride + stride + x_1);
+}
+
+inline __m256i Constrain(const __m256i& pixel, const __m256i& reference,
+                         const __m128i& damping, const __m256i& threshold) {
+  const __m256i diff = _mm256_sub_epi16(pixel, reference);
+  const __m256i abs_diff = _mm256_abs_epi16(diff);
+  // sign(diff) * Clip3(threshold - (std::abs(diff) >> damping),
+  //                    0, std::abs(diff))
+  const __m256i shifted_diff = _mm256_srl_epi16(abs_diff, damping);
+  // For bitdepth == 8, the threshold range is [0, 15] and the damping range is
+  // [3, 6]. If pixel == kCdefLargeValue(0x4000), shifted_diff will always be
+  // larger than threshold. Subtract using saturation will return 0 when pixel
+  // == kCdefLargeValue.
+  static_assert(kCdefLargeValue == 0x4000, "Invalid kCdefLargeValue");
+  const __m256i thresh_minus_shifted_diff =
+      _mm256_subs_epu16(threshold, shifted_diff);
+  const __m256i clamp_abs_diff =
+      _mm256_min_epi16(thresh_minus_shifted_diff, abs_diff);
+  // Restore the sign.
+  return _mm256_sign_epi16(clamp_abs_diff, diff);
+}
+
+inline __m256i ApplyConstrainAndTap(const __m256i& pixel, const __m256i& val,
+                                    const __m256i& tap, const __m128i& damping,
+                                    const __m256i& threshold) {
+  const __m256i constrained = Constrain(val, pixel, damping, threshold);
+  return _mm256_mullo_epi16(constrained, tap);
+}
+
+template <int width, bool enable_primary = true, bool enable_secondary = true>
+void CdefFilter_AVX2(const uint16_t* src, const ptrdiff_t src_stride,
+                     const int height, const int primary_strength,
+                     const int secondary_strength, const int damping,
+                     const int direction, void* dest,
+                     const ptrdiff_t dst_stride) {
+  static_assert(width == 8 || width == 4, "Invalid CDEF width.");
+  static_assert(enable_primary || enable_secondary, "");
+  constexpr bool clipping_required = enable_primary && enable_secondary;
+  auto* dst = static_cast<uint8_t*>(dest);
+  __m128i primary_damping_shift, secondary_damping_shift;
+
+  // FloorLog2() requires input to be > 0.
+  // 8-bit damping range: Y: [3, 6], UV: [2, 5].
+  if (enable_primary) {
+    // primary_strength: [0, 15] -> FloorLog2: [0, 3] so a clamp is necessary
+    // for UV filtering.
+    primary_damping_shift =
+        _mm_cvtsi32_si128(std::max(0, damping - FloorLog2(primary_strength)));
+  }
+  if (enable_secondary) {
+    // secondary_strength: [0, 4] -> FloorLog2: [0, 2] so no clamp to 0 is
+    // necessary.
+    assert(damping - FloorLog2(secondary_strength) >= 0);
+    secondary_damping_shift =
+        _mm_cvtsi32_si128(damping - FloorLog2(secondary_strength));
+  }
+  const __m256i primary_tap_0 = _mm256_broadcastw_epi16(
+      _mm_cvtsi32_si128(kCdefPrimaryTaps[primary_strength & 1][0]));
+  const __m256i primary_tap_1 = _mm256_broadcastw_epi16(
+      _mm_cvtsi32_si128(kCdefPrimaryTaps[primary_strength & 1][1]));
+  const __m256i secondary_tap_0 =
+      _mm256_broadcastw_epi16(_mm_cvtsi32_si128(kCdefSecondaryTap0));
+  const __m256i secondary_tap_1 =
+      _mm256_broadcastw_epi16(_mm_cvtsi32_si128(kCdefSecondaryTap1));
+  const __m256i cdef_large_value_mask = _mm256_broadcastw_epi16(
+      _mm_cvtsi32_si128(static_cast<int16_t>(~kCdefLargeValue)));
+  const __m256i primary_threshold =
+      _mm256_broadcastw_epi16(_mm_cvtsi32_si128(primary_strength));
+  const __m256i secondary_threshold =
+      _mm256_broadcastw_epi16(_mm_cvtsi32_si128(secondary_strength));
+
+  int y = height;
+  do {
+    __m128i pixel_128;
+    if (width == 8) {
+      pixel_128 = LoadUnaligned16(src);
+    } else {
+      pixel_128 = LoadHi8(LoadLo8(src), src + src_stride);
+    }
+
+    __m256i pixel = SetrM128i(pixel_128, pixel_128);
+
+    __m256i min = pixel;
+    __m256i max = pixel;
+    __m256i sum_pair;
+
+    if (enable_primary) {
+      // Primary |direction|.
+      __m128i primary_val_128[4];
+      if (width == 8) {
+        LoadDirection(src, src_stride, primary_val_128, direction);
+      } else {
+        LoadDirection4(src, src_stride, primary_val_128, direction);
+      }
+
+      __m256i primary_val[2];
+      primary_val[0] = SetrM128i(primary_val_128[0], primary_val_128[1]);
+      primary_val[1] = SetrM128i(primary_val_128[2], primary_val_128[3]);
+
+      if (clipping_required) {
+        min = _mm256_min_epu16(min, primary_val[0]);
+        min = _mm256_min_epu16(min, primary_val[1]);
+
+        // The source is 16 bits, however, we only really care about the lower
+        // 8 bits.  The upper 8 bits contain the "large" flag.  After the final
+        // primary max has been calculated, zero out the upper 8 bits.  Use this
+        // to find the "16 bit" max.
+        const __m256i max_p01 = _mm256_max_epu8(primary_val[0], primary_val[1]);
+        max = _mm256_max_epu16(
+            max, _mm256_and_si256(max_p01, cdef_large_value_mask));
+      }
+
+      sum_pair = ApplyConstrainAndTap(pixel, primary_val[0], primary_tap_0,
+                                      primary_damping_shift, primary_threshold);
+      sum_pair = _mm256_add_epi16(
+          sum_pair,
+          ApplyConstrainAndTap(pixel, primary_val[1], primary_tap_1,
+                               primary_damping_shift, primary_threshold));
+    } else {
+      sum_pair = _mm256_setzero_si256();
+    }
+
+    if (enable_secondary) {
+      // Secondary |direction| values (+/- 2). Clamp |direction|.
+      __m128i secondary_val_128[8];
+      if (width == 8) {
+        LoadDirection(src, src_stride, secondary_val_128, direction + 2);
+        LoadDirection(src, src_stride, secondary_val_128 + 4, direction - 2);
+      } else {
+        LoadDirection4(src, src_stride, secondary_val_128, direction + 2);
+        LoadDirection4(src, src_stride, secondary_val_128 + 4, direction - 2);
+      }
+
+      __m256i secondary_val[4];
+      secondary_val[0] = SetrM128i(secondary_val_128[0], secondary_val_128[1]);
+      secondary_val[1] = SetrM128i(secondary_val_128[2], secondary_val_128[3]);
+      secondary_val[2] = SetrM128i(secondary_val_128[4], secondary_val_128[5]);
+      secondary_val[3] = SetrM128i(secondary_val_128[6], secondary_val_128[7]);
+
+      if (clipping_required) {
+        min = _mm256_min_epu16(min, secondary_val[0]);
+        min = _mm256_min_epu16(min, secondary_val[1]);
+        min = _mm256_min_epu16(min, secondary_val[2]);
+        min = _mm256_min_epu16(min, secondary_val[3]);
+
+        const __m256i max_s01 =
+            _mm256_max_epu8(secondary_val[0], secondary_val[1]);
+        const __m256i max_s23 =
+            _mm256_max_epu8(secondary_val[2], secondary_val[3]);
+        const __m256i max_s = _mm256_max_epu8(max_s01, max_s23);
+        max = _mm256_max_epu8(max,
+                              _mm256_and_si256(max_s, cdef_large_value_mask));
+      }
+
+      sum_pair = _mm256_add_epi16(
+          sum_pair,
+          ApplyConstrainAndTap(pixel, secondary_val[0], secondary_tap_0,
+                               secondary_damping_shift, secondary_threshold));
+      sum_pair = _mm256_add_epi16(
+          sum_pair,
+          ApplyConstrainAndTap(pixel, secondary_val[1], secondary_tap_1,
+                               secondary_damping_shift, secondary_threshold));
+      sum_pair = _mm256_add_epi16(
+          sum_pair,
+          ApplyConstrainAndTap(pixel, secondary_val[2], secondary_tap_0,
+                               secondary_damping_shift, secondary_threshold));
+      sum_pair = _mm256_add_epi16(
+          sum_pair,
+          ApplyConstrainAndTap(pixel, secondary_val[3], secondary_tap_1,
+                               secondary_damping_shift, secondary_threshold));
+    }
+
+    __m128i sum = _mm_add_epi16(_mm256_castsi256_si128(sum_pair),
+                                _mm256_extracti128_si256(sum_pair, 1));
+
+    // Clip3(pixel + ((8 + sum - (sum < 0)) >> 4), min, max))
+    const __m128i sum_lt_0 = _mm_srai_epi16(sum, 15);
+    // 8 + sum
+    sum = _mm_add_epi16(sum, _mm_set1_epi16(8));
+    // (... - (sum < 0)) >> 4
+    sum = _mm_add_epi16(sum, sum_lt_0);
+    sum = _mm_srai_epi16(sum, 4);
+    // pixel + ...
+    sum = _mm_add_epi16(sum, _mm256_castsi256_si128(pixel));
+    if (clipping_required) {
+      const __m128i min_128 = _mm_min_epu16(_mm256_castsi256_si128(min),
+                                            _mm256_extracti128_si256(min, 1));
+
+      const __m128i max_128 = _mm_max_epu16(_mm256_castsi256_si128(max),
+                                            _mm256_extracti128_si256(max, 1));
+      // Clip3
+      sum = _mm_min_epi16(sum, max_128);
+      sum = _mm_max_epi16(sum, min_128);
+    }
+
+    const __m128i result = _mm_packus_epi16(sum, sum);
+    if (width == 8) {
+      src += src_stride;
+      StoreLo8(dst, result);
+      dst += dst_stride;
+      --y;
+    } else {
+      src += src_stride << 1;
+      Store4(dst, result);
+      dst += dst_stride;
+      Store4(dst, _mm_srli_si128(result, 4));
+      dst += dst_stride;
+      y -= 2;
+    }
+  } while (y != 0);
+}
+
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
   assert(dsp != nullptr);
   dsp->cdef_direction = CdefDirection_AVX2;
+
+  dsp->cdef_filters[0][0] = CdefFilter_AVX2<4>;
+  dsp->cdef_filters[0][1] =
+      CdefFilter_AVX2<4, /*enable_primary=*/true, /*enable_secondary=*/false>;
+  dsp->cdef_filters[0][2] = CdefFilter_AVX2<4, /*enable_primary=*/false>;
+  dsp->cdef_filters[1][0] = CdefFilter_AVX2<8>;
+  dsp->cdef_filters[1][1] =
+      CdefFilter_AVX2<8, /*enable_primary=*/true, /*enable_secondary=*/false>;
+  dsp->cdef_filters[1][2] = CdefFilter_AVX2<8, /*enable_primary=*/false>;
 }
 
 }  // namespace
