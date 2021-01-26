@@ -22,7 +22,6 @@
 #include <string>
 
 #include "absl/base/config.h"
-#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "src/gav1/decoder_buffer.h"
 #include "src/utils/memory.h"
