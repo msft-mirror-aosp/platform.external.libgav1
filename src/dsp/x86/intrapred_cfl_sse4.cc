@@ -89,8 +89,7 @@ void CflIntraPredictor_SSE4_1(
 template <int block_height_log2, bool is_inside>
 void CflSubsampler444_4xH_SSE4_1(
     int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
-    const int /*max_luma_width*/, const int max_luma_height,
-    const void* const source, ptrdiff_t stride) {
+    const int max_luma_height, const void* const source, ptrdiff_t stride) {
   static_assert(block_height_log2 <= 4, "");
   const int block_height = 1 << block_height_log2;
   const int visible_height = max_luma_height;
@@ -156,15 +155,16 @@ void CflSubsampler444_4xH_SSE4_1(
   static_assert(block_height_log2 <= 4, "");
   assert(max_luma_width >= 4);
   assert(max_luma_height >= 4);
+  static_cast<void>(max_luma_width);
   const int block_height = 1 << block_height_log2;
   const int block_width = 4;
 
   if (block_height <= max_luma_height && block_width <= max_luma_width) {
-    CflSubsampler444_4xH_SSE4_1<block_height_log2, true>(
-        luma, max_luma_width, max_luma_height, source, stride);
+    CflSubsampler444_4xH_SSE4_1<block_height_log2, true>(luma, max_luma_height,
+                                                         source, stride);
   } else {
-    CflSubsampler444_4xH_SSE4_1<block_height_log2, false>(
-        luma, max_luma_width, max_luma_height, source, stride);
+    CflSubsampler444_4xH_SSE4_1<block_height_log2, false>(luma, max_luma_height,
+                                                          source, stride);
   }
 }
 
