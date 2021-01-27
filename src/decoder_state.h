@@ -49,8 +49,11 @@ struct DecoderState {
     }
   }
 
-  // reference_frame_id is used only if
-  // sequence_header_.frame_id_numbers_present is true.
+  // reference_frame_id and current_frame_id have meaningful values and are used
+  // in checks only if sequence_header_.frame_id_numbers_present is true. If
+  // sequence_header_.frame_id_numbers_present is false, reference_frame_id and
+  // current_frame_id are assigned the default value 0 and are not used in
+  // checks.
   std::array<uint16_t, kNumReferenceFrameTypes> reference_frame_id = {};
   // A valid value of current_frame_id is an unsigned integer of at most 16
   // bits. -1 indicates current_frame_id is not initialized.
@@ -75,9 +78,11 @@ struct DecoderState {
   // * |true| indicates that the reference frame is a backwards reference.
   // Note: reference_frame_sign_bias[0] (for kReferenceFrameIntra) is not used.
   std::array<bool, kNumReferenceFrameTypes> reference_frame_sign_bias = {};
+  // The RefValid[i] variable in the spec does not need to be stored explicitly.
   // If the RefValid[i] variable in the spec is 0, then reference_frame[i] is a
-  // null pointer. If the RefValid[i] variable in the spec is 1, then
-  // reference_frame[i] contains a frame buffer pointer.
+  // null pointer. (Whenever the spec sets the RefValid[i] variable to 0, we set
+  // reference_frame[i] to a null pointer.) If the RefValid[i] variable in the
+  // spec is 1, then reference_frame[i] contains a frame buffer pointer.
   std::array<RefCountedBufferPtr, kNumReferenceFrameTypes> reference_frame;
 };
 
