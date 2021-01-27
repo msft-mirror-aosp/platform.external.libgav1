@@ -156,10 +156,9 @@ void CflSubsampler444_4xH_SSE4_1(
   assert(max_luma_width >= 4);
   assert(max_luma_height >= 4);
   static_cast<void>(max_luma_width);
-  const int block_height = 1 << block_height_log2;
-  const int block_width = 4;
+  constexpr int block_height = 1 << block_height_log2;
 
-  if (block_height <= max_luma_height && block_width <= max_luma_width) {
+  if (block_height <= max_luma_height) {
     CflSubsampler444_4xH_SSE4_1<block_height_log2, true>(luma, max_luma_height,
                                                          source, stride);
   } else {
