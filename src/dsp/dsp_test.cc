@@ -103,13 +103,14 @@ void CheckTables(bool c_only) {
       EXPECT_NE(dsp->loop_restorations[i], nullptr) << "index [" << i << "]";
     }
 
-    bool super_res_coefficients_is_nonnull = LIBGAV1_ENABLE_NEON;
+    bool super_res_coefficients_is_nonnull =
+        LIBGAV1_ENABLE_NEON && bitdepth == 8;
 #if LIBGAV1_ENABLE_SSE4_1
     const uint32_t cpu_features = GetCpuInfo();
     super_res_coefficients_is_nonnull = (cpu_features & kSSE4_1) != 0;
 #endif
     if (c_only) super_res_coefficients_is_nonnull = false;
-    if (bitdepth == 8 && super_res_coefficients_is_nonnull) {
+    if (super_res_coefficients_is_nonnull) {
       EXPECT_NE(dsp->super_res_coefficients, nullptr);
     } else {
       EXPECT_EQ(dsp->super_res_coefficients, nullptr);
