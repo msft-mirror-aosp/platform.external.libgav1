@@ -234,6 +234,7 @@ macro(libgav1_add_tests_targets)
                          libgav1_utils
                          LIB_DEPS
                          absl::strings
+                         absl::time
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest
                          libgav1_gtest_main)
