@@ -102,18 +102,32 @@ void SuperRes_SSE4_1(const void* const coefficients, void* const source,
     const auto* filter = static_cast<const uint8_t*>(coefficients);
     uint8_t* dst_ptr = dst;
     ExtendLine<uint8_t>(src + DivideBy2(kSuperResFilterTaps), downscaled_width,
-                        kSuperResHorizontalBorder, kSuperResHorizontalPadding);
+                        kSuperResHorizontalBorder, kSuperResHorizontalBorder);
     int subpixel_x = initial_subpixel_x;
-    // The below code calculates up to 15 extra upscaled
-    // pixels which will over-read up to 15 downscaled pixels in the end of each
-    // row. kSuperResHorizontalPadding accounts for this.
+    // The below code calculates up to 15 extra upscaled pixels which will
+    // over-read up to 15 downscaled pixels in the end of each row.
+    // kSuperResHorizontalPadding protects this behavior from segmentation
+    // faults and threading issues.
     int x = RightShiftWithCeiling(upscaled_width, 4);
     do {
       __m128i weighted_src[8];
       for (int i = 0; i < 8; ++i, filter += 16) {
-        __m128i s = LoadLo8(&src[subpixel_x >> kSuperResScaleBits]);
+        // TODO(b/178652672): Remove Msan loads when hadd bug is resolved.
+        // It's fine to write uninitialized bytes outside the frame, but the
+        // inside-frame pixels are incorrectly labeled uninitialized if
+        // uninitialized values go through the hadd intrinsics.
+        // |src| is offset 4 pixels to the left, and there are 4 extended border
+        // pixels, so a difference of 0 from |downscaled_width| indicates 8 good
+        // bytes. A difference of 1 indicates 7 good bytes.
+        const int msan_bytes_lo =
+            (subpixel_x >> kSuperResScaleBits) - downscaled_width;
+        __m128i s =
+            LoadLo8Msan(&src[subpixel_x >> kSuperResScaleBits], msan_bytes_lo);
         subpixel_x += step;
-        s = LoadHi8(s, &src[subpixel_x >> kSuperResScaleBits]);
+        const int msan_bytes_hi =
+            (subpixel_x >> kSuperResScaleBits) - downscaled_width;
+        s = LoadHi8Msan(s, &src[subpixel_x >> kSuperResScaleBits],
+                        msan_bytes_hi);
         subpixel_x += step;
         const __m128i f = LoadAligned16(filter);
         weighted_src[i] = _mm_maddubs_epi16(s, f);
