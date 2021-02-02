@@ -135,9 +135,11 @@ macro(libgav1_add_executable)
   endif()
 
   if(exe_LINK_FLAGS OR LIBGAV1_EXE_LINKER_FLAGS)
+    list(APPEND exe_LINK_FLAGS "${LIBGAV1_EXE_LINKER_FLAGS}")
+    # LINK_FLAGS is managed as a string.
+    libgav1_set_and_stringify(SOURCE "${exe_LINK_FLAGS}" DEST exe_LINK_FLAGS)
     set_target_properties(${exe_NAME}
-                          PROPERTIES LINK_FLAGS ${exe_LINK_FLAGS}
-                                     ${LIBGAV1_EXE_LINKER_FLAGS})
+                          PROPERTIES LINK_FLAGS "${exe_LINK_FLAGS}")
   endif()
 
   if(exe_OBJLIB_DEPS)
