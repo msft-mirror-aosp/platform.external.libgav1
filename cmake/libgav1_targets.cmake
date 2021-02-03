@@ -136,10 +136,14 @@ macro(libgav1_add_executable)
 
   if(exe_LINK_FLAGS OR LIBGAV1_EXE_LINKER_FLAGS)
     list(APPEND exe_LINK_FLAGS "${LIBGAV1_EXE_LINKER_FLAGS}")
-    # LINK_FLAGS is managed as a string.
-    libgav1_set_and_stringify(SOURCE "${exe_LINK_FLAGS}" DEST exe_LINK_FLAGS)
-    set_target_properties(${exe_NAME}
-                          PROPERTIES LINK_FLAGS "${exe_LINK_FLAGS}")
+    if(${CMAKE_VERSION} VERSION_LESS "3.13")
+      # LINK_FLAGS is managed as a string.
+      libgav1_set_and_stringify(SOURCE "${exe_LINK_FLAGS}" DEST exe_LINK_FLAGS)
+      set_target_properties(${exe_NAME}
+                            PROPERTIES LINK_FLAGS "${exe_LINK_FLAGS}")
+    else()
+      target_link_options(${exe_NAME} PRIVATE ${exe_LINK_FLAGS})
+    endif()
   endif()
 
   if(exe_OBJLIB_DEPS)
