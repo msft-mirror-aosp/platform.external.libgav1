@@ -2428,21 +2428,40 @@ void DirectionalIntraPredictorZone2_SSE4_1(void* const dest, ptrdiff_t stride,
 
 //------------------------------------------------------------------------------
 // FilterIntraPredictor_SSE4_1
+// See AV1 Spec §7.11.2.3. Recursive intra prediction process
+// This filter applies recursively to 4x2 sub-blocks within the transform block,
+// meaning that the predicted pixels in each sub-block are used as inputs to
+// sub-blocks below and to the right, if present.
+//
+// Each output value in the sub-block is predicted by a different filter applied
+// to the same array of top-left, top, and left values. If fn refers to the
+// output of the nth filter, given this block:
+// TL T0 T1 T2 T3
+// L0 f0 f1 f2 f3
+// L1 f4 f5 f6 f7
+// The filter input order is p0, p1, p2, p3, p4, p5, p6:
+// p0 p1 p2 p3 p4
+// p5 f0 f1 f2 f3
+// p6 f4 f5 f6 f7
+// Filters usually apply to 8 values for convenience, so in this case we fix
+// the 8th filter tap to 0 and disregard the value of the 8th input.
 
 // Apply all filter taps to the given 7 packed 16-bit values, keeping the 8th
 // at zero to preserve the sum.
+// |pixels| contains p0-p7 in order as shown above.
+// |taps_0_1| contains the filter kernels used to predict f0 and f1, and so on.
 inline void Filter4x2_SSE4_1(uint8_t* dst, const ptrdiff_t stride,
                              const __m128i& pixels, const __m128i& taps_0_1,
                              const __m128i& taps_2_3, const __m128i& taps_4_5,
                              const __m128i& taps_6_7) {
   const __m128i mul_0_01 = _mm_maddubs_epi16(pixels, taps_0_1);
   const __m128i mul_0_23 = _mm_maddubs_epi16(pixels, taps_2_3);
-  // |output_half| contains 8 partial sums.
+  // |output_half| contains 8 partial sums for f0-f7.
   __m128i output_half = _mm_hadd_epi16(mul_0_01, mul_0_23);
   __m128i output = _mm_hadd_epi16(output_half, output_half);
   const __m128i output_row0 =
       _mm_packus_epi16(RightShiftWithRounding_S16(output, 4),
-                       /* arbitrary pack arg */ output);
+                       /* unused half */ output);
   Store4(dst, output_row0);
   const __m128i mul_1_01 = _mm_maddubs_epi16(pixels, taps_4_5);
   const __m128i mul_1_23 = _mm_maddubs_epi16(pixels, taps_6_7);
@@ -2455,12 +2474,16 @@ inline void Filter4x2_SSE4_1(uint8_t* dst, const ptrdiff_t stride,
 }
 
 // 4xH transform sizes are given special treatment because LoadLo8 goes out
-// of bounds and every block involves the left column. This implementation
-// loads TL from the top row for the first block, so it is not
+// of bounds and every block involves the left column. The top-left pixel, p0,
+// is stored in the top buffer for the first 4x2, but comes from the left buffer
+// for successive blocks. This implementation takes advantage of the fact
+// that the p5 and p6 for each sub-block come solely from the |left_ptr| buffer,
+// using shifts to arrange things to fit reusable shuffle vectors.
 inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
                       const uint8_t* const top_ptr,
                       const uint8_t* const left_ptr, FilterIntraPredictor pred,
                       const int height) {
+  // Two filter kernels per vector.
   const __m128i taps_0_1 = LoadAligned16(kFilterIntraTaps[pred][0]);
   const __m128i taps_2_3 = LoadAligned16(kFilterIntraTaps[pred][2]);
   const __m128i taps_4_5 = LoadAligned16(kFilterIntraTaps[pred][4]);
@@ -2472,9 +2495,13 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
   // Relative pixels: top[-1], top[0], top[1], top[2], top[3], left[0], left[1],
   // left[2], left[3], left[4], left[5], left[6], left[7]
+  // Let rn represent a pixel usable as pn for the 4x2 after this one. We get:
+  //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+  // p0 p1 p2 p3 p4 p5 p6 r5 r6 ...
+  //                   r0
   pixels = _mm_or_si128(left, pixels);
 
-  // Duplicate first 8 bytes.
+  // Two sets of the same input pixels to apply two filters at once.
   pixels = _mm_shuffle_epi32(pixels, kDuplicateFirstHalf);
   Filter4x2_SSE4_1(dest, stride, pixels, taps_0_1, taps_2_3, taps_4_5,
                    taps_6_7);
@@ -2483,6 +2510,9 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
   // Relative pixels: top[0], top[1], top[2], top[3], empty, left[-2], left[-1],
   // left[0], left[1], ...
+  //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+  // p1 p2 p3 p4 xx xx p0 p5 p6 r5 r6 ...
+  //                         r0
   pixels = _mm_or_si128(left, pixels);
 
   // This mask rearranges bytes in the order: 6, 0, 1, 2, 3, 7, 8, 15. The last
@@ -2498,8 +2528,8 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
                    taps_6_7);
   dest += stride;  // Move to y = 3.
 
-  // Compute the middle 8 rows before using common code for the final 4 rows.
-  // Because the common code below this block assumes that
+  // Compute the middle 8 rows before using common code for the final 4 rows, in
+  // order to fit the assumption that |left| has the next TL at position 8.
   if (height == 16) {
     // This shift allows us to use pixel_order2 twice after shifting by 2 later.
     left = _mm_slli_si128(left, 1);
@@ -2507,6 +2537,9 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
     // Relative pixels: top[0], top[1], top[2], top[3], empty, empty, left[-4],
     // left[-3], left[-2], left[-1], left[0], left[1], left[2], left[3]
+    //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    // p1 p2 p3 p4 xx xx xx xx xx p0 p5 p6 r5 r6 ...
+    //                                  r0
     pixels = _mm_or_si128(left, pixels);
 
     // This mask rearranges bytes in the order: 9, 0, 1, 2, 3, 7, 8, 15. The
@@ -2532,6 +2565,9 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
     // Relative pixels: top[0], top[1], top[2], top[3], left[-6],
     // left[-5], left[-4], left[-3], left[-2], left[-1], left[0], left[1]
+    //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    // p1 p2 p3 p4 xx xx xx xx xx p0 p5 p6 r5 r6 ...
+    //                                  r0
     pixels = _mm_or_si128(left, pixels);
     left = LoadLo8(left_ptr + 8);
 
@@ -2551,6 +2587,9 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
     // Relative pixels: top[0], top[1], top[2], top[3], empty, empty,
     // left[-1], left[0], left[1], left[2], left[3], ...
+    //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    // p1 p2 p3 p4 xx xx p0 p5 p6 r5 r6 ...
+    //                         r0
     pixels = _mm_or_si128(left, pixels);
     pixels = _mm_shuffle_epi8(pixels, pixel_order1);
     dest += stride;  // Move to y = 8.
@@ -2566,6 +2605,9 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
     // Relative pixels: top[0], top[1], top[2], top[3], left[-3], left[-2]
     // left[-1], left[0], left[1], left[2], left[3], ...
+    //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    // p1 p2 p3 p4 xx xx p0 p5 p6 r5 r6 ...
+    //                         r0
     pixels = _mm_or_si128(left, pixels);
     pixels = _mm_shuffle_epi8(pixels, pixel_order1);
     dest += stride;  // Move to y = 10.
@@ -2576,8 +2618,8 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
     dest += stride;  // Move to y = 11.
   }
 
-  // In both the 8 and 16 case, we assume that the left vector has the next TL
-  // at position 8.
+  // In both the 8 and 16 case at this point, we can assume that |left| has the
+  // next TL at position 8.
   if (height > 4) {
     // Erase prior left pixels by shifting TL to position 0.
     left = _mm_srli_si128(left, 8);
@@ -2586,6 +2628,9 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
     // Relative pixels: top[0], top[1], top[2], top[3], empty, empty,
     // left[-1], left[0], left[1], left[2], left[3], ...
+    //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    // p1 p2 p3 p4 xx xx p0 p5 p6 r5 r6 ...
+    //                         r0
     pixels = _mm_or_si128(left, pixels);
     pixels = _mm_shuffle_epi8(pixels, pixel_order1);
     dest += stride;  // Move to y = 12 or 4.
@@ -2599,6 +2644,9 @@ inline void Filter4xH(uint8_t* dest, ptrdiff_t stride,
 
     // Relative pixels: top[0], top[1], top[2], top[3], left[-3], left[-2]
     // left[-1], left[0], left[1], left[2], left[3], ...
+    //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+    // p1 p2 p3 p4 xx xx p0 p5 p6 r5 r6 ...
+    //                         r0
     pixels = _mm_or_si128(left, pixels);
     pixels = _mm_shuffle_epi8(pixels, pixel_order1);
     dest += stride;  // Move to y = 14 or 6.
