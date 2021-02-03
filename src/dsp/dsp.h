@@ -372,8 +372,9 @@ using SuperResCoefficientsFunc = void (*)(int upscaled_width,
 // |coefficients| is the upscale filter used by each pixel in a row. It is not
 // used by the C function.
 // |source| is the input frame buffer. It will be line extended.
+// |source_stride| is given in pixels.
 // |dest| is the output buffer.
-// |stride| is given in pixels, and shared by |source| and |dest|.
+// |dest_stride| is given in pixels.
 // |height| is the height of the block to be processed.
 // |downscaled_width| is the width of the input frame.
 // |upscaled_width| is the width of the output frame.
@@ -381,9 +382,10 @@ using SuperResCoefficientsFunc = void (*)(int upscaled_width,
 // pixel.
 // |initial_subpixel_x| is a base offset from which |step| increments.
 using SuperResFunc = void (*)(const void* coefficients, void* source,
-                              ptrdiff_t stride, int height,
+                              ptrdiff_t source_stride, int height,
                               int downscaled_width, int upscaled_width,
-                              int initial_subpixel_x, int step, void* dest);
+                              int initial_subpixel_x, int step, void* dest,
+                              ptrdiff_t dest_stride);
 
 // Loop restoration function signature. Sections 7.16, 7.17.
 // |restoration_info| contains loop restoration information, such as filter

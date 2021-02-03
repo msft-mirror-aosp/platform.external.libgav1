@@ -82,10 +82,10 @@ inline uint8x8_t SuperRes(const uint8x8_t src[kSuperResFilterTaps],
 }
 
 void SuperRes_NEON(const void* const coefficients, void* const source,
-                   const ptrdiff_t stride, const int height,
+                   const ptrdiff_t source_stride, const int height,
                    const int downscaled_width, const int upscaled_width,
                    const int initial_subpixel_x, const int step,
-                   void* const dest) {
+                   void* const dest, const ptrdiff_t dest_stride) {
   auto* src = static_cast<uint8_t*>(source) - DivideBy2(kSuperResFilterTaps);
   auto* dst = static_cast<uint8_t*>(dest);
   int y = height;
@@ -135,8 +135,8 @@ void SuperRes_NEON(const void* const coefficients, void* const source,
       vst1q_u8(dst_ptr, vcombine_u8(d0, d1));
       dst_ptr += 16;
     } while (--x != 0);
-    src += stride;
-    dst += stride;
+    src += source_stride;
+    dst += dest_stride;
   } while (--y != 0);
 }
 
@@ -235,10 +235,10 @@ inline uint16x8_t SuperRes(const uint16x8_t src[kSuperResFilterTaps],
 
 template <int bitdepth>
 void SuperRes_NEON(const void* const coefficients, void* const source,
-                   const ptrdiff_t stride, const int height,
+                   const ptrdiff_t source_stride, const int height,
                    const int downscaled_width, const int upscaled_width,
                    const int initial_subpixel_x, const int step,
-                   void* const dest) {
+                   void* const dest, const ptrdiff_t dest_stride) {
   auto* src = static_cast<uint16_t*>(source) - DivideBy2(kSuperResFilterTaps);
   auto* dst = static_cast<uint16_t*>(dest);
   int y = height;
@@ -264,8 +264,8 @@ void SuperRes_NEON(const void* const coefficients, void* const source,
       vst1q_u16(dst_ptr, d0);
       dst_ptr += 8;
     } while (--x != 0);
-    src += stride;
-    dst += stride;
+    src += source_stride;
+    dst += dest_stride;
   } while (--y != 0);
 }
 

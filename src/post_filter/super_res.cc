@@ -34,7 +34,7 @@ void PostFilter::ApplySuperRes(const std::array<uint8_t*, kMaxPlanes>& src,
                        input, stride, rows[plane], plane_width,
                        super_res_info_[plane].upscaled_width,
                        super_res_info_[plane].initial_subpixel_x,
-                       super_res_info_[plane].step, output);
+                       super_res_info_[plane].step, output, stride);
       }
       // In the multi-threaded case, the |superres_line_buffer_| holds the last
       // input row. Apply SuperRes for that row.
@@ -44,24 +44,26 @@ void PostFilter::ApplySuperRes(const std::array<uint8_t*, kMaxPlanes>& src,
             line_buffer_row * superres_line_buffer_.stride(plane) /
                 sizeof(uint16_t) +
             kSuperResHorizontalBorder;
-        dsp_.super_res(
-            superres_coefficients_[static_cast<int>(plane != 0)],
-            line_buffer_start, /*stride=*/0,
-            /*height=*/1, plane_width, super_res_info_[plane].upscaled_width,
-            super_res_info_[plane].initial_subpixel_x,
-            super_res_info_[plane].step, output + rows[plane] * stride);
+        dsp_.super_res(superres_coefficients_[static_cast<int>(plane != 0)],
+                       line_buffer_start, /*source_stride=*/0,
+                       /*height=*/1, plane_width,
+                       super_res_info_[plane].upscaled_width,
+                       super_res_info_[plane].initial_subpixel_x,
+                       super_res_info_[plane].step,
+                       output + rows[plane] * stride, /*dest_stride=*/0);
       }
       continue;
     }
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
     uint8_t* input = src[plane];
     uint8_t* output = dst[plane];
+    const ptrdiff_t stride = frame_buffer_.stride(plane);
     if (rows[plane] > 0) {
       dsp_.super_res(superres_coefficients_[static_cast<int>(plane != 0)],
-                     input, frame_buffer_.stride(plane), rows[plane],
-                     plane_width, super_res_info_[plane].upscaled_width,
+                     input, stride, rows[plane], plane_width,
+                     super_res_info_[plane].upscaled_width,
                      super_res_info_[plane].initial_subpixel_x,
-                     super_res_info_[plane].step, output);
+                     super_res_info_[plane].step, output, stride);
     }
     // In the multi-threaded case, the |superres_line_buffer_| holds the last
     // input row. Apply SuperRes for that row.
@@ -71,12 +73,12 @@ void PostFilter::ApplySuperRes(const std::array<uint8_t*, kMaxPlanes>& src,
           line_buffer_row * superres_line_buffer_.stride(plane) +
           kSuperResHorizontalBorder;
       dsp_.super_res(superres_coefficients_[static_cast<int>(plane != 0)],
-                     line_buffer_start, /*stride=*/0,
+                     line_buffer_start, /*source_stride=*/0,
                      /*height=*/1, plane_width,
                      super_res_info_[plane].upscaled_width,
                      super_res_info_[plane].initial_subpixel_x,
-                     super_res_info_[plane].step,
-                     output + rows[plane] * frame_buffer_.stride(plane));
+                     super_res_info_[plane].step, output + rows[plane] * stride,
+                     /*dest_stride=*/0);
     }
   } while (++plane < planes_);
 }

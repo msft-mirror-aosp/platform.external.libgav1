@@ -91,10 +91,10 @@ void SuperResCoefficients_SSE4_1(const int upscaled_width,
 }
 
 void SuperRes_SSE4_1(const void* const coefficients, void* const source,
-                     const ptrdiff_t stride, const int height,
+                     const ptrdiff_t source_stride, const int height,
                      const int downscaled_width, const int upscaled_width,
                      const int initial_subpixel_x, const int step,
-                     void* const dest) {
+                     void* const dest, const ptrdiff_t dest_stride) {
   auto* src = static_cast<uint8_t*>(source) - DivideBy2(kSuperResFilterTaps);
   auto* dst = static_cast<uint8_t*>(dest);
   int y = height;
@@ -149,8 +149,8 @@ void SuperRes_SSE4_1(const void* const coefficients, void* const source,
       StoreAligned16(dst_ptr, _mm_packus_epi16(a[0], a[1]));
       dst_ptr += 16;
     } while (--x != 0);
-    src += stride;
-    dst += stride;
+    src += source_stride;
+    dst += dest_stride;
   } while (--y != 0);
 }
 
@@ -224,10 +224,10 @@ void SuperResCoefficients_SSE4_1(const int upscaled_width,
 
 template <int bitdepth>
 void SuperRes_SSE4_1(const void* const coefficients, void* const source,
-                     const ptrdiff_t stride, const int height,
+                     const ptrdiff_t source_stride, const int height,
                      const int downscaled_width, const int upscaled_width,
                      const int initial_subpixel_x, const int step,
-                     void* const dest) {
+                     void* const dest, const ptrdiff_t dest_stride) {
   auto* src = static_cast<uint16_t*>(source) - DivideBy2(kSuperResFilterTaps);
   auto* dst = static_cast<uint16_t*>(dest);
   int y = height;
@@ -268,8 +268,8 @@ void SuperRes_SSE4_1(const void* const coefficients, void* const source,
       StoreAligned16(dst_ptr, clipped_16);
       dst_ptr += 8;
     } while (--x != 0);
-    src += stride;
-    dst += stride;
+    src += source_stride;
+    dst += dest_stride;
   } while (--y != 0);
 }
 
