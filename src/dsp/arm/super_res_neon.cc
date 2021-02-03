@@ -93,7 +93,7 @@ void SuperRes_NEON(const void* const coefficients, void* const source,
     const auto* filter = static_cast<const uint8_t*>(coefficients);
     uint8_t* dst_ptr = dst;
     ExtendLine<uint8_t>(src + DivideBy2(kSuperResFilterTaps), downscaled_width,
-                        kSuperResHorizontalBorder, kSuperResHorizontalPadding);
+                        kSuperResHorizontalBorder, kSuperResHorizontalBorder);
     int subpixel_x = initial_subpixel_x;
     uint8x8_t sr[8];
     uint8x16_t s[8];
