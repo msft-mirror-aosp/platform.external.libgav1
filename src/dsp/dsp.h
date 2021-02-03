@@ -391,14 +391,15 @@ using SuperResFunc = void (*)(const void* coefficients, void* source,
 // |source| is the input frame buffer, which is deblocked and cdef filtered.
 // |top_border| and |bottom_border| are the top and bottom borders.
 // |dest| is the output.
-// |stride| is given in pixels, and shared by |source|, |top_border|,
-// |bottom_border| and |dest|.
+// |stride| is given in pixels, and shared by |source| and |dest|.
+// |top_border_stride| and |bottom_border_stride| are given in pixels.
 // |restoration_buffer| contains buffers required for self guided filter and
 // wiener filter. They must be initialized before calling.
 using LoopRestorationFunc = void (*)(
     const RestorationUnitInfo& restoration_info, const void* source,
-    const void* top_border, const void* bottom_border, ptrdiff_t stride,
-    int width, int height, RestorationBuffer* restoration_buffer, void* dest);
+    ptrdiff_t stride, const void* top_border, ptrdiff_t top_border_stride,
+    const void* bottom_border, ptrdiff_t bottom_border_stride, int width,
+    int height, RestorationBuffer* restoration_buffer, void* dest);
 
 // Index 0 is Wiener Filter.
 // Index 1 is Self Guided Restoration Filter.

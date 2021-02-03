@@ -81,10 +81,10 @@ void PostFilter::ApplyLoopRestorationForOneRow(
              type == kLoopRestorationTypeWiener);
       const dsp::LoopRestorationFunc restoration_func =
           dsp_.loop_restorations[type - 2];
-      restoration_func(restoration_info[unit_column], src, top_border,
-                       bottom_border, stride, current_process_unit_width,
-                       current_process_unit_height, &restoration_buffer,
-                       dst_buffer + column);
+      restoration_func(restoration_info[unit_column], src, stride, top_border,
+                       stride, bottom_border, stride,
+                       current_process_unit_width, current_process_unit_height,
+                       &restoration_buffer, dst_buffer + column);
     }
     ++unit_column;
     column += plane_unit_size;
