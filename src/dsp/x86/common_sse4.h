@@ -95,7 +95,7 @@ inline __m128i Load2x2(const void* src1, const void* src2) {
 // Load 2 uint8_t values into |lane| * 2 and |lane| * 2 + 1.
 template <int lane>
 inline __m128i Load2(const void* const buf, __m128i val) {
-  uint16_t temp;
+  int16_t temp;
   memcpy(&temp, buf, 2);
   return _mm_insert_epi16(val, temp, lane);
 }
