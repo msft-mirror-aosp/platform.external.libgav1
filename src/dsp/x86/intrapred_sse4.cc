@@ -2428,7 +2428,7 @@ void DirectionalIntraPredictorZone2_SSE4_1(void* const dest, ptrdiff_t stride,
 
 //------------------------------------------------------------------------------
 // FilterIntraPredictor_SSE4_1
-// See AV1 Spec §7.11.2.3. Recursive intra prediction process
+// Section 7.11.2.3. Recursive intra prediction process
 // This filter applies recursively to 4x2 sub-blocks within the transform block,
 // meaning that the predicted pixels in each sub-block are used as inputs to
 // sub-blocks below and to the right, if present.
