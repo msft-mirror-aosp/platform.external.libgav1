@@ -343,19 +343,9 @@ void CflSubsampler444_SSE4_1(
   __m128i inner_sum_lo, inner_sum_hi;
   int y = 0;
   do {
-#if LIBGAV1_MSAN  // We can load uninitialized values here. Even though they are
-                  // then masked off by blendv, MSAN isn't smart enough to
-                  // understand that. So we switch to a C implementation here.
-    uint16_t c_arr[16];
-    for (int x = 0; x < 16; x++) {
-      const int x_index = std::min(x, visible_width_16 - 1);
-      c_arr[x] = src[x_index] << 3;
-    }
-    samples0 = LoadUnaligned16(c_arr);
-    samples1 = LoadUnaligned16(c_arr + 8);
-    static_cast<void>(blend_mask_16);
-#else
-    __m128i samples01 = LoadUnaligned16(src);
+    // We can load uninitialized values here. Even though they are then masked
+    // off by blendv, MSAN doesn't model that behavior.
+    __m128i samples01 = LoadUnaligned16Msan(src, invisible_width_16);
 
     if (!inside) {
       const __m128i border16 =
@@ -364,26 +354,15 @@ void CflSubsampler444_SSE4_1(
     }
     samples0 = _mm_slli_epi16(_mm_cvtepu8_epi16(samples01), 3);
     samples1 = _mm_slli_epi16(_mm_unpackhi_epi8(samples01, zero), 3);
-#endif  // LIBGAV1_MSAN
 
     StoreUnaligned16(luma_ptr, samples0);
     StoreUnaligned16(luma_ptr + 8, samples1);
     __m128i inner_sum = _mm_add_epi16(samples0, samples1);
 
     if (block_width == 32) {
-#if LIBGAV1_MSAN  // We can load uninitialized values here. Even though they are
-                  // then masked off by blendv, MSAN isn't smart enough to
-                  // understand that. So we switch to a C implementation here.
-      uint16_t c_arr[16];
-      for (int x = 16; x < 32; x++) {
-        const int x_index = std::min(x, visible_width_32 - 1);
-        c_arr[x - 16] = src[x_index] << 3;
-      }
-      samples2 = LoadUnaligned16(c_arr);
-      samples3 = LoadUnaligned16(c_arr + 8);
-      static_cast<void>(blend_mask_32);
-#else
-      __m128i samples23 = LoadUnaligned16(src + 16);
+      // We can load uninitialized values here. Even though they are then masked
+      // off by blendv, MSAN doesn't model that behavior.
+      __m128i samples23 = LoadUnaligned16Msan(src + 16, invisible_width_32);
       if (!inside) {
         const __m128i border32 =
             _mm_set1_epi8(static_cast<int8_t>(src[visible_width_32 - 1]));
@@ -391,7 +370,6 @@ void CflSubsampler444_SSE4_1(
       }
       samples2 = _mm_slli_epi16(_mm_cvtepu8_epi16(samples23), 3);
       samples3 = _mm_slli_epi16(_mm_unpackhi_epi8(samples23, zero), 3);
-#endif  // LIBGAV1_MSAN
 
       StoreUnaligned16(luma_ptr + 16, samples2);
       StoreUnaligned16(luma_ptr + 24, samples3);
