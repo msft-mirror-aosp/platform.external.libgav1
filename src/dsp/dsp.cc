@@ -90,6 +90,7 @@ void DspInit() {
       CdefInit_SSE4_1();
       ConvolveInit_SSE4_1();
       DistanceWeightedBlendInit_SSE4_1();
+      FilmGrainInit_SSE4_1();
       IntraEdgeInit_SSE4_1();
       IntraPredInit_SSE4_1();
       IntraPredCflInit_SSE4_1();
