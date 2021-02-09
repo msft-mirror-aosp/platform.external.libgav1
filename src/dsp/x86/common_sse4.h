@@ -70,6 +70,19 @@ inline void PrintRegX(const int r, const char* const name) {
 #define PR(var, N) PrintReg(var, #var, N)
 #define PD(var) PrintReg(var, #var);
 #define PX(var) PrintRegX(var, #var);
+
+#if LIBGAV1_MSAN
+#include <sanitizer/msan_interface.h>
+
+inline void PrintShadow(const void* r, const char* const name,
+                        const size_t size) {
+  fprintf(stderr, "Shadow for %s:\n", name);
+  __msan_print_shadow(r, size);
+}
+#define PS(var, N) PrintShadow(var, #var, N)
+
+#endif  // LIBGAV1_MSAN
+
 #endif  // 0
 
 namespace libgav1 {
