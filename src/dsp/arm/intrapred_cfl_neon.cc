@@ -31,42 +31,16 @@
 
 namespace libgav1 {
 namespace dsp {
-namespace low_bitdepth {
-namespace {
-
-uint8x16_t Set2ValuesQ(const uint8_t* a) {
-  uint16_t combined_values = a[0] | a[1] << 8;
-  return vreinterpretq_u8_u16(vdupq_n_u16(combined_values));
-}
-
-uint32_t SumVector(uint32x2_t a) {
-#if defined(__aarch64__)
-  return vaddv_u32(a);
-#else
-  const uint64x1_t b = vpaddl_u32(a);
-  return vget_lane_u32(vreinterpret_u32_u64(b), 0);
-#endif  // defined(__aarch64__)
-}
-
-uint32_t SumVector(uint32x4_t a) {
-#if defined(__aarch64__)
-  return vaddvq_u32(a);
-#else
-  const uint64x2_t b = vpaddlq_u32(a);
-  const uint64x1_t c = vadd_u64(vget_low_u64(b), vget_high_u64(b));
-  return vget_lane_u32(vreinterpret_u32_u64(c), 0);
-#endif  // defined(__aarch64__)
-}
 
 // Divide by the number of elements.
-uint32_t Average(const uint32_t sum, const int width, const int height) {
+inline uint32_t Average(const uint32_t sum, const int width, const int height) {
   return RightShiftWithRounding(sum, FloorLog2(width) + FloorLog2(height));
 }
 
 // Subtract |val| from every element in |a|.
-void BlockSubtract(const uint32_t val,
-                   int16_t a[kCflLumaBufferStride][kCflLumaBufferStride],
-                   const int width, const int height) {
+inline void BlockSubtract(const uint32_t val,
+                          int16_t a[kCflLumaBufferStride][kCflLumaBufferStride],
+                          const int width, const int height) {
   assert(val <= INT16_MAX);
   const int16x8_t val_v = vdupq_n_s16(static_cast<int16_t>(val));
 
@@ -93,6 +67,33 @@ void BlockSubtract(const uint32_t val,
       vst1q_s16(a[y] + 24, vsubq_s16(e, val_v));
     }
   }
+}
+
+namespace low_bitdepth {
+namespace {
+
+uint8x16_t Set2ValuesQ(const uint8_t* a) {
+  uint16_t combined_values = a[0] | a[1] << 8;
+  return vreinterpretq_u8_u16(vdupq_n_u16(combined_values));
+}
+
+uint32_t SumVector(uint32x2_t a) {
+#if defined(__aarch64__)
+  return vaddv_u32(a);
+#else
+  const uint64x1_t b = vpaddl_u32(a);
+  return vget_lane_u32(vreinterpret_u32_u64(b), 0);
+#endif  // defined(__aarch64__)
+}
+
+uint32_t SumVector(uint32x4_t a) {
+#if defined(__aarch64__)
+  return vaddvq_u32(a);
+#else
+  const uint64x2_t b = vpaddlq_u32(a);
+  const uint64x1_t c = vadd_u64(vget_low_u64(b), vget_high_u64(b));
+  return vget_lane_u32(vreinterpret_u32_u64(c), 0);
+#endif  // defined(__aarch64__)
 }
 
 template <int block_width, int block_height>
@@ -482,6 +483,129 @@ void Init8bpp() {
 namespace high_bitdepth {
 namespace {
 
+//------------------------------------------------------------------------------
+// CflSubsampler
+
+#ifndef __aarch64__
+uint16x8_t vpaddq_u16(uint16x8_t a, uint16x8_t b) {
+  return vcombine_u16(vpadd_u16(vget_low_u16(a), vget_high_u16(a)),
+                      vpadd_u16(vget_low_u16(b), vget_high_u16(b)));
+}
+#endif
+
+inline uint16x8x2_t LoadU16x8Pair(uint16_t const* ptr) {
+  uint16x8x2_t x;
+  // gcc/clang (64 bit) optimizes the following to vld1q_u16_x2.
+  x.val[0] = vld1q_u16(ptr);
+  x.val[1] = vld1q_u16(ptr + 8);
+  return x;
+}
+
+template <int block_width, int block_height>
+void CflSubsampler420_NEON(
+    int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
+    const int max_luma_width, const int max_luma_height,
+    const void* const source, const ptrdiff_t byte_stride) {
+  const auto* src = static_cast<const uint16_t*>(source);
+  const ptrdiff_t stride = byte_stride >> 1;
+  uint32_t sum;
+
+  if (block_width == 4) {
+    assert(max_luma_width >= 8);
+    uint32x4_t running_sum = vdupq_n_u32(0);
+
+    for (int y = 0; y < block_height; ++y) {
+      const uint16x8_t row0 = vld1q_u16(src);
+      const uint16x8_t row1 = vld1q_u16(src + stride);
+      // Only the lower half of sum_row is valid. The row1 parameter for
+      // vpaddq_u16() is a place holder.
+      const uint16x8_t sum_row = vpaddq_u16(vaddq_u16(row0, row1), row1);
+      const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
+      vst1_s16(luma[y], vreinterpret_s16_u16(vget_low_u16(sum_row_shifted)));
+
+      running_sum = vaddw_u16(running_sum, vget_low_u16(sum_row_shifted));
+
+      if (y << 1 < max_luma_height - 2) {
+        // Once this threshold is reached the loop could be simplified.
+        src += stride << 1;
+      }
+    }
+    sum = SumVector(running_sum);
+  } else if (block_width == 8) {
+    const uint16x8_t x_index = {0, 2, 4, 6, 8, 10, 12, 14};
+    const uint16x8_t x_max_index =
+        vdupq_n_u16(max_luma_width == 8 ? max_luma_width - 2 : 16);
+    const uint16x8_t x_mask = vcltq_u16(x_index, x_max_index);
+
+    uint32x4_t running_sum = vdupq_n_u32(0);
+    for (int y = 0; y < block_height; ++y) {
+      const uint16x8x2_t row0 = LoadU16x8Pair(src);
+      const uint16x8x2_t row1 = LoadU16x8Pair(src + stride);
+      const uint16x8_t sum_row =
+          vaddq_u16(vpaddq_u16(row0.val[0], row0.val[1]),
+                    vpaddq_u16(row1.val[0], row1.val[1]));
+      const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
+
+      // Dup the 2x2 sum at the max luma offset.
+      const uint16x8_t max_luma_sum =
+          vdupq_lane_u16(vget_low_u16(sum_row_shifted), 3);
+
+      const uint16x8_t final_sum_row =
+          vbslq_u16(x_mask, sum_row_shifted, max_luma_sum);
+      vst1q_s16(luma[y], vreinterpretq_s16_u16(final_sum_row));
+
+      running_sum = vpadalq_u16(running_sum, final_sum_row);
+
+      if (y << 1 < max_luma_height - 2) {
+        src += stride << 1;
+      }
+    }
+    sum = SumVector(running_sum);
+  } else /* block_width >= 16 */ {
+    const uint16x8_t x_max_index = vdupq_n_u16(max_luma_width - 2);
+    uint32x4_t running_sum = vdupq_n_u32(0);
+
+    for (int y = 0; y < block_height; ++y) {
+      // Calculate the 2x2 sum at the max_luma offset
+      const uint16_t a00 = src[max_luma_width - 2];
+      const uint16_t a01 = src[max_luma_width - 1];
+      const uint16_t a10 = src[max_luma_width - 2 + stride];
+      const uint16_t a11 = src[max_luma_width - 1 + stride];
+      // Dup the 2x2 sum at the max luma offset.
+      const uint16x8_t max_luma_sum = vdupq_n_u16((a00 + a01 + a10 + a11) << 1);
+      uint16x8_t x_index = {0, 2, 4, 6, 8, 10, 12, 14};
+
+      for (int x = 0; x < block_width; x += 8) {
+        const uint16x8_t x_mask = vcltq_u16(x_index, x_max_index);
+        const ptrdiff_t src_x_offset = x << 1;
+        const uint16x8x2_t row0 = LoadU16x8Pair(src + src_x_offset);
+        const uint16x8x2_t row1 = LoadU16x8Pair(src + src_x_offset + stride);
+        const uint16x8_t sum_row =
+            vaddq_u16(vpaddq_u16(row0.val[0], row0.val[1]),
+                      vpaddq_u16(row1.val[0], row1.val[1]));
+        const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
+        const uint16x8_t final_sum_row =
+            vbslq_u16(x_mask, sum_row_shifted, max_luma_sum);
+        vst1q_s16(luma[y] + x, vreinterpretq_s16_u16(final_sum_row));
+
+        running_sum = vpadalq_u16(running_sum, final_sum_row);
+        x_index = vaddq_u16(x_index, vdupq_n_u16(16));
+      }
+
+      if (y << 1 < max_luma_height - 2) {
+        src += stride << 1;
+      }
+    }
+    sum = SumVector(running_sum);
+  }
+
+  const uint32_t average = Average(sum, block_width, block_height);
+  BlockSubtract(average, luma, block_width, block_height);
+}
+
+//------------------------------------------------------------------------------
+// CflIntraPredictor
+
 // |luma| can be within +/-(((1 << bitdepth) - 1) << 3), inclusive.
 // |alpha| can be -16 to 16 (inclusive).
 // Clip |dc + ((alpha * luma) >> 6))| to 0, (1 << bitdepth) - 1.
@@ -605,6 +729,39 @@ inline void CflIntraPredictor32xN_NEON(
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
+
+  dsp->cfl_subsamplers[kTransformSize4x4][kSubsamplingType420] =
+      CflSubsampler420_NEON<4, 4>;
+  dsp->cfl_subsamplers[kTransformSize4x8][kSubsamplingType420] =
+      CflSubsampler420_NEON<4, 8>;
+  dsp->cfl_subsamplers[kTransformSize4x16][kSubsamplingType420] =
+      CflSubsampler420_NEON<4, 16>;
+
+  dsp->cfl_subsamplers[kTransformSize8x4][kSubsamplingType420] =
+      CflSubsampler420_NEON<8, 4>;
+  dsp->cfl_subsamplers[kTransformSize8x8][kSubsamplingType420] =
+      CflSubsampler420_NEON<8, 8>;
+  dsp->cfl_subsamplers[kTransformSize8x16][kSubsamplingType420] =
+      CflSubsampler420_NEON<8, 16>;
+  dsp->cfl_subsamplers[kTransformSize8x32][kSubsamplingType420] =
+      CflSubsampler420_NEON<8, 32>;
+
+  dsp->cfl_subsamplers[kTransformSize16x4][kSubsamplingType420] =
+      CflSubsampler420_NEON<16, 4>;
+  dsp->cfl_subsamplers[kTransformSize16x8][kSubsamplingType420] =
+      CflSubsampler420_NEON<16, 8>;
+  dsp->cfl_subsamplers[kTransformSize16x16][kSubsamplingType420] =
+      CflSubsampler420_NEON<16, 16>;
+  dsp->cfl_subsamplers[kTransformSize16x32][kSubsamplingType420] =
+      CflSubsampler420_NEON<16, 32>;
+
+  dsp->cfl_subsamplers[kTransformSize32x8][kSubsamplingType420] =
+      CflSubsampler420_NEON<32, 8>;
+  dsp->cfl_subsamplers[kTransformSize32x16][kSubsamplingType420] =
+      CflSubsampler420_NEON<32, 16>;
+  dsp->cfl_subsamplers[kTransformSize32x32][kSubsamplingType420] =
+      CflSubsampler420_NEON<32, 32>;
+
   dsp->cfl_intra_predictors[kTransformSize4x4] = CflIntraPredictor4xN_NEON<4>;
   dsp->cfl_intra_predictors[kTransformSize4x8] = CflIntraPredictor4xN_NEON<8>;
   dsp->cfl_intra_predictors[kTransformSize4x16] = CflIntraPredictor4xN_NEON<16>;
