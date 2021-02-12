@@ -71,12 +71,6 @@ inline void BlockSubtract(const uint32_t val,
 
 namespace low_bitdepth {
 namespace {
-
-uint8x16_t Set2ValuesQ(const uint8_t* a) {
-  uint16_t combined_values = a[0] | a[1] << 8;
-  return vreinterpretq_u8_u16(vdupq_n_u16(combined_values));
-}
-
 uint32_t SumVector(uint32x2_t a) {
 #if defined(__aarch64__)
   return vaddv_u32(a);
@@ -124,26 +118,27 @@ void CflSubsampler420_NEON(
 
     sum = SumVector(running_sum);
   } else if (block_width == 8) {
-    const uint8x16_t x_index = {0, 0, 2,  2,  4,  4,  6,  6,
-                                8, 8, 10, 10, 12, 12, 14, 14};
-    const uint8x16_t x_max_index = vdupq_n_u8(max_luma_width - 2);
-    const uint8x16_t x_mask = vcltq_u8(x_index, x_max_index);
+    const uint16x8_t x_index = {0, 2, 4, 6, 8, 10, 12, 14};
+    const uint16x8_t x_max_index =
+        vdupq_n_u16(max_luma_width == 8 ? max_luma_width - 2 : 16);
+    const uint16x8_t x_mask = vcltq_u16(x_index, x_max_index);
 
     uint32x4_t running_sum = vdupq_n_u32(0);
 
     for (int y = 0; y < block_height; ++y) {
-      const uint8x16_t x_max0 = Set2ValuesQ(src + max_luma_width - 2);
-      const uint8x16_t x_max1 = Set2ValuesQ(src + max_luma_width - 2 + stride);
+      const uint8x16_t row0 = vld1q_u8(src);
+      const uint8x16_t row1 = vld1q_u8(src + stride);
+      const uint16x8_t sum_row = vpadalq_u8(vpaddlq_u8(row0), row1);
+      const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
 
-      uint8x16_t row0 = vld1q_u8(src);
-      row0 = vbslq_u8(x_mask, row0, x_max0);
-      uint8x16_t row1 = vld1q_u8(src + stride);
-      row1 = vbslq_u8(x_mask, row1, x_max1);
+      // Dup the 2x2 sum at the max luma offset.
+      const uint16x8_t max_luma_sum =
+          vdupq_lane_u16(vget_low_u16(sum_row_shifted), 3);
+      const uint16x8_t final_sum_row =
+          vbslq_u16(x_mask, sum_row_shifted, max_luma_sum);
+      vst1q_s16(luma[y], vreinterpretq_s16_u16(final_sum_row));
 
-      uint16x8_t sum_row = vpadalq_u8(vpaddlq_u8(row0), row1);
-      sum_row = vshlq_n_u16(sum_row, 1);
-      running_sum = vpadalq_u16(running_sum, sum_row);
-      vst1q_s16(luma[y], vreinterpretq_s16_u16(sum_row));
+      running_sum = vpadalq_u16(running_sum, final_sum_row);
 
       if (y << 1 < max_luma_height - 2) {
         src += stride << 1;
@@ -152,45 +147,35 @@ void CflSubsampler420_NEON(
 
     sum = SumVector(running_sum);
   } else /* block_width >= 16 */ {
-    const uint8x16_t x_max_index = vdupq_n_u8(max_luma_width - 2);
+    const uint16x8_t x_max_index = vdupq_n_u16(max_luma_width - 2);
     uint32x4_t running_sum = vdupq_n_u32(0);
 
     for (int y = 0; y < block_height; ++y) {
-      uint8x16_t x_index = {0,  2,  4,  6,  8,  10, 12, 14,
-                            16, 18, 20, 22, 24, 26, 28, 30};
-      const uint8x16_t x_max00 = vdupq_n_u8(src[max_luma_width - 2]);
-      const uint8x16_t x_max01 = vdupq_n_u8(src[max_luma_width - 2 + 1]);
-      const uint8x16_t x_max10 = vdupq_n_u8(src[stride + max_luma_width - 2]);
-      const uint8x16_t x_max11 =
-          vdupq_n_u8(src[stride + max_luma_width - 2 + 1]);
-      for (int x = 0; x < block_width; x += 16) {
-        const ptrdiff_t src_x_offset = x << 1;
-        const uint8x16_t x_mask = vcltq_u8(x_index, x_max_index);
-        const uint8x16x2_t row0 = vld2q_u8(src + src_x_offset);
-        const uint8x16x2_t row1 = vld2q_u8(src + src_x_offset + stride);
-        const uint8x16_t row_masked_00 = vbslq_u8(x_mask, row0.val[0], x_max00);
-        const uint8x16_t row_masked_01 = vbslq_u8(x_mask, row0.val[1], x_max01);
-        const uint8x16_t row_masked_10 = vbslq_u8(x_mask, row1.val[0], x_max10);
-        const uint8x16_t row_masked_11 = vbslq_u8(x_mask, row1.val[1], x_max11);
+      // Calculate the 2x2 sum at the max_luma offset
+      const uint8_t a00 = src[max_luma_width - 2];
+      const uint8_t a01 = src[max_luma_width - 1];
+      const uint8_t a10 = src[max_luma_width - 2 + stride];
+      const uint8_t a11 = src[max_luma_width - 1 + stride];
+      // Dup the 2x2 sum at the max luma offset.
+      const uint16x8_t max_luma_sum =
+          vdupq_n_u16((uint16_t)((a00 + a01 + a10 + a11) << 1));
+      uint16x8_t x_index = {0, 2, 4, 6, 8, 10, 12, 14};
 
-        uint16x8_t sum_row_lo =
-            vaddl_u8(vget_low_u8(row_masked_00), vget_low_u8(row_masked_01));
-        sum_row_lo = vaddw_u8(sum_row_lo, vget_low_u8(row_masked_10));
-        sum_row_lo = vaddw_u8(sum_row_lo, vget_low_u8(row_masked_11));
-        sum_row_lo = vshlq_n_u16(sum_row_lo, 1);
-        running_sum = vpadalq_u16(running_sum, sum_row_lo);
-        vst1q_s16(luma[y] + x, vreinterpretq_s16_u16(sum_row_lo));
+      ptrdiff_t src_x_offset = 0;
+      for (int x = 0; x < block_width; x += 8, src_x_offset += 16) {
+        const uint16x8_t x_mask = vcltq_u16(x_index, x_max_index);
+        const uint8x16_t row0 = vld1q_u8(src + src_x_offset);
+        const uint8x16_t row1 = vld1q_u8(src + src_x_offset + stride);
+        const uint16x8_t sum_row = vpadalq_u8(vpaddlq_u8(row0), row1);
+        const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
+        const uint16x8_t final_sum_row =
+            vbslq_u16(x_mask, sum_row_shifted, max_luma_sum);
+        vst1q_s16(luma[y] + x, vreinterpretq_s16_u16(final_sum_row));
 
-        uint16x8_t sum_row_hi =
-            vaddl_u8(vget_high_u8(row_masked_00), vget_high_u8(row_masked_01));
-        sum_row_hi = vaddw_u8(sum_row_hi, vget_high_u8(row_masked_10));
-        sum_row_hi = vaddw_u8(sum_row_hi, vget_high_u8(row_masked_11));
-        sum_row_hi = vshlq_n_u16(sum_row_hi, 1);
-        running_sum = vpadalq_u16(running_sum, sum_row_hi);
-        vst1q_s16(luma[y] + x + 8, vreinterpretq_s16_u16(sum_row_hi));
-
-        x_index = vaddq_u8(x_index, vdupq_n_u8(32));
+        running_sum = vpadalq_u16(running_sum, final_sum_row);
+        x_index = vaddq_u16(x_index, vdupq_n_u16(16));
       }
+
       if (y << 1 < max_luma_height - 2) {
         src += stride << 1;
       }
