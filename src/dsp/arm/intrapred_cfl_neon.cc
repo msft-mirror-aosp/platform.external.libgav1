@@ -71,24 +71,6 @@ inline void BlockSubtract(const uint32_t val,
 
 namespace low_bitdepth {
 namespace {
-uint32_t SumVector(uint32x2_t a) {
-#if defined(__aarch64__)
-  return vaddv_u32(a);
-#else
-  const uint64x1_t b = vpaddl_u32(a);
-  return vget_lane_u32(vreinterpret_u32_u64(b), 0);
-#endif  // defined(__aarch64__)
-}
-
-uint32_t SumVector(uint32x4_t a) {
-#if defined(__aarch64__)
-  return vaddvq_u32(a);
-#else
-  const uint64x2_t b = vpaddlq_u32(a);
-  const uint64x1_t c = vadd_u64(vget_low_u64(b), vget_high_u64(b));
-  return vget_lane_u32(vreinterpret_u32_u64(c), 0);
-#endif  // defined(__aarch64__)
-}
 
 template <int block_width, int block_height>
 void CflSubsampler420_NEON(

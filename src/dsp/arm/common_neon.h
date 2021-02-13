@@ -387,6 +387,15 @@ inline uint16_t SumVector(const uint8x8_t a) {
 #endif  // defined(__aarch64__)
 }
 
+inline uint32_t SumVector(const uint32x2_t a) {
+#if defined(__aarch64__)
+  return vaddv_u32(a);
+#else
+  const uint64x1_t b = vpaddl_u32(a);
+  return vget_lane_u32(vreinterpret_u32_u64(b), 0);
+#endif  // defined(__aarch64__)
+}
+
 inline uint32_t SumVector(const uint32x4_t a) {
 #if defined(__aarch64__)
   return vaddvq_u32(a);
