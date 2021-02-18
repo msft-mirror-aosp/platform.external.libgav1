@@ -452,7 +452,6 @@ namespace {
 
 //------------------------------------------------------------------------------
 // CflSubsampler
-
 #ifndef __aarch64__
 uint16x8_t vpaddq_u16(uint16x8_t a, uint16x8_t b) {
   return vcombine_u16(vpadd_u16(vget_low_u16(a), vget_high_u16(a)),
@@ -460,114 +459,364 @@ uint16x8_t vpaddq_u16(uint16x8_t a, uint16x8_t b) {
 }
 #endif
 
-inline uint16x8x2_t LoadU16x8Pair(uint16_t const* ptr) {
-  uint16x8x2_t x;
-  // gcc/clang (64 bit) optimizes the following to vld1q_u16_x2.
-  x.val[0] = vld1q_u16(ptr);
-  x.val[1] = vld1q_u16(ptr + 8);
-  return x;
+// This duplicates the last two 16-bit values in |row|.
+inline uint16x8_t LastRowSamples(const uint16x8_t row) {
+  const uint32x2_t a = vget_high_u32(vreinterpretq_u32_u16(row));
+  const uint32x4_t b = vdupq_lane_u32(a, 1);
+  return vreinterpretq_u16_u32(b);
 }
 
-template <int block_width, int block_height>
-void CflSubsampler420_NEON(
+// This duplicates the last unsigned 16-bit value in |row|.
+inline uint16x8_t LastRowResult(const uint16x8_t row) {
+  const uint16x4_t a = vget_high_u16(row);
+  const uint16x8_t b = vdupq_lane_u16(a, 0x3);
+  return b;
+}
+
+// This duplicates the last signed 16-bit value in |row|.
+inline int16x8_t LastRowResult(const int16x8_t row) {
+  const int16x4_t a = vget_high_s16(row);
+  const int16x8_t b = vdupq_lane_s16(a, 0x3);
+  return b;
+}
+
+// Takes in two sums of input row pairs, and completes the computation for two
+// output rows.
+inline uint16x8_t StoreLumaResults4_420(const uint16x8_t vertical_sum0,
+                                        const uint16x8_t vertical_sum1,
+                                        int16_t* luma_ptr) {
+  const uint16x8_t result = vpaddq_u16(vertical_sum0, vertical_sum1);
+  const uint16x8_t result_shifted = vshlq_n_u16(result, 1);
+  vst1_s16(luma_ptr, vreinterpret_s16_u16(vget_low_u16(result_shifted)));
+  vst1_s16(luma_ptr + kCflLumaBufferStride,
+           vreinterpret_s16_u16(vget_high_u16(result_shifted)));
+  return result_shifted;
+}
+
+// Takes two halves of a vertically added pair of rows and completes the
+// computation for one output row.
+inline uint16x8_t StoreLumaResults8_420(const uint16x8_t vertical_sum0,
+                                        const uint16x8_t vertical_sum1,
+                                        int16_t* luma_ptr) {
+  const uint16x8_t result = vpaddq_u16(vertical_sum0, vertical_sum1);
+  const uint16x8_t result_shifted = vshlq_n_u16(result, 1);
+  vst1q_s16(luma_ptr, vreinterpretq_s16_u16(result_shifted));
+  return result_shifted;
+}
+
+template <int block_height_log2>
+void CflSubsampler420_4xH_NEON(
     int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
-    const int max_luma_width, const int max_luma_height,
-    const void* const source, const ptrdiff_t byte_stride) {
+    const int /*max_luma_width*/, const int max_luma_height,
+    const void* const source, ptrdiff_t stride) {
+  const int block_height = 1 << block_height_log2;
   const auto* src = static_cast<const uint16_t*>(source);
-  const ptrdiff_t stride = byte_stride >> 1;
-  uint32_t sum;
+  const ptrdiff_t src_stride = stride / sizeof(src[0]);
+  int16_t* luma_ptr = luma[0];
+  const int luma_height = std::min(block_height, max_luma_height >> 1);
+  int y = luma_height;
 
-  if (block_width == 4) {
-    assert(max_luma_width >= 8);
-    uint32x4_t running_sum = vdupq_n_u32(0);
+  uint32x4_t final_sum = vdupq_n_u32(0);
+  do {
+    const uint16x8_t samples_row0 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t samples_row1 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t luma_sum01 = vaddq_u16(samples_row0, samples_row1);
 
-    for (int y = 0; y < block_height; ++y) {
-      const uint16x8_t row0 = vld1q_u16(src);
-      const uint16x8_t row1 = vld1q_u16(src + stride);
-      // Only the lower half of sum_row is valid. The row1 parameter for
-      // vpaddq_u16() is a place holder.
-      const uint16x8_t sum_row = vpaddq_u16(vaddq_u16(row0, row1), row1);
-      const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
-      vst1_s16(luma[y], vreinterpret_s16_u16(vget_low_u16(sum_row_shifted)));
+    const uint16x8_t samples_row2 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t samples_row3 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t luma_sum23 = vaddq_u16(samples_row2, samples_row3);
+    uint16x8_t sum = StoreLumaResults4_420(luma_sum01, luma_sum23, luma_ptr);
+    luma_ptr += kCflLumaBufferStride << 1;
 
-      running_sum = vaddw_u16(running_sum, vget_low_u16(sum_row_shifted));
+    const uint16x8_t samples_row4 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t samples_row5 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t luma_sum45 = vaddq_u16(samples_row4, samples_row5);
 
-      if (y << 1 < max_luma_height - 2) {
-        // Once this threshold is reached the loop could be simplified.
-        src += stride << 1;
-      }
-    }
-    sum = SumVector(running_sum);
-  } else if (block_width == 8) {
-    const uint16x8_t x_index = {0, 2, 4, 6, 8, 10, 12, 14};
-    const uint16x8_t x_max_index =
-        vdupq_n_u16(max_luma_width == 8 ? max_luma_width - 2 : 16);
-    const uint16x8_t x_mask = vcltq_u16(x_index, x_max_index);
+    const uint16x8_t samples_row6 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t samples_row7 = vld1q_u16(src);
+    src += src_stride;
+    const uint16x8_t luma_sum67 = vaddq_u16(samples_row6, samples_row7);
+    sum =
+        vaddq_u16(sum, StoreLumaResults4_420(luma_sum45, luma_sum67, luma_ptr));
+    luma_ptr += kCflLumaBufferStride << 1;
 
-    uint32x4_t running_sum = vdupq_n_u32(0);
-    for (int y = 0; y < block_height; ++y) {
-      const uint16x8x2_t row0 = LoadU16x8Pair(src);
-      const uint16x8x2_t row1 = LoadU16x8Pair(src + stride);
-      const uint16x8_t sum_row =
-          vaddq_u16(vpaddq_u16(row0.val[0], row0.val[1]),
-                    vpaddq_u16(row1.val[0], row1.val[1]));
-      const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
+    final_sum = vpadalq_u16(final_sum, sum);
+    y -= 4;
+  } while (y != 0);
 
-      // Dup the 2x2 sum at the max luma offset.
-      const uint16x8_t max_luma_sum =
-          vdupq_lane_u16(vget_low_u16(sum_row_shifted), 3);
+  const uint16x4_t final_fill =
+      vreinterpret_u16_s16(vld1_s16(luma_ptr - kCflLumaBufferStride));
+  const uint32x4_t final_fill_to_sum = vmovl_u16(final_fill);
+  for (y = luma_height; y < block_height; ++y) {
+    vst1_s16(luma_ptr, vreinterpret_s16_u16(final_fill));
+    luma_ptr += kCflLumaBufferStride;
+    final_sum = vaddq_u32(final_sum, final_fill_to_sum);
+  }
+  const uint32_t average_sum = RightShiftWithRounding(
+      SumVector(final_sum), block_height_log2 + 2 /*log2 of width 4*/);
+  const int16x4_t averages = vdup_n_s16(static_cast<int16_t>(average_sum));
+  luma_ptr = luma[0];
+  y = block_height;
+  do {
+    const int16x4_t samples = vld1_s16(luma_ptr);
+    vst1_s16(luma_ptr, vsub_s16(samples, averages));
+    luma_ptr += kCflLumaBufferStride;
+  } while (--y != 0);
+}
 
-      const uint16x8_t final_sum_row =
-          vbslq_u16(x_mask, sum_row_shifted, max_luma_sum);
-      vst1q_s16(luma[y], vreinterpretq_s16_u16(final_sum_row));
+template <int block_height_log2, int max_luma_width>
+inline void CflSubsampler420Impl_8xH_NEON(
+    int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
+    const int max_luma_height, const void* const source, ptrdiff_t stride) {
+  const int block_height = 1 << block_height_log2;
+  const auto* src = static_cast<const uint16_t*>(source);
+  const ptrdiff_t src_stride = stride / sizeof(src[0]);
+  int16_t* luma_ptr = luma[0];
+  const int luma_height = std::min(block_height, max_luma_height >> 1);
+  int y = luma_height;
 
-      running_sum = vpadalq_u16(running_sum, final_sum_row);
+  uint32x4_t final_sum = vdupq_n_u32(0);
+  do {
+    const uint16x8_t samples_row00 = vld1q_u16(src);
+    const uint16x8_t samples_row01 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row00);
+    src += src_stride;
+    const uint16x8_t samples_row10 = vld1q_u16(src);
+    const uint16x8_t samples_row11 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row10);
+    src += src_stride;
+    const uint16x8_t luma_sum00 = vaddq_u16(samples_row00, samples_row10);
+    const uint16x8_t luma_sum01 = vaddq_u16(samples_row01, samples_row11);
+    uint16x8_t sum = StoreLumaResults8_420(luma_sum00, luma_sum01, luma_ptr);
+    luma_ptr += kCflLumaBufferStride;
 
-      if (y << 1 < max_luma_height - 2) {
-        src += stride << 1;
-      }
-    }
-    sum = SumVector(running_sum);
-  } else /* block_width >= 16 */ {
-    const uint16x8_t x_max_index = vdupq_n_u16(max_luma_width - 2);
-    uint32x4_t running_sum = vdupq_n_u32(0);
+    const uint16x8_t samples_row20 = vld1q_u16(src);
+    const uint16x8_t samples_row21 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row20);
+    src += src_stride;
+    const uint16x8_t samples_row30 = vld1q_u16(src);
+    const uint16x8_t samples_row31 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row30);
+    src += src_stride;
+    const uint16x8_t luma_sum10 = vaddq_u16(samples_row20, samples_row30);
+    const uint16x8_t luma_sum11 = vaddq_u16(samples_row21, samples_row31);
+    sum =
+        vaddq_u16(sum, StoreLumaResults8_420(luma_sum10, luma_sum11, luma_ptr));
+    luma_ptr += kCflLumaBufferStride;
 
-    for (int y = 0; y < block_height; ++y) {
-      // Calculate the 2x2 sum at the max_luma offset
-      const uint16_t a00 = src[max_luma_width - 2];
-      const uint16_t a01 = src[max_luma_width - 1];
-      const uint16_t a10 = src[max_luma_width - 2 + stride];
-      const uint16_t a11 = src[max_luma_width - 1 + stride];
-      // Dup the 2x2 sum at the max luma offset.
-      const uint16x8_t max_luma_sum = vdupq_n_u16((a00 + a01 + a10 + a11) << 1);
-      uint16x8_t x_index = {0, 2, 4, 6, 8, 10, 12, 14};
+    const uint16x8_t samples_row40 = vld1q_u16(src);
+    const uint16x8_t samples_row41 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row40);
+    src += src_stride;
+    const uint16x8_t samples_row50 = vld1q_u16(src);
+    const uint16x8_t samples_row51 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row50);
+    src += src_stride;
+    const uint16x8_t luma_sum20 = vaddq_u16(samples_row40, samples_row50);
+    const uint16x8_t luma_sum21 = vaddq_u16(samples_row41, samples_row51);
+    sum =
+        vaddq_u16(sum, StoreLumaResults8_420(luma_sum20, luma_sum21, luma_ptr));
+    luma_ptr += kCflLumaBufferStride;
 
-      for (int x = 0; x < block_width; x += 8) {
-        const uint16x8_t x_mask = vcltq_u16(x_index, x_max_index);
-        const ptrdiff_t src_x_offset = x << 1;
-        const uint16x8x2_t row0 = LoadU16x8Pair(src + src_x_offset);
-        const uint16x8x2_t row1 = LoadU16x8Pair(src + src_x_offset + stride);
-        const uint16x8_t sum_row =
-            vaddq_u16(vpaddq_u16(row0.val[0], row0.val[1]),
-                      vpaddq_u16(row1.val[0], row1.val[1]));
-        const uint16x8_t sum_row_shifted = vshlq_n_u16(sum_row, 1);
-        const uint16x8_t final_sum_row =
-            vbslq_u16(x_mask, sum_row_shifted, max_luma_sum);
-        vst1q_s16(luma[y] + x, vreinterpretq_s16_u16(final_sum_row));
+    const uint16x8_t samples_row60 = vld1q_u16(src);
+    const uint16x8_t samples_row61 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row60);
+    src += src_stride;
+    const uint16x8_t samples_row70 = vld1q_u16(src);
+    const uint16x8_t samples_row71 = (max_luma_width == 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row70);
+    src += src_stride;
+    const uint16x8_t luma_sum30 = vaddq_u16(samples_row60, samples_row70);
+    const uint16x8_t luma_sum31 = vaddq_u16(samples_row61, samples_row71);
+    sum =
+        vaddq_u16(sum, StoreLumaResults8_420(luma_sum30, luma_sum31, luma_ptr));
+    luma_ptr += kCflLumaBufferStride;
 
-        running_sum = vpadalq_u16(running_sum, final_sum_row);
-        x_index = vaddq_u16(x_index, vdupq_n_u16(16));
-      }
+    final_sum = vpadalq_u16(final_sum, sum);
+    y -= 4;
+  } while (y != 0);
 
-      if (y << 1 < max_luma_height - 2) {
-        src += stride << 1;
-      }
-    }
-    sum = SumVector(running_sum);
+  // Duplicate the final row downward to the end after max_luma_height.
+  const uint16x8_t final_fill =
+      vreinterpretq_u16_s16(vld1q_s16(luma_ptr - kCflLumaBufferStride));
+  const uint32x4_t final_fill_to_sum =
+      vaddl_u16(vget_low_u16(final_fill), vget_high_u16(final_fill));
+
+  for (y = luma_height; y < block_height; ++y) {
+    vst1q_s16(luma_ptr, vreinterpretq_s16_u16(final_fill));
+    luma_ptr += kCflLumaBufferStride;
+    final_sum = vaddq_u32(final_sum, final_fill_to_sum);
   }
 
-  const uint32_t average = Average(sum, block_width, block_height);
-  BlockSubtract(average, luma, block_width, block_height);
+  const uint32_t average_sum = RightShiftWithRounding(
+      SumVector(final_sum), block_height_log2 + 3 /*log2 of width 8*/);
+  const int16x8_t averages = vdupq_n_s16(static_cast<int16_t>(average_sum));
+  luma_ptr = luma[0];
+  y = block_height;
+  do {
+    const int16x8_t samples = vld1q_s16(luma_ptr);
+    vst1q_s16(luma_ptr, vsubq_s16(samples, averages));
+    luma_ptr += kCflLumaBufferStride;
+  } while (--y != 0);
+}
+
+template <int block_height_log2>
+void CflSubsampler420_8xH_NEON(
+    int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
+    const int max_luma_width, const int max_luma_height,
+    const void* const source, ptrdiff_t stride) {
+  if (max_luma_width == 8) {
+    CflSubsampler420Impl_8xH_NEON<block_height_log2, 8>(luma, max_luma_height,
+                                                        source, stride);
+  } else {
+    CflSubsampler420Impl_8xH_NEON<block_height_log2, 16>(luma, max_luma_height,
+                                                         source, stride);
+  }
+}
+
+template <int block_width_log2, int block_height_log2, int max_luma_width>
+inline void CflSubsampler420Impl_WxH_NEON(
+    int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
+    const int max_luma_height, const void* const source, ptrdiff_t stride) {
+  const auto* src = static_cast<const uint16_t*>(source);
+  const ptrdiff_t src_stride = stride / sizeof(src[0]);
+  const int block_height = 1 << block_height_log2;
+  const int luma_height = std::min(block_height, max_luma_height >> 1);
+  int16_t* luma_ptr = luma[0];
+  // Begin first y section, covering width up to 32.
+  int y = luma_height;
+
+  uint16x8_t final_fill0, final_fill1;
+  uint32x4_t final_sum = vdupq_n_u32(0);
+  do {
+    const uint16_t* src_next = src + src_stride;
+    const uint16x8_t samples_row00 = vld1q_u16(src);
+    const uint16x8_t samples_row01 = (max_luma_width >= 16)
+                                         ? vld1q_u16(src + 8)
+                                         : LastRowSamples(samples_row00);
+    const uint16x8_t samples_row02 = (max_luma_width >= 24)
+                                         ? vld1q_u16(src + 16)
+                                         : LastRowSamples(samples_row01);
+    const uint16x8_t samples_row03 = (max_luma_width == 32)
+                                         ? vld1q_u16(src + 24)
+                                         : LastRowSamples(samples_row02);
+    const uint16x8_t samples_row10 = vld1q_u16(src_next);
+    const uint16x8_t samples_row11 = (max_luma_width >= 16)
+                                         ? vld1q_u16(src_next + 8)
+                                         : LastRowSamples(samples_row10);
+    const uint16x8_t samples_row12 = (max_luma_width >= 24)
+                                         ? vld1q_u16(src_next + 16)
+                                         : LastRowSamples(samples_row11);
+    const uint16x8_t samples_row13 = (max_luma_width == 32)
+                                         ? vld1q_u16(src_next + 24)
+                                         : LastRowSamples(samples_row12);
+    const uint16x8_t luma_sum0 = vaddq_u16(samples_row00, samples_row10);
+    const uint16x8_t luma_sum1 = vaddq_u16(samples_row01, samples_row11);
+    const uint16x8_t luma_sum2 = vaddq_u16(samples_row02, samples_row12);
+    const uint16x8_t luma_sum3 = vaddq_u16(samples_row03, samples_row13);
+    final_fill0 = StoreLumaResults8_420(luma_sum0, luma_sum1, luma_ptr);
+    final_fill1 = StoreLumaResults8_420(luma_sum2, luma_sum3, luma_ptr + 8);
+    const uint16x8_t sum = vaddq_u16(final_fill0, final_fill1);
+
+    final_sum = vpadalq_u16(final_sum, sum);
+
+    // Because max_luma_width is at most 32, any values beyond x=16 will
+    // necessarily be duplicated.
+    if (block_width_log2 == 5) {
+      const uint16x8_t wide_fill = LastRowResult(final_fill1);
+      final_sum = vpadalq_u16(final_sum, vshlq_n_u16(wide_fill, 1));
+    }
+    src += src_stride << 1;
+    luma_ptr += kCflLumaBufferStride;
+  } while (--y != 0);
+
+  // Begin second y section.
+  y = luma_height;
+  if (y < block_height) {
+    uint32x4_t wide_fill;
+    if (block_width_log2 == 5) {
+      // There are 16 16-bit fill values per row, shifting by 2 accounts for
+      // the widening to 32-bit.  (a << 2) = (a + a) << 1.
+      wide_fill = vshll_n_u16(vget_low_u16(LastRowResult(final_fill1)), 2);
+    }
+    const uint16x8_t final_inner_sum = vaddq_u16(final_fill0, final_fill1);
+    const uint32x4_t final_fill_to_sum = vaddl_u16(
+        vget_low_u16(final_inner_sum), vget_high_u16(final_inner_sum));
+
+    do {
+      vst1q_s16(luma_ptr, vreinterpretq_s16_u16(final_fill0));
+      vst1q_s16(luma_ptr + 8, vreinterpretq_s16_u16(final_fill1));
+      if (block_width_log2 == 5) {
+        final_sum = vaddq_u32(final_sum, wide_fill);
+      }
+      luma_ptr += kCflLumaBufferStride;
+      final_sum = vaddq_u32(final_sum, final_fill_to_sum);
+    } while (++y < block_height);
+  }  // End second y section.
+
+  const uint32_t average_sum = RightShiftWithRounding(
+      SumVector(final_sum), block_width_log2 + block_height_log2);
+  const int16x8_t averages = vdupq_n_s16(static_cast<int16_t>(average_sum));
+
+  luma_ptr = luma[0];
+  y = block_height;
+  do {
+    const int16x8_t samples0 = vld1q_s16(luma_ptr);
+    vst1q_s16(luma_ptr, vsubq_s16(samples0, averages));
+    const int16x8_t samples1 = vld1q_s16(luma_ptr + 8);
+    const int16x8_t final_row_result = vsubq_s16(samples1, averages);
+    vst1q_s16(luma_ptr + 8, final_row_result);
+
+    if (block_width_log2 == 5) {
+      const int16x8_t wide_fill = LastRowResult(final_row_result);
+      vst1q_s16(luma_ptr + 16, wide_fill);
+      vst1q_s16(luma_ptr + 24, wide_fill);
+    }
+    luma_ptr += kCflLumaBufferStride;
+  } while (--y != 0);
+}
+
+//------------------------------------------------------------------------------
+// Choose subsampler based on max_luma_width
+template <int block_width_log2, int block_height_log2>
+void CflSubsampler420_WxH_NEON(
+    int16_t luma[kCflLumaBufferStride][kCflLumaBufferStride],
+    const int max_luma_width, const int max_luma_height,
+    const void* const source, ptrdiff_t stride) {
+  switch (max_luma_width) {
+    case 8:
+      CflSubsampler420Impl_WxH_NEON<block_width_log2, block_height_log2, 8>(
+          luma, max_luma_height, source, stride);
+      return;
+    case 16:
+      CflSubsampler420Impl_WxH_NEON<block_width_log2, block_height_log2, 16>(
+          luma, max_luma_height, source, stride);
+      return;
+    case 24:
+      CflSubsampler420Impl_WxH_NEON<block_width_log2, block_height_log2, 24>(
+          luma, max_luma_height, source, stride);
+      return;
+    default:
+      assert(max_luma_width == 32);
+      CflSubsampler420Impl_WxH_NEON<block_width_log2, block_height_log2, 32>(
+          luma, max_luma_height, source, stride);
+      return;
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -698,36 +947,36 @@ void Init10bpp() {
   assert(dsp != nullptr);
 
   dsp->cfl_subsamplers[kTransformSize4x4][kSubsamplingType420] =
-      CflSubsampler420_NEON<4, 4>;
+      CflSubsampler420_4xH_NEON<2>;
   dsp->cfl_subsamplers[kTransformSize4x8][kSubsamplingType420] =
-      CflSubsampler420_NEON<4, 8>;
+      CflSubsampler420_4xH_NEON<3>;
   dsp->cfl_subsamplers[kTransformSize4x16][kSubsamplingType420] =
-      CflSubsampler420_NEON<4, 16>;
+      CflSubsampler420_4xH_NEON<4>;
 
   dsp->cfl_subsamplers[kTransformSize8x4][kSubsamplingType420] =
-      CflSubsampler420_NEON<8, 4>;
+      CflSubsampler420_8xH_NEON<2>;
   dsp->cfl_subsamplers[kTransformSize8x8][kSubsamplingType420] =
-      CflSubsampler420_NEON<8, 8>;
+      CflSubsampler420_8xH_NEON<3>;
   dsp->cfl_subsamplers[kTransformSize8x16][kSubsamplingType420] =
-      CflSubsampler420_NEON<8, 16>;
+      CflSubsampler420_8xH_NEON<4>;
   dsp->cfl_subsamplers[kTransformSize8x32][kSubsamplingType420] =
-      CflSubsampler420_NEON<8, 32>;
+      CflSubsampler420_8xH_NEON<5>;
 
   dsp->cfl_subsamplers[kTransformSize16x4][kSubsamplingType420] =
-      CflSubsampler420_NEON<16, 4>;
+      CflSubsampler420_WxH_NEON<4, 2>;
   dsp->cfl_subsamplers[kTransformSize16x8][kSubsamplingType420] =
-      CflSubsampler420_NEON<16, 8>;
+      CflSubsampler420_WxH_NEON<4, 3>;
   dsp->cfl_subsamplers[kTransformSize16x16][kSubsamplingType420] =
-      CflSubsampler420_NEON<16, 16>;
+      CflSubsampler420_WxH_NEON<4, 4>;
   dsp->cfl_subsamplers[kTransformSize16x32][kSubsamplingType420] =
-      CflSubsampler420_NEON<16, 32>;
+      CflSubsampler420_WxH_NEON<4, 5>;
 
   dsp->cfl_subsamplers[kTransformSize32x8][kSubsamplingType420] =
-      CflSubsampler420_NEON<32, 8>;
+      CflSubsampler420_WxH_NEON<5, 3>;
   dsp->cfl_subsamplers[kTransformSize32x16][kSubsamplingType420] =
-      CflSubsampler420_NEON<32, 16>;
+      CflSubsampler420_WxH_NEON<5, 4>;
   dsp->cfl_subsamplers[kTransformSize32x32][kSubsamplingType420] =
-      CflSubsampler420_NEON<32, 32>;
+      CflSubsampler420_WxH_NEON<5, 5>;
 
   dsp->cfl_intra_predictors[kTransformSize4x4] = CflIntraPredictor4xN_NEON<4>;
   dsp->cfl_intra_predictors[kTransformSize4x8] = CflIntraPredictor4xN_NEON<8>;
