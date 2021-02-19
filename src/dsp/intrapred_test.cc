@@ -2647,6 +2647,8 @@ INSTANTIATE_TEST_SUITE_P(NEON, IntraPredTest10bpp,
                          ::testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(NEON, CflIntraPredTest10bpp,
                          ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest10bpp444,
+                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest10bpp420,
                          ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
 #endif  // LIBGAV1_ENABLE_NEON
