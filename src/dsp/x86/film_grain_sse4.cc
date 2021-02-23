@@ -214,7 +214,9 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_SSE4_1(
 
   const int chroma_height = (height + subsampling_y) >> subsampling_y;
   const int chroma_width = (width + subsampling_x) >> subsampling_x;
-  const int safe_chroma_width = chroma_width & ~7;
+  // |chroma_width| is rounded up. If |width| is odd, then the final pixel will
+  // need to be guarded from overread, even if |chroma_width| is divisible by 8.
+  const int safe_chroma_width = (chroma_width - (width & 1)) & ~7;
 
   // Writing to this buffer avoids the cost of doing 8 lane lookups in a row
   // in GetScalingFactors.
@@ -247,6 +249,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_SSE4_1(
       memset(luma_buffer, 0, sizeof(luma_buffer));
       const int luma_x = x << subsampling_x;
       const int valid_range = width - luma_x;
+      assert(valid_range < 16);
       memcpy(luma_buffer, &in_y_row[luma_x], valid_range * sizeof(in_y_row[0]));
       luma_buffer[valid_range] = in_y_row[width - 1];
       const __m128i average_luma = GetAverageLuma(luma_buffer, subsampling_x);
@@ -335,7 +338,10 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_SSE4_1(
 
   const int chroma_height = (height + subsampling_y) >> subsampling_y;
   const int chroma_width = (width + subsampling_x) >> subsampling_x;
-  const int safe_chroma_width = chroma_width & ~7;
+  // |chroma_width| is rounded up. If |width| is odd, then the final luma pixel
+  // will need to be guarded from overread, even if |chroma_width| is a
+  // multiple of 8.
+  const int safe_chroma_width = (chroma_width - (width & 1)) & ~7;
   alignas(16) uint8_t luma_buffer[16];
   const __m128i offset = _mm_set1_epi16(chroma_offset);
   const __m128i multipliers = _mm_set1_epi32(LeftShift(chroma_multiplier, 16) |
@@ -371,12 +377,12 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_SSE4_1(
       // end.
       const int luma_x = x << subsampling_x;
       const int valid_range = width - luma_x;
+      assert(valid_range < 16);
       memcpy(luma_buffer, &in_y_row[luma_x], valid_range * sizeof(in_y_row[0]));
       luma_buffer[valid_range] = in_y_row[width - 1];
       const int valid_range_chroma = chroma_width - x;
       memcpy(chroma_buffer, &in_chroma_row[x],
              valid_range_chroma * sizeof(in_chroma_row[0]));
-      chroma_buffer[valid_range_chroma] = in_chroma_row[chroma_width - 1];
 
       const __m128i average_luma = GetAverageLuma(luma_buffer, subsampling_x);
       const __m128i blended = BlendChromaValsNoCfl(
