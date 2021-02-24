@@ -631,10 +631,6 @@ DecoderImpl::~DecoderImpl() {
 }
 
 StatusCode DecoderImpl::Init() {
-  if (!GenerateWedgeMask(&wedge_masks_)) {
-    LIBGAV1_DLOG(ERROR, "GenerateWedgeMask() failed.");
-    return kStatusOutOfMemory;
-  }
   if (!output_frame_queue_.Init(kMaxLayers)) {
     LIBGAV1_DLOG(ERROR, "output_frame_queue_.Init() failed.");
     return kStatusOutOfMemory;
@@ -857,6 +853,10 @@ StatusCode DecoderImpl::ParseAndSchedule(const uint8_t* data, size_t size,
       LIBGAV1_DLOG(ERROR, "InitializeQuantizerMatrix() failed.");
       return kStatusOutOfMemory;
     }
+    if (!MaybeInitializeWedgeMasks(obu->frame_header().frame_type)) {
+      LIBGAV1_DLOG(ERROR, "InitializeWedgeMasks() failed.");
+      return kStatusOutOfMemory;
+    }
     if (IsNewSequenceHeader(*obu)) {
       const ObuSequenceHeader& sequence_header = obu->sequence_header();
       const Libgav1ImageFormat image_format =
@@ -1048,6 +1048,10 @@ StatusCode DecoderImpl::DecodeTemporalUnit(const TemporalUnit& temporal_unit,
     }
     if (!MaybeInitializeQuantizerMatrix(obu->frame_header())) {
       LIBGAV1_DLOG(ERROR, "InitializeQuantizerMatrix() failed.");
+      return kStatusOutOfMemory;
+    }
+    if (!MaybeInitializeWedgeMasks(obu->frame_header().frame_type)) {
+      LIBGAV1_DLOG(ERROR, "InitializeWedgeMasks() failed.");
       return kStatusOutOfMemory;
     }
     if (IsNewSequenceHeader(*obu)) {
@@ -1644,6 +1648,17 @@ bool DecoderImpl::IsNewSequenceHeader(const ObuParser& obu) {
   sequence_header_ = sequence_header;
   has_sequence_header_ = true;
   return sequence_header_changed;
+}
+
+bool DecoderImpl::MaybeInitializeWedgeMasks(FrameType frame_type) {
+  if (IsIntraFrame(frame_type) || wedge_masks_initialized_) {
+    return true;
+  }
+  if (!GenerateWedgeMask(&wedge_masks_)) {
+    return false;
+  }
+  wedge_masks_initialized_ = true;
+  return true;
 }
 
 bool DecoderImpl::MaybeInitializeQuantizerMatrix(
