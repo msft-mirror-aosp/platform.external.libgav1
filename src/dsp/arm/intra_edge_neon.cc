@@ -437,10 +437,60 @@ void IntraEdgeFilter_NEON(void* buffer, const int size, const int strength) {
   dst_buffer[size - 1] = special_vals[2];
 }
 
+void IntraEdgeUpsampler_NEON(void* buffer, const int size) {
+  assert(size % 4 == 0 && size <= 16);
+  auto* const pixel_buffer = static_cast<uint16_t*>(buffer);
+
+  // Extend first/last samples
+  pixel_buffer[-2] = pixel_buffer[-1];
+  pixel_buffer[size] = pixel_buffer[size - 1];
+
+  const int16x8_t src_lo = vreinterpretq_s16_u16(vld1q_u16(pixel_buffer - 2));
+  const int16x8_t src_hi =
+      vreinterpretq_s16_u16(vld1q_u16(pixel_buffer - 2 + 8));
+  const int16x8_t src9_hi = vaddq_s16(src_hi, vshlq_n_s16(src_hi, 3));
+  const int16x8_t src9_lo = vaddq_s16(src_lo, vshlq_n_s16(src_lo, 3));
+
+  int16x8_t sum_lo = vsubq_s16(vextq_s16(src9_lo, src9_hi, 1), src_lo);
+  sum_lo = vaddq_s16(sum_lo, vextq_s16(src9_lo, src9_hi, 2));
+  sum_lo = vsubq_s16(sum_lo, vextq_s16(src_lo, src_hi, 3));
+  sum_lo = vrshrq_n_s16(sum_lo, 4);
+
+  uint16x8x2_t result_lo;
+  result_lo.val[0] =
+      vminq_u16(vreinterpretq_u16_s16(vmaxq_s16(sum_lo, vdupq_n_s16(0))),
+                vdupq_n_u16((1 << kBitdepth10) - 1));
+  result_lo.val[1] = vreinterpretq_u16_s16(vextq_s16(src_lo, src_hi, 2));
+
+  if (size > 8) {
+    const int16x8_t src_hi_extra =
+        vreinterpretq_s16_u16(vld1q_u16(pixel_buffer + 16 - 2));
+    const int16x8_t src9_hi_extra =
+        vaddq_s16(src_hi_extra, vshlq_n_s16(src_hi_extra, 3));
+
+    int16x8_t sum_hi = vsubq_s16(vextq_s16(src9_hi, src9_hi_extra, 1), src_hi);
+    sum_hi = vaddq_s16(sum_hi, vextq_s16(src9_hi, src9_hi_extra, 2));
+    sum_hi = vsubq_s16(sum_hi, vextq_s16(src_hi, src_hi_extra, 3));
+    sum_hi = vrshrq_n_s16(sum_hi, 4);
+
+    uint16x8x2_t result_hi;
+    result_hi.val[0] =
+        vminq_u16(vreinterpretq_u16_s16(vmaxq_s16(sum_hi, vdupq_n_s16(0))),
+                  vdupq_n_u16((1 << kBitdepth10) - 1));
+    result_hi.val[1] =
+        vreinterpretq_u16_s16(vextq_s16(src_hi, src_hi_extra, 2));
+    vst2q_u16(pixel_buffer - 1, result_lo);
+    vst2q_u16(pixel_buffer + 15, result_hi);
+  } else {
+    vst2q_u16(pixel_buffer - 1, result_lo);
+  }
+}
+
 void Init10bpp() {
   Dsp* dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
   dsp->intra_edge_filter = IntraEdgeFilter_NEON;
+  dsp->intra_edge_upsampler = IntraEdgeUpsampler_NEON;
 }
 
 }  // namespace
