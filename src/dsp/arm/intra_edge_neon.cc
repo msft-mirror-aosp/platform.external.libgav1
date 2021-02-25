@@ -49,6 +49,8 @@ void IntraEdgeFilter_NEON(void* buffer, const int size, const int strength) {
   // elements written is |size| - 1.
   if (size == 1) return;
 
+  const uint8x16_t v_index = vcombine_u8(vcreate_u8(0x0706050403020100),
+                                         vcreate_u8(0x0f0e0d0c0b0a0908));
   // |strength| 1 and 2 use a 3 tap filter.
   if (strength < 3) {
     // The last value requires extending the buffer (duplicating
@@ -94,7 +96,6 @@ void IntraEdgeFilter_NEON(void* buffer, const int size, const int strength) {
     // |remainder| == 1 then we don't have to do anything.
     const int remainder = (size - 1) & 0xf;
     if (remainder > 1) {
-      uint8_t temp[16];
       const uint8x16_t src_1 = vld1q_u8(dst_buffer + i);
       const uint8x16_t src_2 = vld1q_u8(dst_buffer + i + 1);
 
@@ -107,9 +108,11 @@ void IntraEdgeFilter_NEON(void* buffer, const int size, const int strength) {
 
       const uint8x16_t result =
           vcombine_u8(vrshrn_n_u16(sum_lo, 4), vrshrn_n_u16(sum_hi, 4));
-
-      vst1q_u8(temp, result);
-      memcpy(dst_buffer + i, temp, remainder);
+      const uint8x16_t v_remainder = vdupq_n_u8(remainder);
+      // Create over write mask.
+      const uint8x16_t mask = vcleq_u8(v_remainder, v_index);
+      const uint8x16_t dst_remainder = vbslq_u8(mask, src_1, result);
+      vst1q_u8(dst_buffer + i, dst_remainder);
     }
 
     dst_buffer[size - 1] = last_val;
@@ -178,7 +181,6 @@ void IntraEdgeFilter_NEON(void* buffer, const int size, const int strength) {
   // Like the 3 tap but if there are two remaining values we have already
   // calculated them.
   if (remainder > 2) {
-    uint8_t temp[16];
     const uint8x16_t src_2 = vld1q_u8(dst_buffer + i);
     const uint8x16_t src_3 = vld1q_u8(dst_buffer + i + 1);
     const uint8x16_t src_4 = vld1q_u8(dst_buffer + i + 2);
@@ -198,9 +200,11 @@ void IntraEdgeFilter_NEON(void* buffer, const int size, const int strength) {
 
     const uint8x16_t result =
         vcombine_u8(vrshrn_n_u16(sum_lo, 4), vrshrn_n_u16(sum_hi, 4));
-
-    vst1q_u8(temp, result);
-    memcpy(dst_buffer + i, temp, remainder);
+    const uint8x16_t v_remainder = vdupq_n_u8(remainder);
+    // Create over write mask.
+    const uint8x16_t mask = vcleq_u8(v_remainder, v_index);
+    const uint8x16_t dst_remainder = vbslq_u8(mask, src_2, result);
+    vst1q_u8(dst_buffer + i, dst_remainder);
   }
 
   dst_buffer[1] = special_vals[0];
