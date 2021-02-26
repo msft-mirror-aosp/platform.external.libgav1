@@ -143,6 +143,9 @@ void DspInit() {
     SuperResInit_NEON();
     WarpInit_NEON();
     WeightMaskInit_NEON();
+#if LIBGAV1_MAX_BITDEPTH >= 10
+    InverseTransformInit10bpp_NEON();
+#endif  // LIBGAV1_MAX_BITDEPTH >= 10
 #endif  // LIBGAV1_ENABLE_NEON
   });
 }
