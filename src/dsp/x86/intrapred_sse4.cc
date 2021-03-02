@@ -3465,10 +3465,384 @@ struct DirDefs {
       DirectionalPredFuncs_SSE4_1<ColStore64_SSE4_1<WriteDuplicate64x4>>;
 };
 
+//------------------------------------------------------------------------------
+// 7.11.2.4. Directional intra prediction process
+
+// Special case: An |xstep| of 64 corresponds to an angle delta of 45, meaning
+// upsampling is ruled out. In addition, the bits masked by 0x3F for
+// |shift_val| are 0 for all multiples of 64, so the formula
+// val = top[top_base_x]*shift + top[top_base_x+1]*(32-shift), reduces to
+// val = top[top_base_x+1] << 5, meaning only the second set of pixels is
+// involved in the output. Hence |top| is offset by 1.
+inline void DirectionalZone1_Step64(uint16_t* dst, ptrdiff_t stride,
+                                    const uint16_t* const top, const int width,
+                                    const int height) {
+  ptrdiff_t offset = 1;
+  if (height == 4) {
+    memcpy(dst, top + offset, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 1, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 2, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 3, width * sizeof(dst[0]));
+    return;
+  }
+  int y = 0;
+  do {
+    memcpy(dst, top + offset, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 1, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 2, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 3, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 4, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 5, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 6, width * sizeof(dst[0]));
+    dst += stride;
+    memcpy(dst, top + offset + 7, width * sizeof(dst[0]));
+    dst += stride;
+
+    offset += 8;
+    y += 8;
+  } while (y < height);
+}
+
+// Produce a weighted average of source values to write.
+inline __m128i CombineTopVals4(const __m128i& top_vals, const __m128i& sampler,
+                               const __m128i& shifts,
+                               const __m128i& top_indices,
+                               const __m128i& final_top_val,
+                               const __m128i& border_index) {
+  const int scale_int_bits = 5;
+  const __m128i sampled_values = _mm_shuffle_epi8(top_vals, sampler);
+  __m128i prod = _mm_mullo_epi16(sampled_values, shifts);
+  prod = _mm_hadd_epi16(prod, prod);
+  const __m128i result = RightShiftWithRounding_U16(prod, scale_int_bits);
+
+  const __m128i past_max = _mm_cmpgt_epi16(top_indices, border_index);
+  // Replace pixels from invalid range with top-right corner.
+  return _mm_blendv_epi8(result, final_top_val, past_max);
+}
+
+// When width is 4, only one load operation is needed per iteration. We also
+// avoid extra loop precomputations that cause too much overhead.
+inline void DirectionalZone1_4xH(uint16_t* dst, ptrdiff_t stride,
+                                 const uint16_t* const top, const int height,
+                                 const int xstep, const bool upsampled,
+                                 const __m128i& sampler) {
+  const int upsample_shift = static_cast<int>(upsampled);
+  const int index_scale_bits = 6 - upsample_shift;
+  const int max_base_x = (height + 3 /* width - 1 */) << upsample_shift;
+  const __m128i max_base_x_vect = _mm_set1_epi16(max_base_x);
+  const __m128i final_top_val = _mm_set1_epi16(top[max_base_x]);
+
+  // Each 16-bit value here corresponds to a position that may exceed
+  // |max_base_x|. When added to the top_base_x, it is used to mask values
+  // that pass the end of |top|. Starting from 1 to simulate "cmpge" because
+  // only cmpgt is available.
+  const __m128i offsets =
+      _mm_set_epi32(0x00080007, 0x00060005, 0x00040003, 0x00020001);
+
+  // All rows from |min_corner_only_y| down will simply use memcpy.
+  // |max_base_x| is always greater than |height|, so clipping the denominator
+  // to 1 is enough to make the logic work.
+  const int xstep_units = std::max(xstep >> index_scale_bits, 1);
+  const int min_corner_only_y = std::min(max_base_x / xstep_units, height);
+
+  int y = 0;
+  int top_x = xstep;
+  const __m128i max_shift = _mm_set1_epi16(32);
+
+  for (; y < min_corner_only_y; ++y, dst += stride, top_x += xstep) {
+    const int top_base_x = top_x >> index_scale_bits;
+
+    // Permit negative values of |top_x|.
+    const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
+    const __m128i shift = _mm_set1_epi16(shift_val);
+    const __m128i opposite_shift = _mm_sub_epi16(max_shift, shift);
+    const __m128i shifts = _mm_unpacklo_epi16(opposite_shift, shift);
+    __m128i top_index_vect = _mm_set1_epi16(top_base_x);
+    top_index_vect = _mm_add_epi16(top_index_vect, offsets);
+
+    // Load 8 values because we will select the sampled values based on
+    // |upsampled|.
+    const __m128i values = LoadUnaligned16(top + top_base_x);
+    const __m128i pred =
+        CombineTopVals4(values, sampler, shifts, top_index_vect, final_top_val,
+                        max_base_x_vect);
+    StoreLo8(dst, pred);
+  }
+
+  // Fill in corner-only rows.
+  for (; y < height; ++y) {
+    Memset(dst, top[max_base_x], /* width */ 4);
+    dst += stride;
+  }
+}
+
+// General purpose combine function.
+// |check_border| means the final source value has to be duplicated into the
+// result. This simplifies the loop structures that use precomputed boundaries
+// to identify sections where it is safe to compute without checking for the
+// right border.
+template <bool check_border>
+inline __m128i CombineTopVals(
+    const __m128i& top_vals_0, const __m128i& top_vals_1,
+    const __m128i& sampler, const __m128i& shifts,
+    const __m128i& top_indices = _mm_setzero_si128(),
+    const __m128i& final_top_val = _mm_setzero_si128(),
+    const __m128i& border_index = _mm_setzero_si128()) {
+  constexpr int scale_int_bits = 5;
+  const __m128i sampled_values_0 = _mm_shuffle_epi8(top_vals_0, sampler);
+  const __m128i sampled_values_1 = _mm_shuffle_epi8(top_vals_1, sampler);
+  const __m128i prod_0 = _mm_mullo_epi16(sampled_values_0, shifts);
+  const __m128i prod_1 = _mm_mullo_epi16(sampled_values_1, shifts);
+  const __m128i combined = _mm_hadd_epi16(prod_0, prod_1);
+  const __m128i result = RightShiftWithRounding_U16(combined, scale_int_bits);
+  if (check_border) {
+    const __m128i past_max = _mm_cmpgt_epi16(top_indices, border_index);
+    // Replace pixels from invalid range with top-right corner.
+    return _mm_blendv_epi8(result, final_top_val, past_max);
+  }
+  return result;
+}
+
+// 7.11.2.4 (7) angle < 90
+inline void DirectionalZone1_Large(uint16_t* dest, ptrdiff_t stride,
+                                   const uint16_t* const top_row,
+                                   const int width, const int height,
+                                   const int xstep, const bool upsampled,
+                                   const __m128i& sampler) {
+  const int upsample_shift = static_cast<int>(upsampled);
+  const int index_scale_bits = 6 - upsample_shift;
+  const int max_base_x = ((width + height) - 1) << upsample_shift;
+
+  const __m128i max_shift = _mm_set1_epi16(32);
+  const int base_step = 1 << upsample_shift;
+  const int base_step8 = base_step << 3;
+
+  // All rows from |min_corner_only_y| down will simply use memcpy.
+  // |max_base_x| is always greater than |height|, so clipping to 1 is enough
+  // to make the logic work.
+  const int xstep_units = std::max(xstep >> index_scale_bits, 1);
+  const int min_corner_only_y = std::min(max_base_x / xstep_units, height);
+
+  // Rows up to this y-value can be computed without checking for bounds.
+  const int max_no_corner_y = std::min(
+      LeftShift((max_base_x - (base_step * width)), index_scale_bits) / xstep,
+      height);
+  // No need to check for exceeding |max_base_x| in the first loop.
+  int y = 0;
+  int top_x = xstep;
+  for (; y < max_no_corner_y; ++y, dest += stride, top_x += xstep) {
+    int top_base_x = top_x >> index_scale_bits;
+    // Permit negative values of |top_x|.
+    const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
+    const __m128i shift = _mm_set1_epi16(shift_val);
+    const __m128i opposite_shift = _mm_sub_epi16(max_shift, shift);
+    const __m128i shifts = _mm_unpacklo_epi16(opposite_shift, shift);
+    int x = 0;
+    do {
+      const __m128i top_vals_0 = LoadUnaligned16(top_row + top_base_x);
+      const __m128i top_vals_1 =
+          LoadUnaligned16(top_row + top_base_x + (4 << upsample_shift));
+
+      const __m128i pred =
+          CombineTopVals<false>(top_vals_0, top_vals_1, sampler, shifts);
+
+      StoreUnaligned16(dest + x, pred);
+      top_base_x += base_step8;
+      x += 8;
+    } while (x < width);
+  }
+
+  // Each 16-bit value here corresponds to a position that may exceed
+  // |max_base_x|. When added to |top_base_x|, it is used to mask values
+  // that pass the end of the |top| buffer. Starting from 1 to simulate "cmpge"
+  // which is not supported for packed integers.
+  const __m128i offsets =
+      _mm_set_epi32(0x00080007, 0x00060005, 0x00040003, 0x00020001);
+
+  const __m128i max_base_x_vect = _mm_set1_epi16(max_base_x);
+  const __m128i final_top_val = _mm_set1_epi16(top_row[max_base_x]);
+  const __m128i base_step8_vect = _mm_set1_epi16(base_step8);
+  for (; y < min_corner_only_y; ++y, dest += stride, top_x += xstep) {
+    int top_base_x = top_x >> index_scale_bits;
+
+    const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
+    const __m128i shift = _mm_set1_epi16(shift_val);
+    const __m128i opposite_shift = _mm_sub_epi16(max_shift, shift);
+    const __m128i shifts = _mm_unpacklo_epi16(opposite_shift, shift);
+    __m128i top_index_vect = _mm_set1_epi16(top_base_x);
+    top_index_vect = _mm_add_epi16(top_index_vect, offsets);
+
+    int x = 0;
+    const int min_corner_only_x =
+        std::min(width, ((max_base_x - top_base_x) >> upsample_shift) + 7) & ~7;
+    for (; x < min_corner_only_x;
+         x += 8, top_base_x += base_step8,
+         top_index_vect = _mm_add_epi16(top_index_vect, base_step8_vect)) {
+      const __m128i top_vals_0 = LoadUnaligned16(top_row + top_base_x);
+      const __m128i top_vals_1 =
+          LoadUnaligned16(top_row + top_base_x + (4 << upsample_shift));
+      const __m128i pred =
+          CombineTopVals<true>(top_vals_0, top_vals_1, sampler, shifts,
+                               top_index_vect, final_top_val, max_base_x_vect);
+      StoreUnaligned16(dest + x, pred);
+    }
+    // Corner-only section of the row.
+    Memset(dest + x, top_row[max_base_x], width - x);
+  }
+  // Fill in corner-only rows.
+  for (; y < height; ++y) {
+    Memset(dest, top_row[max_base_x], width);
+    dest += stride;
+  }
+}
+
+// 7.11.2.4 (7) angle < 90
+inline void DirectionalZone1_SSE4_1(uint16_t* dest, ptrdiff_t stride,
+                                    const uint16_t* const top_row,
+                                    const int width, const int height,
+                                    const int xstep, const bool upsampled) {
+  const int upsample_shift = static_cast<int>(upsampled);
+  if (xstep == 64) {
+    DirectionalZone1_Step64(dest, stride, top_row, width, height);
+    return;
+  }
+  // Each base pixel paired with its following pixel, for hadd purposes.
+  const __m128i adjacency_shuffler = _mm_set_epi16(
+      0x0908, 0x0706, 0x0706, 0x0504, 0x0504, 0x0302, 0x0302, 0x0100);
+  // This is equivalent to not shuffling at all.
+  const __m128i identity_shuffler = _mm_set_epi16(
+      0x0F0E, 0x0D0C, 0x0B0A, 0x0908, 0x0706, 0x0504, 0x0302, 0x0100);
+  // This represents a trade-off between code size and speed. When upsampled
+  // is true, no shuffle is necessary. But to avoid in-loop branching, we
+  // would need 2 copies of the main function body.
+  const __m128i sampler = upsampled ? identity_shuffler : adjacency_shuffler;
+  if (width == 4) {
+    DirectionalZone1_4xH(dest, stride, top_row, height, xstep, upsampled,
+                         sampler);
+    return;
+  }
+  if (width >= 32) {
+    DirectionalZone1_Large(dest, stride, top_row, width, height, xstep,
+                           upsampled, sampler);
+    return;
+  }
+  const int index_scale_bits = 6 - upsample_shift;
+  const int max_base_x = ((width + height) - 1) << upsample_shift;
+
+  const __m128i max_shift = _mm_set1_epi16(32);
+  const int base_step = 1 << upsample_shift;
+  const int base_step8 = base_step << 3;
+
+  // No need to check for exceeding |max_base_x| in the loops.
+  if (((xstep * height) >> index_scale_bits) + base_step * width < max_base_x) {
+    int top_x = xstep;
+    int y = 0;
+    do {
+      int top_base_x = top_x >> index_scale_bits;
+      // Permit negative values of |top_x|.
+      const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
+      const __m128i shift = _mm_set1_epi16(shift_val);
+      const __m128i opposite_shift = _mm_sub_epi16(max_shift, shift);
+      const __m128i shifts = _mm_unpacklo_epi16(opposite_shift, shift);
+      int x = 0;
+      do {
+        const __m128i top_vals_0 = LoadUnaligned16(top_row + top_base_x);
+        const __m128i top_vals_1 =
+            LoadUnaligned16(top_row + top_base_x + (4 << upsample_shift));
+        const __m128i pred =
+            CombineTopVals<false>(top_vals_0, top_vals_1, sampler, shifts);
+        StoreUnaligned16(dest + x, pred);
+        top_base_x += base_step8;
+        x += 8;
+      } while (x < width);
+      dest += stride;
+      top_x += xstep;
+    } while (++y < height);
+    return;
+  }
+
+  // General case. Blocks with width less than 32 do not benefit from x-wise
+  // loop splitting, but do benefit from using memset on appropriate rows.
+
+  // Each 16-bit value here corresponds to a position that may exceed
+  // |max_base_x|. When added to the top_base_x, it is used to mask values
+  // that pass the end of |top|. Starting from 1 to simulate "cmpge" which is
+  // not supported for packed integers.
+  const __m128i offsets =
+      _mm_set_epi32(0x00080007, 0x00060005, 0x00040003, 0x00020001);
+
+  const __m128i max_base_x_vect = _mm_set1_epi16(max_base_x);
+  const __m128i final_top_val = _mm_set1_epi16(top_row[max_base_x]);
+  const __m128i base_step8_vect = _mm_set1_epi16(base_step8);
+
+  // All rows from |min_corner_only_y| down will simply use memcpy.
+  // |max_base_x| is always greater than |height|, so clipping the denominator
+  // to 1 is enough to make the logic work.
+  const int xstep_units = std::max(xstep >> index_scale_bits, 1);
+  const int min_corner_only_y = std::min(max_base_x / xstep_units, height);
+
+  int top_x = xstep;
+  int y = 0;
+  for (; y < min_corner_only_y; ++y, dest += stride, top_x += xstep) {
+    int top_base_x = top_x >> index_scale_bits;
+
+    const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
+    const __m128i shift = _mm_set1_epi16(shift_val);
+    const __m128i opposite_shift = _mm_sub_epi16(max_shift, shift);
+    const __m128i shifts = _mm_unpacklo_epi16(opposite_shift, shift);
+    __m128i top_index_vect = _mm_set1_epi16(top_base_x);
+    top_index_vect = _mm_add_epi16(top_index_vect, offsets);
+
+    int x = 0;
+    for (; x < width;
+         x += 8, top_base_x += base_step8,
+         top_index_vect = _mm_add_epi16(top_index_vect, base_step8_vect)) {
+      const __m128i top_vals_0 = LoadUnaligned16(top_row + top_base_x);
+      const __m128i top_vals_1 =
+          LoadUnaligned16(top_row + top_base_x + (4 << upsample_shift));
+      const __m128i pred =
+          CombineTopVals<true>(top_vals_0, top_vals_1, sampler, shifts,
+                               top_index_vect, final_top_val, max_base_x_vect);
+      StoreUnaligned16(dest + x, pred);
+    }
+  }
+
+  // Fill in corner-only rows.
+  for (; y < height; ++y) {
+    Memset(dest, top_row[max_base_x], width);
+    dest += stride;
+  }
+}
+
+void DirectionalIntraPredictorZone1_SSE4_1(void* const dest, ptrdiff_t stride,
+                                           const void* const top_row,
+                                           const int width, const int height,
+                                           const int xstep,
+                                           const bool upsampled_top) {
+  const auto* const top_ptr = static_cast<const uint16_t*>(top_row);
+  auto* dst = static_cast<uint16_t*>(dest);
+  stride /= sizeof(uint16_t);
+  DirectionalZone1_SSE4_1(dst, stride, top_ptr, width, height, xstep,
+                          upsampled_top);
+}
+
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(10);
   assert(dsp != nullptr);
   static_cast<void>(dsp);
+#if DSP_ENABLED_10BPP_SSE4_1(DirectionalIntraPredictorZone1)
+  dsp->directional_intra_predictor_zone1 =
+      DirectionalIntraPredictorZone1_SSE4_1;
+#endif
 #if DSP_ENABLED_10BPP_SSE4_1(TransformSize4x4_IntraPredictorDcTop)
   dsp->intra_predictors[kTransformSize4x4][kIntraPredictorDcTop] =
       DcDefs::_4x4::DcTop;

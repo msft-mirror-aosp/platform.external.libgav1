@@ -2635,6 +2635,8 @@ INSTANTIATE_TEST_SUITE_P(C, CflSubsamplerTest10bpp420,
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, IntraPredTest10bpp,
                          ::testing::ValuesIn(kTransformSizes));
+INSTANTIATE_TEST_SUITE_P(SSE41, DirectionalIntraPredTest10bpp,
+                         ::testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflIntraPredTest10bpp,
                          ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflSubsamplerTest10bpp444,

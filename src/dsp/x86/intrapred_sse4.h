@@ -942,6 +942,10 @@ void IntraPredSmoothInit_SSE4_1();
 //------------------------------------------------------------------------------
 // 10bpp
 
+#ifndef LIBGAV1_Dsp10bpp_DirectionalIntraPredictorZone1
+#define LIBGAV1_Dsp10bpp_DirectionalIntraPredictorZone1 LIBGAV1_CPU_SSE4_1
+#endif
+
 #ifndef LIBGAV1_Dsp10bpp_TransformSize4x4_CflSubsampler420
 #define LIBGAV1_Dsp10bpp_TransformSize4x4_CflSubsampler420 LIBGAV1_CPU_SSE4_1
 #endif
