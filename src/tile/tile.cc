@@ -642,9 +642,6 @@ void Tile::SaveSymbolDecoderContext() {
 }
 
 bool Tile::ParseAndDecode() {
-  // If this is the main thread, we build the loop filter bit masks when parsing
-  // so that it happens in the current thread. This ensures that the main thread
-  // does as much work as possible.
   if (split_parse_and_decode_) {
     if (!ThreadedParseAndDecode()) return false;
     SaveSymbolDecoderContext();
