@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include "absl/strings/match.h"
 #include "absl/strings/str_format.h"
@@ -87,13 +88,15 @@ class DistanceWeightedBlendTest : public ::testing::TestWithParam<TestParam>,
   void Test(const char* digest, int num_tests);
 
  private:
+  using PredType =
+      typename std::conditional<bitdepth == 8, int16_t, uint16_t>::type;
   static constexpr int kDestStride = kMaxSuperBlockSizeInPixels;
   const int width_ = GetParam().width;
   const int height_ = GetParam().height;
-  alignas(kMaxAlignment)
-      int16_t source1_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels];
-  alignas(kMaxAlignment)
-      int16_t source2_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels];
+  alignas(kMaxAlignment) PredType
+      source1_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels];
+  alignas(kMaxAlignment) PredType
+      source2_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels];
   Pixel dest_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels] = {};
   Pixel reference_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels] =
       {};
@@ -106,8 +109,8 @@ void DistanceWeightedBlendTest<bitdepth, Pixel>::Test(const char* digest,
                                                       int num_tests) {
   if (func_ == nullptr) return;
   libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
-  int16_t* src_1 = source1_;
-  int16_t* src_2 = source2_;
+  PredType* src_1 = source1_;
+  PredType* src_2 = source2_;
 
   const int index = rnd.Rand8() & 3;
   const uint8_t weight_0 = kQuantizedDistanceLookup[index][0];
@@ -132,8 +135,8 @@ void DistanceWeightedBlendTest<bitdepth, Pixel>::Test(const char* digest,
       constexpr int bitdepth_index = (bitdepth - 8) >> 1;
       const int min_val = kCompoundPredictionRange[bitdepth_index][0];
       const int max_val = kCompoundPredictionRange[bitdepth_index][1];
-      src_1[x] = rnd(max_val - min_val) + min_val;
-      src_2[x] = rnd(max_val - min_val) + min_val;
+      src_1[x] = static_cast<PredType>(rnd(max_val - min_val) + min_val);
+      src_2[x] = static_cast<PredType>(rnd(max_val - min_val) + min_val);
     }
     src_1 += width_;
     src_2 += width_;

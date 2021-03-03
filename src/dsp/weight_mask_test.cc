@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include "absl/strings/match.h"
 #include "absl/strings/str_format.h"
@@ -188,10 +189,12 @@ class WeightMaskTest : public ::testing::TestWithParam<WeightMaskTestParam>,
   const int width_ = GetParam().width;
   const int height_ = GetParam().height;
   const bool mask_is_inverse_ = GetParam().mask_is_inverse;
+  using PredType =
+      typename std::conditional<bitdepth == 8, int16_t, uint16_t>::type;
   alignas(
-      kMaxAlignment) uint16_t block_1_[kMaxPredictionSize * kMaxPredictionSize];
+      kMaxAlignment) PredType block_1_[kMaxPredictionSize * kMaxPredictionSize];
   alignas(
-      kMaxAlignment) uint16_t block_2_[kMaxPredictionSize * kMaxPredictionSize];
+      kMaxAlignment) PredType block_2_[kMaxPredictionSize * kMaxPredictionSize];
   uint8_t mask_[kMaxPredictionSize * kMaxPredictionSize] = {};
   dsp::WeightMaskFunc func_;
 };
@@ -212,8 +215,10 @@ void WeightMaskTest<bitdepth>::SetInputData(const bool use_fixed_values,
       for (int x = 0; x < width_; ++x) {
         const int min_val = kCompoundPredictionRange[bitdepth_index][0];
         const int max_val = kCompoundPredictionRange[bitdepth_index][1];
-        block_1_[y * width_ + x] = rnd(max_val - min_val) + min_val;
-        block_2_[y * width_ + x] = rnd(max_val - min_val) + min_val;
+        block_1_[y * width_ + x] =
+            static_cast<PredType>(rnd(max_val - min_val) + min_val);
+        block_2_[y * width_ + x] =
+            static_cast<PredType>(rnd(max_val - min_val) + min_val);
       }
     }
   }

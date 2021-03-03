@@ -19,6 +19,7 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 #include "absl/strings/match.h"
 #include "absl/strings/str_format.h"
@@ -253,14 +254,16 @@ class MaskBlendTest : public ::testing::TestWithParam<MaskBlendTestParam>,
   void Test(const char* digest, int num_runs);
 
  private:
+  using PredType =
+      typename std::conditional<bitdepth == 8, int16_t, uint16_t>::type;
   static constexpr int kStride = kMaxSuperBlockSizeInPixels;
   static constexpr int kDestStride = kMaxSuperBlockSizeInPixels * sizeof(Pixel);
   const MaskBlendTestParam param_ = GetParam();
-  alignas(kMaxAlignment) uint16_t
+  alignas(kMaxAlignment) PredType
       source1_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels] = {};
   uint8_t source1_8bpp_[kMaxSuperBlockSizeInPixels *
                         kMaxSuperBlockSizeInPixels] = {};
-  alignas(kMaxAlignment) uint16_t
+  alignas(kMaxAlignment) PredType
       source2_[kMaxSuperBlockSizeInPixels * kMaxSuperBlockSizeInPixels] = {};
   uint8_t source2_8bpp_[kMaxSuperBlockSizeInPixels *
                         kMaxSuperBlockSizeInPixels] = {};
@@ -286,17 +289,17 @@ void MaskBlendTest<bitdepth, Pixel>::Test(const char* const digest,
   // block is exactly the upper left half of the generated 16x16 block.
   libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed() +
                              GetDigestIdOffset());
-  uint16_t* src_1 = source1_;
+  PredType* src_1 = source1_;
   uint8_t* src_1_8bpp = source1_8bpp_;
-  uint16_t* src_2 = source2_;
+  PredType* src_2 = source2_;
   uint8_t* src_2_8bpp = source2_8bpp_;
   const ptrdiff_t src_2_stride = param_.is_inter_intra ? kStride : width;
   uint8_t* mask_row = mask_;
   const int range_mask = (1 << (bitdepth)) - 1;
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
-      src_1[x] = rnd.Rand16() & range_mask;
-      src_2[x] = rnd.Rand16() & range_mask;
+      src_1[x] = static_cast<PredType>(rnd.Rand16() & range_mask);
+      src_2[x] = static_cast<PredType>(rnd.Rand16() & range_mask);
       if (param_.is_inter_intra && bitdepth == 8) {
         src_1_8bpp[x] = src_1[x];
         src_2_8bpp[x] = src_2[x];
@@ -306,8 +309,8 @@ void MaskBlendTest<bitdepth, Pixel>::Test(const char* const digest,
         constexpr int bitdepth_index = (bitdepth - 8) >> 1;
         const int min_val = kCompoundPredictionRange[bitdepth_index][0];
         const int max_val = kCompoundPredictionRange[bitdepth_index][1];
-        src_1[x] = rnd(max_val - min_val) + min_val;
-        src_2[x] = rnd(max_val - min_val) + min_val;
+        src_1[x] = static_cast<PredType>(rnd(max_val - min_val) + min_val);
+        src_2[x] = static_cast<PredType>(rnd(max_val - min_val) + min_val);
       }
     }
     src_1 += width;
