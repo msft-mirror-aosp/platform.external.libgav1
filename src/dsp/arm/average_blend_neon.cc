@@ -34,6 +34,7 @@ namespace {
 
 constexpr int kInterPostRoundBit =
     kInterRoundBitsVertical - kInterRoundBitsCompoundVertical;
+
 }  // namespace
 
 namespace low_bitdepth {
