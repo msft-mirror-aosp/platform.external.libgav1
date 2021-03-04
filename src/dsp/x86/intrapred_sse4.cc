@@ -3488,7 +3488,7 @@ inline void DirectionalZone1_Step64(uint16_t* dst, ptrdiff_t stride,
     memcpy(dst, top + offset + 3, width * sizeof(dst[0]));
     return;
   }
-  int y = 0;
+  int y = height;
   do {
     memcpy(dst, top + offset, width * sizeof(dst[0]));
     dst += stride;
@@ -3508,8 +3508,8 @@ inline void DirectionalZone1_Step64(uint16_t* dst, ptrdiff_t stride,
     dst += stride;
 
     offset += 8;
-    y += 8;
-  } while (y < height);
+    y -= 8;
+  } while (y != 0);
 }
 
 // Produce a weighted average of source values to write.
@@ -3706,10 +3706,12 @@ inline void DirectionalZone1_Large(uint16_t* dest, ptrdiff_t stride,
 }
 
 // 7.11.2.4 (7) angle < 90
-inline void DirectionalZone1_SSE4_1(uint16_t* dest, ptrdiff_t stride,
-                                    const uint16_t* const top_row,
-                                    const int width, const int height,
-                                    const int xstep, const bool upsampled) {
+inline void DirectionalIntraPredictorZone1_SSE4_1(
+    void* dest_ptr, ptrdiff_t stride, const void* const top_ptr,
+    const int width, const int height, const int xstep, const bool upsampled) {
+  const auto* const top_row = static_cast<const uint16_t*>(top_ptr);
+  auto* dest = static_cast<uint16_t*>(dest_ptr);
+  stride /= sizeof(uint16_t);
   const int upsample_shift = static_cast<int>(upsampled);
   if (xstep == 64) {
     DirectionalZone1_Step64(dest, stride, top_row, width, height);
@@ -3745,7 +3747,7 @@ inline void DirectionalZone1_SSE4_1(uint16_t* dest, ptrdiff_t stride,
   // No need to check for exceeding |max_base_x| in the loops.
   if (((xstep * height) >> index_scale_bits) + base_step * width < max_base_x) {
     int top_x = xstep;
-    int y = 0;
+    int y = height;
     do {
       int top_base_x = top_x >> index_scale_bits;
       // Permit negative values of |top_x|.
@@ -3766,7 +3768,7 @@ inline void DirectionalZone1_SSE4_1(uint16_t* dest, ptrdiff_t stride,
       } while (x < width);
       dest += stride;
       top_x += xstep;
-    } while (++y < height);
+    } while (--y != 0);
     return;
   }
 
@@ -3802,10 +3804,8 @@ inline void DirectionalZone1_SSE4_1(uint16_t* dest, ptrdiff_t stride,
     __m128i top_index_vect = _mm_set1_epi16(top_base_x);
     top_index_vect = _mm_add_epi16(top_index_vect, offsets);
 
-    int x = 0;
-    for (; x < width;
-         x += 8, top_base_x += base_step8,
-         top_index_vect = _mm_add_epi16(top_index_vect, base_step8_vect)) {
+    for (int x = 0; x < width; x += 8, top_base_x += base_step8,
+             top_index_vect = _mm_add_epi16(top_index_vect, base_step8_vect)) {
       const __m128i top_vals_0 = LoadUnaligned16(top_row + top_base_x);
       const __m128i top_vals_1 =
           LoadUnaligned16(top_row + top_base_x + (4 << upsample_shift));
@@ -3821,18 +3821,6 @@ inline void DirectionalZone1_SSE4_1(uint16_t* dest, ptrdiff_t stride,
     Memset(dest, top_row[max_base_x], width);
     dest += stride;
   }
-}
-
-void DirectionalIntraPredictorZone1_SSE4_1(void* const dest, ptrdiff_t stride,
-                                           const void* const top_row,
-                                           const int width, const int height,
-                                           const int xstep,
-                                           const bool upsampled_top) {
-  const auto* const top_ptr = static_cast<const uint16_t*>(top_row);
-  auto* dst = static_cast<uint16_t*>(dest);
-  stride /= sizeof(uint16_t);
-  DirectionalZone1_SSE4_1(dst, stride, top_ptr, width, height, xstep,
-                          upsampled_top);
 }
 
 void Init10bpp() {
