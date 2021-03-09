@@ -28,8 +28,7 @@
 
 #if 0
 #include <cstdio>
-
-#include "absl/strings/str_cat.h"
+#include <string>
 
 constexpr bool kEnablePrintRegs = true;
 
@@ -87,10 +86,10 @@ inline void PrintVectQ(const DebugRegisterQ r, const char* const name,
 inline void PrintReg(const int32x4x2_t val, const std::string& name) {
   DebugRegisterQ r;
   vst1q_u32(r.u32, val.val[0]);
-  const std::string name0 = absl::StrCat(name, ".val[0]").c_str();
+  const std::string name0 = (name + std::string(".val[0]")).c_str();
   PrintVectQ(r, name0.c_str(), 32);
   vst1q_u32(r.u32, val.val[1]);
-  const std::string name1 = absl::StrCat(name, ".val[1]").c_str();
+  const std::string name1 = (name + std::string(".val[1]")).c_str();
   PrintVectQ(r, name1.c_str(), 32);
 }
 
@@ -169,14 +168,14 @@ inline void PrintReg(const int8x8_t val, const char* name) {
 // Print an individual (non-vector) value in decimal format.
 inline void PrintReg(const int x, const char* name) {
   if (kEnablePrintRegs) {
-    printf("%s: %d\n", name, x);
+    fprintf(stderr, "%s: %d\n", name, x);
   }
 }
 
 // Print an individual (non-vector) value in hexadecimal format.
 inline void PrintHex(const int x, const char* name) {
   if (kEnablePrintRegs) {
-    printf("%s: %x\n", name, x);
+    fprintf(stderr, "%s: %x\n", name, x);
   }
 }
 
