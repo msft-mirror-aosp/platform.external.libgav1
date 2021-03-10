@@ -274,7 +274,9 @@ void IntraPredTest<bitdepth, Pixel>::TestRandomValues() {
     // Skip the 'C' test case as this is used as the reference.
     if (base_intrapreds_[i] == nullptr) continue;
     if (cur_intrapreds_[i] == nullptr) continue;
-    for (int n = 0; n < 100000; ++n) {
+    // It may be worthwhile to temporarily increase this loop size when testing
+    // changes that specifically affect this test.
+    for (int n = 0; n < 10000; ++n) {
       intra_pred_mem_.Reset(&rnd);
 
       memcpy(intra_pred_mem_.dst, intra_pred_mem_.ref_src,
@@ -646,7 +648,7 @@ void DirectionalIntraPredTest<bitdepth, Pixel>::TestRandomValues() {
         GetZoneAngleRange(static_cast<Zone>(i), &min_angle, &max_angle));
 
     for (const auto& base_angle : kBaseAngles) {
-      for (int n = 0; n < 10000; ++n) {
+      for (int n = 0; n < 1000; ++n) {
         for (int filter_type = 0; filter_type <= 1; ++filter_type) {
           for (int angle_delta = kAngleDeltaStart;
                angle_delta <= kAngleDeltaStop; angle_delta += kAngleDeltaStep) {
@@ -834,7 +836,9 @@ void FilterIntraPredTest<bitdepth, Pixel>::TestRandomValues() {
 
   libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
   for (int i = 0; i < kNumFilterIntraPredictors; ++i) {
-    for (int n = 0; n < 100000; ++n) {
+    // It may be worthwhile to temporarily increase this loop size when testing
+    // changes that specifically affect this test.
+    for (int n = 0; n < 10000; ++n) {
       intra_pred_mem_.Reset(&rnd);
 
       memcpy(intra_pred_mem_.dst, intra_pred_mem_.ref_src,
