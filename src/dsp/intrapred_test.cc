@@ -269,7 +269,8 @@ void IntraPredTest<bitdepth, Pixel>::TestSaturatedValues() {
 
 template <int bitdepth, typename Pixel>
 void IntraPredTest<bitdepth, Pixel>::TestRandomValues() {
-  libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
+  // Use an alternate seed to differentiate this test from TestSpeed().
+  libvpx_test::ACMRandom rnd(test_utils::kAlternateDeterministicSeed);
   for (int i = 0; i < kNumIntraPredictors; ++i) {
     // Skip the 'C' test case as this is used as the reference.
     if (base_intrapreds_[i] == nullptr) continue;
@@ -615,7 +616,8 @@ template <int bitdepth, typename Pixel>
 void DirectionalIntraPredTest<bitdepth, Pixel>::TestRandomValues() {
   const Pixel* const left = intra_pred_mem_.left_mem + 16;
   const Pixel* const top = intra_pred_mem_.top_mem + 16;
-  libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
+  // Use an alternate seed to differentiate this test from TestSpeed().
+  libvpx_test::ACMRandom rnd(test_utils::kAlternateDeterministicSeed);
 
   for (int i = kZone1; i < kNumZones; ++i) {
     // Only run when there is a reference version (base) and a different
@@ -834,7 +836,8 @@ void FilterIntraPredTest<bitdepth, Pixel>::TestRandomValues() {
   // Skip the 'C' test case as this is used as the reference.
   if (base_filter_intra_pred_ == nullptr) return;
 
-  libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
+  // Use an alternate seed to differentiate this test from TestSpeed().
+  libvpx_test::ACMRandom rnd(test_utils::kAlternateDeterministicSeed);
   for (int i = 0; i < kNumFilterIntraPredictors; ++i) {
     // It may be worthwhile to temporarily increase this loop size when testing
     // changes that specifically affect this test.
@@ -989,7 +992,8 @@ void CflIntraPredTest<bitdepth, Pixel>::TestRandomValues() {
   int16_t luma_buffer[kCflLumaBufferStride][kCflLumaBufferStride];
 
   const int max_luma = ((1 << bitdepth) - 1) << 3;
-  libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
+  // Use an alternate seed to differentiate this test from TestSpeed().
+  libvpx_test::ACMRandom rnd(test_utils::kAlternateDeterministicSeed);
   for (auto& line : luma_buffer) {
     for (auto& luma : line) luma = max_luma - rnd(max_luma << 1);
   }
@@ -1154,7 +1158,7 @@ void CflSubsamplerTest<bitdepth, Pixel, subsampling_type>::TestRandomValues() {
   if (base_cfl_subsampler_ == nullptr) return;
   const ptrdiff_t stride = kMaxBlockSize * sizeof(Pixel);
   // Use an alternate seed to differentiate this test from TestSpeed().
-  libvpx_test::ACMRandom rnd(0x9571);
+  libvpx_test::ACMRandom rnd(test_utils::kAlternateDeterministicSeed);
   for (int width = GetLumaWidth(block_width_, subsampling_type); width > 0;
        width -= 8) {
     for (int height = GetLumaHeight(block_height_, subsampling_type);
