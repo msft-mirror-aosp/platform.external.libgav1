@@ -1461,6 +1461,8 @@ inline void DirectionalZone1_4xH(uint8_t* dst, ptrdiff_t stride,
                                  const int xstep, const bool upsampled) {
   const int upsample_shift = static_cast<int>(upsampled);
   const int scale_bits = 6 - upsample_shift;
+  const __m128i max_shift = _mm_set1_epi8(32);
+  // Downscaling for a weighted average whose weights sum to 32 (max_shift).
   const int rounding_bits = 5;
   const int max_base_x = (height + 3 /* width - 1 */) << upsample_shift;
   const __m128i final_top_val = _mm_set1_epi16(top[max_base_x]);
@@ -1489,7 +1491,6 @@ inline void DirectionalZone1_4xH(uint8_t* dst, ptrdiff_t stride,
     // Permit negative values of |top_x|.
     const int shift_val = (LeftShift(top_x, upsample_shift) & 0x3F) >> 1;
     const __m128i shift = _mm_set1_epi8(shift_val);
-    const __m128i max_shift = _mm_set1_epi8(32);
     const __m128i opposite_shift = _mm_sub_epi8(max_shift, shift);
     const __m128i shifts = _mm_unpacklo_epi8(opposite_shift, shift);
     __m128i top_index_vect = _mm_set1_epi16(top_base_x);
@@ -1528,6 +1529,7 @@ inline void DirectionalZone1_Large(uint8_t* dest, ptrdiff_t stride,
   const int max_base_x = ((width + height) - 1) << upsample_shift;
 
   const __m128i max_shift = _mm_set1_epi8(32);
+  // Downscaling for a weighted average whose weights sum to 32 (max_shift).
   const int rounding_bits = 5;
   const int base_step = 1 << upsample_shift;
   const int base_step8 = base_step << 3;
@@ -1639,6 +1641,7 @@ inline void DirectionalZone1_SSE4_1(uint8_t* dest, ptrdiff_t stride,
   const int max_base_x = ((width + height) - 1) << upsample_shift;
 
   const __m128i max_shift = _mm_set1_epi8(32);
+  // Downscaling for a weighted average whose weights sum to 32 (max_shift).
   const int rounding_bits = 5;
   const int base_step = 1 << upsample_shift;
   const int base_step8 = base_step << 3;
@@ -1755,6 +1758,7 @@ inline void DirectionalZone3_4x4(uint8_t* dest, ptrdiff_t stride,
   const int upsample_shift = static_cast<int>(upsampled);
   const int scale_bits = 6 - upsample_shift;
   const __m128i max_shift = _mm_set1_epi8(32);
+  // Downscaling for a weighted average whose weights sum to 32 (max_shift).
   const int rounding_bits = 5;
 
   __m128i result_block[4];
@@ -1799,6 +1803,7 @@ inline void DirectionalZone3_8xH(uint8_t* dest, ptrdiff_t stride,
   const int upsample_shift = static_cast<int>(upsampled);
   const int scale_bits = 6 - upsample_shift;
   const __m128i max_shift = _mm_set1_epi8(32);
+  // Downscaling for a weighted average whose weights sum to 32 (max_shift).
   const int rounding_bits = 5;
 
   __m128i result_block[8];

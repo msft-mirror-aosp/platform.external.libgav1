@@ -544,7 +544,7 @@ void DirectionalIntraPredictorZone1_C(void* const dest, ptrdiff_t stride,
 
       const int val =
           top[top_base_x] * (32 - shift) + top[top_base_x + 1] * shift;
-      dst[x] = RightShiftWithRounding(val, 5);
+      dst[x] = RightShiftWithRounding(val, 5 /*log2(32)*/);
       top_base_x += base_step;
     } while (++x < width);
 
