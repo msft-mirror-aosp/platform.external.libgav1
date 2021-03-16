@@ -74,7 +74,7 @@ int16_t GetDirectionalIntraPredictorDerivative(const int angle) {
 }
 
 template <int bitdepth, typename Pixel>
-class IntraPredTestBase : public ::testing::TestWithParam<TransformSize>,
+class IntraPredTestBase : public testing::TestWithParam<TransformSize>,
                           public test_utils::MaxAlignedAllocable {
  public:
   IntraPredTestBase() {
@@ -175,8 +175,8 @@ class IntraPredTest : public IntraPredTestBase<bitdepth, Pixel> {
     memcpy(base_intrapreds_, dsp->intra_predictors[tx_size_],
            sizeof(base_intrapreds_));
 
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const char* const test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       memset(base_intrapreds_, 0, sizeof(base_intrapreds_));
@@ -330,8 +330,8 @@ class DirectionalIntraPredTest : public IntraPredTestBase<bitdepth, Pixel> {
     base_directional_intra_pred_zone2_ = dsp->directional_intra_predictor_zone2;
     base_directional_intra_pred_zone3_ = dsp->directional_intra_predictor_zone3;
 
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const char* const test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       base_directional_intra_pred_zone1_ = nullptr;
@@ -744,8 +744,8 @@ class FilterIntraPredTest : public IntraPredTestBase<bitdepth, Pixel> {
     ASSERT_NE(dsp, nullptr);
     base_filter_intra_pred_ = dsp->filter_intra_predictor;
 
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const char* const test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       // No need to compare C with itself.
@@ -892,8 +892,8 @@ class CflIntraPredTest : public IntraPredTestBase<bitdepth, Pixel> {
     ASSERT_NE(dsp, nullptr);
     base_cfl_intra_pred_ = dsp->cfl_intra_predictors[tx_size_];
 
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const char* const test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       base_cfl_intra_pred_ = nullptr;
@@ -1039,8 +1039,8 @@ class CflSubsamplerTest : public IntraPredTestBase<bitdepth, Pixel> {
     ASSERT_NE(dsp, nullptr);
     base_cfl_subsampler_ = dsp->cfl_subsamplers[tx_size_][subsampling_type];
 
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const char* const test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       base_cfl_subsampler_ = nullptr;
@@ -2583,84 +2583,84 @@ constexpr TransformSize kTransformSizesSmallerThan32x32[] = {
     kTransformSize32x16, kTransformSize32x32};
 
 INSTANTIATE_TEST_SUITE_P(C, IntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(C, DirectionalIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(C, FilterIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflSubsamplerTest8bpp444,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflSubsamplerTest8bpp422,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflSubsamplerTest8bpp420,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, IntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(SSE41, DirectionalIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(SSE41, FilterIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflSubsamplerTest8bpp444,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflSubsamplerTest8bpp420,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 #endif  // LIBGAV1_ENABLE_SSE4_1
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, IntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(NEON, DirectionalIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(NEON, FilterIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(NEON, CflIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest8bpp444,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest8bpp420,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 #endif  // LIBGAV1_ENABLE_NEON
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 INSTANTIATE_TEST_SUITE_P(C, IntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(C, DirectionalIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(C, FilterIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflSubsamplerTest10bpp444,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflSubsamplerTest10bpp422,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(C, CflSubsamplerTest10bpp420,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, IntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(SSE41, DirectionalIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflSubsamplerTest10bpp444,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(SSE41, CflSubsamplerTest10bpp420,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 #endif  // LIBGAV1_ENABLE_SSE4_1
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, IntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(NEON, CflIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest10bpp444,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest10bpp420,
-                         ::testing::ValuesIn(kTransformSizesSmallerThan32x32));
+                         testing::ValuesIn(kTransformSizesSmallerThan32x32));
 #endif  // LIBGAV1_ENABLE_NEON
 
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10

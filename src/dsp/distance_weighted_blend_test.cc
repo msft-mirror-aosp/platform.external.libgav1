@@ -54,7 +54,7 @@ std::ostream& operator<<(std::ostream& os, const TestParam& param) {
 }
 
 template <int bitdepth, typename Pixel>
-class DistanceWeightedBlendTest : public ::testing::TestWithParam<TestParam>,
+class DistanceWeightedBlendTest : public testing::TestWithParam<TestParam>,
                                   public test_utils::MaxAlignedAllocable {
  public:
   DistanceWeightedBlendTest() = default;
@@ -66,8 +66,8 @@ class DistanceWeightedBlendTest : public ::testing::TestWithParam<TestParam>,
     const dsp::Dsp* const dsp = dsp::GetDspTable(bitdepth);
     ASSERT_NE(dsp, nullptr);
     base_func_ = dsp->distance_weighted_blend;
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const absl::string_view test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       base_func_ = nullptr;
@@ -230,16 +230,16 @@ TEST_P(DistanceWeightedBlendTest8bpp, DISABLED_Speed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(C, DistanceWeightedBlendTest8bpp,
-                         ::testing::ValuesIn(kTestParam));
+                         testing::ValuesIn(kTestParam));
 
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, DistanceWeightedBlendTest8bpp,
-                         ::testing::ValuesIn(kTestParam));
+                         testing::ValuesIn(kTestParam));
 #endif
 
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, DistanceWeightedBlendTest8bpp,
-                         ::testing::ValuesIn(kTestParam));
+                         testing::ValuesIn(kTestParam));
 #endif
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
@@ -307,11 +307,11 @@ TEST_P(DistanceWeightedBlendTest10bpp, DISABLED_Speed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(C, DistanceWeightedBlendTest10bpp,
-                         ::testing::ValuesIn(kTestParam));
+                         testing::ValuesIn(kTestParam));
 
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, DistanceWeightedBlendTest10bpp,
-                         ::testing::ValuesIn(kTestParam));
+                         testing::ValuesIn(kTestParam));
 #endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 

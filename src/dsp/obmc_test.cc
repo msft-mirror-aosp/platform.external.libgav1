@@ -136,7 +136,7 @@ std::ostream& operator<<(std::ostream& os, const ObmcTestParam& param) {
 }
 
 template <int bitdepth, typename Pixel>
-class ObmcBlendTest : public ::testing::TestWithParam<ObmcTestParam> {
+class ObmcBlendTest : public testing::TestWithParam<ObmcTestParam> {
  public:
   ObmcBlendTest() = default;
   ~ObmcBlendTest() override = default;
@@ -146,8 +146,8 @@ class ObmcBlendTest : public ::testing::TestWithParam<ObmcTestParam> {
     ObmcInit_C();
     const dsp::Dsp* const dsp = dsp::GetDspTable(bitdepth);
     ASSERT_NE(dsp, nullptr);
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const absl::string_view test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
     } else if (absl::StartsWith(test_case, "SSE41/")) {
@@ -307,16 +307,16 @@ TEST_P(ObmcBlendTest8bpp, DISABLED_Speed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(C, ObmcBlendTest8bpp,
-                         ::testing::ValuesIn(kObmcTestParam));
+                         testing::ValuesIn(kObmcTestParam));
 
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, ObmcBlendTest8bpp,
-                         ::testing::ValuesIn(kObmcTestParam));
+                         testing::ValuesIn(kObmcTestParam));
 #endif
 
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, ObmcBlendTest8bpp,
-                         ::testing::ValuesIn(kObmcTestParam));
+                         testing::ValuesIn(kObmcTestParam));
 #endif
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
@@ -337,10 +337,10 @@ TEST_P(ObmcBlendTest10bpp, DISABLED_Speed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(C, ObmcBlendTest10bpp,
-                         ::testing::ValuesIn(kObmcTestParam));
+                         testing::ValuesIn(kObmcTestParam));
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, ObmcBlendTest10bpp,
-                         ::testing::ValuesIn(kObmcTestParam));
+                         testing::ValuesIn(kObmcTestParam));
 #endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 

@@ -747,7 +747,7 @@ std::ostream& operator<<(std::ostream& os, const ConvolveTypeParam& param) {
 // simplify the members and test logic.
 template <int bitdepth, typename Pixel>
 class ConvolveTest
-    : public ::testing::TestWithParam<
+    : public testing::TestWithParam<
           std::tuple<ConvolveTestParam, ConvolveTypeParam, bool>> {
  public:
   ConvolveTest() = default;
@@ -760,8 +760,8 @@ class ConvolveTest
     ASSERT_NE(dsp, nullptr);
     GetConvolveFuncs(dsp, &base_convolve_func_, &base_convolve_scale_func_);
 
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const absl::string_view test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       base_convolve_func_ = nullptr;
@@ -1319,34 +1319,30 @@ const ConvolveTypeParam kConvolveTypeParam[] = {
     ConvolveTypeParam(true, true, true, true),
 };
 
-INSTANTIATE_TEST_SUITE_P(
-    C, ConvolveTest8bpp,
-    ::testing::Combine(::testing::ValuesIn(kConvolveParam),
-                       ::testing::ValuesIn(kConvolveTypeParam),
-                       ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(C, ConvolveTest8bpp,
+                         testing::Combine(testing::ValuesIn(kConvolveParam),
+                                          testing::ValuesIn(kConvolveTypeParam),
+                                          testing::Bool()));
 
 #if LIBGAV1_ENABLE_NEON
-INSTANTIATE_TEST_SUITE_P(
-    NEON, ConvolveTest8bpp,
-    ::testing::Combine(::testing::ValuesIn(kConvolveParam),
-                       ::testing::ValuesIn(kConvolveTypeParam),
-                       ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(NEON, ConvolveTest8bpp,
+                         testing::Combine(testing::ValuesIn(kConvolveParam),
+                                          testing::ValuesIn(kConvolveTypeParam),
+                                          testing::Bool()));
 #endif  // LIBGAV1_ENABLE_NEON
 
 #if LIBGAV1_ENABLE_SSE4_1
-INSTANTIATE_TEST_SUITE_P(
-    SSE41, ConvolveTest8bpp,
-    ::testing::Combine(::testing::ValuesIn(kConvolveParam),
-                       ::testing::ValuesIn(kConvolveTypeParam),
-                       ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(SSE41, ConvolveTest8bpp,
+                         testing::Combine(testing::ValuesIn(kConvolveParam),
+                                          testing::ValuesIn(kConvolveTypeParam),
+                                          testing::Bool()));
 #endif  // LIBGAV1_ENABLE_SSE4_1
 
 #if LIBGAV1_ENABLE_AVX2
-INSTANTIATE_TEST_SUITE_P(
-    AVX2, ConvolveTest8bpp,
-    ::testing::Combine(::testing::ValuesIn(kConvolveParam),
-                       ::testing::ValuesIn(kConvolveTypeParam),
-                       ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(AVX2, ConvolveTest8bpp,
+                         testing::Combine(testing::ValuesIn(kConvolveParam),
+                                          testing::ValuesIn(kConvolveTypeParam),
+                                          testing::Bool()));
 #endif  // LIBGAV1_ENABLE_AVX2
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
@@ -1366,11 +1362,10 @@ TEST_P(ConvolveTest10bpp, DISABLED_Speed) {
   Test(false, 0, num_runs);
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    C, ConvolveTest10bpp,
-    ::testing::Combine(::testing::ValuesIn(kConvolveParam),
-                       ::testing::ValuesIn(kConvolveTypeParam),
-                       ::testing::Bool()));
+INSTANTIATE_TEST_SUITE_P(C, ConvolveTest10bpp,
+                         testing::Combine(testing::ValuesIn(kConvolveParam),
+                                          testing::ValuesIn(kConvolveTypeParam),
+                                          testing::Bool()));
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
 }  // namespace

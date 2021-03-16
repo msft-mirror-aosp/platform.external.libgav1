@@ -177,7 +177,7 @@ std::ostream& operator<<(std::ostream& os, const MaskBlendTestParam& param) {
 }
 
 template <int bitdepth, typename Pixel>
-class MaskBlendTest : public ::testing::TestWithParam<MaskBlendTestParam>,
+class MaskBlendTest : public testing::TestWithParam<MaskBlendTestParam>,
                       public test_utils::MaxAlignedAllocable {
  public:
   MaskBlendTest() = default;
@@ -188,8 +188,8 @@ class MaskBlendTest : public ::testing::TestWithParam<MaskBlendTestParam>,
     MaskBlendInit_C();
     const dsp::Dsp* const dsp = dsp::GetDspTable(bitdepth);
     ASSERT_NE(dsp, nullptr);
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const absl::string_view test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
     } else if (absl::StartsWith(test_case, "NEON/")) {
@@ -458,16 +458,16 @@ TEST_P(MaskBlendTest8bpp, DISABLED_Speed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(C, MaskBlendTest8bpp,
-                         ::testing::ValuesIn(kMaskBlendTestParam));
+                         testing::ValuesIn(kMaskBlendTestParam));
 
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, MaskBlendTest8bpp,
-                         ::testing::ValuesIn(kMaskBlendTestParam));
+                         testing::ValuesIn(kMaskBlendTestParam));
 #endif
 
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, MaskBlendTest8bpp,
-                         ::testing::ValuesIn(kMaskBlendTestParam));
+                         testing::ValuesIn(kMaskBlendTestParam));
 #endif
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
@@ -480,11 +480,11 @@ TEST_P(MaskBlendTest10bpp, DISABLED_Speed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(C, MaskBlendTest10bpp,
-                         ::testing::ValuesIn(kMaskBlendTestParam));
+                         testing::ValuesIn(kMaskBlendTestParam));
 
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, MaskBlendTest10bpp,
-                         ::testing::ValuesIn(kMaskBlendTestParam));
+                         testing::ValuesIn(kMaskBlendTestParam));
 #endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
