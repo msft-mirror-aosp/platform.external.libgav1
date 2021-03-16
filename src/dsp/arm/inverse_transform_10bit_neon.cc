@@ -210,7 +210,7 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool transpose) {
   auto* const dst = static_cast<int32_t*>(dest);
   // When transpose is true, set range to the row range, otherwise, set to the
   // column range.
-  const int32_t range = (transpose) ? (kBitdepth10 + 7) : 15;
+  const int32_t range = transpose ? kBitdepth10 + 7 : 15;
   const int32x4_t min = vdupq_n_s32(-(1 << range));
   const int32x4_t max = vdupq_n_s32((1 << range) - 1);
   int32x4_t s[4], x[4];
@@ -233,6 +233,69 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool transpose) {
     Transpose4x4(s, s);
   }
   StoreDst<4>(dst, step, 0, s);
+}
+
+template <ButterflyRotationFunc butterfly_rotation>
+LIBGAV1_ALWAYS_INLINE void Dct8Stages(int32x4_t* s, const int32x4_t* min,
+                                      const int32x4_t* max) {
+  // stage 8.
+  butterfly_rotation(&s[4], &s[7], 56, false);
+  butterfly_rotation(&s[5], &s[6], 24, false);
+
+  // stage 13.
+  HadamardRotation(&s[4], &s[5], false, min, max);
+  HadamardRotation(&s[6], &s[7], true, min, max);
+
+  // stage 18.
+  butterfly_rotation(&s[6], &s[5], 32, true);
+
+  // stage 22.
+  HadamardRotation(&s[0], &s[7], false, min, max);
+  HadamardRotation(&s[1], &s[6], false, min, max);
+  HadamardRotation(&s[2], &s[5], false, min, max);
+  HadamardRotation(&s[3], &s[4], false, min, max);
+}
+
+// Process dct8 rows or columns, depending on the transpose flag.
+template <ButterflyRotationFunc butterfly_rotation>
+LIBGAV1_ALWAYS_INLINE void Dct8_NEON(void* dest, int32_t step, bool transpose) {
+  auto* const dst = static_cast<int32_t*>(dest);
+  const int32_t range = transpose ? kBitdepth10 + 7 : 15;
+  const int32x4_t min = vdupq_n_s32(-(1 << range));
+  const int32x4_t max = vdupq_n_s32((1 << range) - 1);
+  int32x4_t s[8], x[8];
+
+  if (transpose) {
+    LoadSrc<4>(dst, step, 0, &x[0]);
+    LoadSrc<4>(dst, step, 4, &x[4]);
+    Transpose4x4(&x[0], &x[0]);
+    Transpose4x4(&x[4], &x[4]);
+  } else {
+    LoadSrc<8>(dst, step, 0, &x[0]);
+  }
+
+  // stage 1.
+  // kBitReverseLookup 0, 4, 2, 6, 1, 5, 3, 7,
+  s[0] = x[0];
+  s[1] = x[4];
+  s[2] = x[2];
+  s[3] = x[6];
+  s[4] = x[1];
+  s[5] = x[5];
+  s[6] = x[3];
+  s[7] = x[7];
+
+  Dct4Stages<butterfly_rotation>(s, &min, &max);
+  Dct8Stages<butterfly_rotation>(s, &min, &max);
+
+  if (transpose) {
+    Transpose4x4(&s[0], &s[0]);
+    Transpose4x4(&s[4], &s[4]);
+    StoreDst<4>(dst, step, 0, &s[0]);
+    StoreDst<4>(dst, step, 4, &s[4]);
+  } else {
+    StoreDst<8>(dst, step, 0, &s[0]);
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -404,7 +467,7 @@ void Dct4TransformLoopRow_NEON(TransformType /*tx_type*/, TransformSize tx_size,
     Dct4_NEON<ButterflyRotation_4>(data, /*step=*/4, /*transpose=*/true);
     data += 16;
     i -= 4;
-  } while (i > 0);
+  } while (i != 0);
 
   if (tx_height == 16) {
     RowShift<4>(src, adjusted_tx_height, 1);
@@ -438,6 +501,62 @@ void Dct4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
   StoreToFrameWithRound<4>(frame, start_x, start_y, tx_width, src, tx_type);
 }
 
+void Dct8TransformLoopRow_NEON(TransformType /*tx_type*/, TransformSize tx_size,
+                               int adjusted_tx_height, void* src_buffer,
+                               int /*start_x*/, int /*start_y*/,
+                               void* /*dst_frame*/) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const bool should_round = kShouldRound[tx_size];
+  const uint8_t row_shift = kTransformRowShift[tx_size];
+
+  if (DctDcOnly<8>(src, adjusted_tx_height, should_round, row_shift)) {
+    return;
+  }
+
+  if (should_round) {
+    ApplyRounding<8>(src, adjusted_tx_height);
+  }
+
+  // Process 4 1d dct8 rows in parallel per iteration.
+  int i = adjusted_tx_height;
+  auto* data = src;
+  do {
+    Dct8_NEON<ButterflyRotation_4>(data, /*step=*/8, /*transpose=*/true);
+    data += 32;
+    i -= 4;
+  } while (i != 0);
+
+  if (row_shift > 0) {
+    RowShift<8>(src, adjusted_tx_height, row_shift);
+  }
+
+  ClampIntermediate(src, adjusted_tx_height * /*tx_width*/ 8);
+}
+
+void Dct8TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
+                                  int adjusted_tx_height, void* src_buffer,
+                                  int start_x, int start_y, void* dst_frame) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_width = kTransformWidth[tx_size];
+
+  if (kTransformFlipColumnsMask.Contains(tx_type)) {
+    FlipColumns<8>(src, tx_width);
+  }
+
+  if (!DctDcOnlyColumn<8>(src, adjusted_tx_height, tx_width)) {
+    // Process 4 1d dct8 columns in parallel per iteration.
+    int i = tx_width;
+    auto* data = src;
+    do {
+      Dct8_NEON<ButterflyRotation_4>(data, tx_width, /*transpose=*/false);
+      data += 4;
+      i -= 4;
+    } while (i != 0);
+  }
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  StoreToFrameWithRound<8>(frame, start_x, start_y, tx_width, src, tx_type);
+}
+
 //------------------------------------------------------------------------------
 
 void Init10bpp() {
@@ -448,6 +567,10 @@ void Init10bpp() {
       Dct4TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformDct][k1DTransformSize4][kColumn] =
       Dct4TransformLoopColumn_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize8][kRow] =
+      Dct8TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize8][kColumn] =
+      Dct8TransformLoopColumn_NEON;
 }
 
 }  // namespace
