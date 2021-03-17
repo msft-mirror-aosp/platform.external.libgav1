@@ -965,6 +965,86 @@ struct DcDefs {
   using _64x64 = DcPredFuncs_NEON<6, 6, DcSum_NEON, DcStore_NEON<64, 64>>;
 };
 
+// IntraPredFuncs_NEON::Horizontal -- duplicate left column across all rows
+
+template <int block_height>
+void Horizontal4xH_NEON(void* const dest, ptrdiff_t stride,
+                        const void* /*top_row*/,
+                        const void* const left_column) {
+  const auto* const left = static_cast<const uint16_t*>(left_column);
+  auto* dst = static_cast<uint8_t*>(dest);
+  int y = 0;
+  do {
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
+    const uint16x4_t row = vld1_dup_u16(left + y);
+    vst1_u16(dst16, row);
+    dst += stride;
+  } while (++y < block_height);
+}
+
+template <int block_height>
+void Horizontal8xH_NEON(void* const dest, ptrdiff_t stride,
+                        const void* /*top_row*/,
+                        const void* const left_column) {
+  const auto* const left = static_cast<const uint16_t*>(left_column);
+  auto* dst = static_cast<uint8_t*>(dest);
+  int y = 0;
+  do {
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
+    const uint16x8_t row = vld1q_dup_u16(left + y);
+    vst1q_u16(dst16, row);
+    dst += stride;
+  } while (++y < block_height);
+}
+
+template <int block_height>
+void Horizontal16xH_NEON(void* const dest, ptrdiff_t stride,
+                         const void* /*top_row*/,
+                         const void* const left_column) {
+  const auto* const left = static_cast<const uint16_t*>(left_column);
+  auto* dst = static_cast<uint8_t*>(dest);
+  int y = 0;
+  do {
+    const uint16x8_t row0 = vld1q_dup_u16(left + y);
+    const uint16x8_t row1 = vld1q_dup_u16(left + y + 1);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
+    vst1q_u16(dst16, row0);
+    vst1q_u16(dst16 + 8, row0);
+    dst += stride;
+    dst16 = reinterpret_cast<uint16_t*>(dst);
+    vst1q_u16(dst16, row1);
+    vst1q_u16(dst16 + 8, row1);
+    dst += stride;
+    y += 2;
+  } while (y < block_height);
+}
+
+template <int block_height>
+void Horizontal32xH_NEON(void* const dest, ptrdiff_t stride,
+                         const void* /*top_row*/,
+                         const void* const left_column) {
+  const auto* const left = static_cast<const uint16_t*>(left_column);
+  auto* dst = static_cast<uint8_t*>(dest);
+  int y = 0;
+  do {
+    const uint16x8_t row0 = vld1q_dup_u16(left + y);
+    const uint16x8_t row1 = vld1q_dup_u16(left + y + 1);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
+    vst1q_u16(dst16, row0);
+    vst1q_u16(dst16 + 8, row0);
+    vst1q_u16(dst16 + 16, row0);
+    vst1q_u16(dst16 + 24, row0);
+    dst += stride;
+    dst16 = reinterpret_cast<uint16_t*>(dst);
+    vst1q_u16(dst16, row1);
+    vst1q_u16(dst16 + 8, row1);
+    vst1q_u16(dst16 + 16, row1);
+    vst1q_u16(dst16 + 24, row1);
+    dst += stride;
+    y += 2;
+  } while (y < block_height);
+}
+
 // IntraPredFuncs_NEON::Vertical -- copy top row to all rows
 
 template <int block_height>
@@ -1098,6 +1178,8 @@ void Init10bpp() {
       DcDefs::_4x8::DcLeft;
   dsp->intra_predictors[kTransformSize4x8][kIntraPredictorDc] =
       DcDefs::_4x8::Dc;
+  dsp->intra_predictors[kTransformSize4x8][kIntraPredictorHorizontal] =
+      Horizontal4xH_NEON<8>;
   dsp->intra_predictors[kTransformSize4x8][kIntraPredictorVertical] =
       Vertical4xH_NEON<8>;
 
@@ -1108,6 +1190,8 @@ void Init10bpp() {
       DcDefs::_4x16::DcLeft;
   dsp->intra_predictors[kTransformSize4x16][kIntraPredictorDc] =
       DcDefs::_4x16::Dc;
+  dsp->intra_predictors[kTransformSize4x16][kIntraPredictorHorizontal] =
+      Horizontal4xH_NEON<16>;
   dsp->intra_predictors[kTransformSize4x16][kIntraPredictorVertical] =
       Vertical4xH_NEON<16>;
 
@@ -1128,6 +1212,8 @@ void Init10bpp() {
       DcDefs::_8x8::DcLeft;
   dsp->intra_predictors[kTransformSize8x8][kIntraPredictorDc] =
       DcDefs::_8x8::Dc;
+  dsp->intra_predictors[kTransformSize8x8][kIntraPredictorHorizontal] =
+      Horizontal8xH_NEON<8>;
   dsp->intra_predictors[kTransformSize8x8][kIntraPredictorVertical] =
       Vertical8xH_NEON<8>;
 
@@ -1148,6 +1234,8 @@ void Init10bpp() {
       DcDefs::_8x32::DcLeft;
   dsp->intra_predictors[kTransformSize8x32][kIntraPredictorDc] =
       DcDefs::_8x32::Dc;
+  dsp->intra_predictors[kTransformSize8x32][kIntraPredictorHorizontal] =
+      Horizontal8xH_NEON<32>;
   dsp->intra_predictors[kTransformSize8x32][kIntraPredictorVertical] =
       Vertical8xH_NEON<32>;
 
@@ -1168,6 +1256,8 @@ void Init10bpp() {
       DcDefs::_16x8::DcLeft;
   dsp->intra_predictors[kTransformSize16x8][kIntraPredictorDc] =
       DcDefs::_16x8::Dc;
+  dsp->intra_predictors[kTransformSize16x8][kIntraPredictorHorizontal] =
+      Horizontal16xH_NEON<8>;
   dsp->intra_predictors[kTransformSize16x8][kIntraPredictorVertical] =
       Vertical16xH_NEON<8>;
 
@@ -1238,6 +1328,8 @@ void Init10bpp() {
       DcDefs::_32x64::DcLeft;
   dsp->intra_predictors[kTransformSize32x64][kIntraPredictorDc] =
       DcDefs::_32x64::Dc;
+  dsp->intra_predictors[kTransformSize32x64][kIntraPredictorHorizontal] =
+      Horizontal32xH_NEON<64>;
   dsp->intra_predictors[kTransformSize32x64][kIntraPredictorVertical] =
       Vertical32xH_NEON<64>;
 
