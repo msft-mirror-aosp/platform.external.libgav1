@@ -23,10 +23,9 @@
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::intra_predictors, Dsp::directional_intra_predictor_zone*,
-// Dsp::cfl_intra_predictors, Dsp::cfl_subsamplers and
-// Dsp::filter_intra_predictor, see the defines below for specifics. These
-// functions are not thread-safe.
+// Initializes Dsp::intra_predictors, Dsp::cfl_intra_predictors,
+// Dsp::cfl_subsamplers and Dsp::filter_intra_predictor, see the defines below
+// for specifics. These functions are not thread-safe.
 void IntraPredInit_SSE4_1();
 void IntraPredCflInit_SSE4_1();
 void IntraPredSmoothInit_SSE4_1();
@@ -39,18 +38,6 @@ void IntraPredSmoothInit_SSE4_1();
 #if LIBGAV1_TARGETING_SSE4_1
 #ifndef LIBGAV1_Dsp8bpp_FilterIntraPredictor
 #define LIBGAV1_Dsp8bpp_FilterIntraPredictor LIBGAV1_CPU_SSE4_1
-#endif
-
-#ifndef LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone1
-#define LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone1 LIBGAV1_CPU_SSE4_1
-#endif
-
-#ifndef LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone2
-#define LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone2 LIBGAV1_CPU_SSE4_1
-#endif
-
-#ifndef LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone3
-#define LIBGAV1_Dsp8bpp_DirectionalIntraPredictorZone3 LIBGAV1_CPU_SSE4_1
 #endif
 
 #ifndef LIBGAV1_Dsp8bpp_TransformSize4x4_IntraPredictorDcTop
@@ -941,10 +928,6 @@ void IntraPredSmoothInit_SSE4_1();
 
 //------------------------------------------------------------------------------
 // 10bpp
-
-#ifndef LIBGAV1_Dsp10bpp_DirectionalIntraPredictorZone1
-#define LIBGAV1_Dsp10bpp_DirectionalIntraPredictorZone1 LIBGAV1_CPU_SSE4_1
-#endif
 
 #ifndef LIBGAV1_Dsp10bpp_TransformSize4x4_CflSubsampler420
 #define LIBGAV1_Dsp10bpp_TransformSize4x4_CflSubsampler420 LIBGAV1_CPU_SSE4_1
