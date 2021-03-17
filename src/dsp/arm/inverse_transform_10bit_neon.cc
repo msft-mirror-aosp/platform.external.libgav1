@@ -298,6 +298,106 @@ LIBGAV1_ALWAYS_INLINE void Dct8_NEON(void* dest, int32_t step, bool transpose) {
   }
 }
 
+template <ButterflyRotationFunc butterfly_rotation>
+LIBGAV1_ALWAYS_INLINE void Dct16Stages(int32x4_t* s, const int32x4_t* min,
+                                       const int32x4_t* max) {
+  // stage 5.
+  butterfly_rotation(&s[8], &s[15], 60, false);
+  butterfly_rotation(&s[9], &s[14], 28, false);
+  butterfly_rotation(&s[10], &s[13], 44, false);
+  butterfly_rotation(&s[11], &s[12], 12, false);
+
+  // stage 9.
+  HadamardRotation(&s[8], &s[9], false, min, max);
+  HadamardRotation(&s[10], &s[11], true, min, max);
+  HadamardRotation(&s[12], &s[13], false, min, max);
+  HadamardRotation(&s[14], &s[15], true, min, max);
+
+  // stage 14.
+  butterfly_rotation(&s[14], &s[9], 48, true);
+  butterfly_rotation(&s[13], &s[10], 112, true);
+
+  // stage 19.
+  HadamardRotation(&s[8], &s[11], false, min, max);
+  HadamardRotation(&s[9], &s[10], false, min, max);
+  HadamardRotation(&s[12], &s[15], true, min, max);
+  HadamardRotation(&s[13], &s[14], true, min, max);
+
+  // stage 23.
+  butterfly_rotation(&s[13], &s[10], 32, true);
+  butterfly_rotation(&s[12], &s[11], 32, true);
+
+  // stage 26.
+  HadamardRotation(&s[0], &s[15], false, min, max);
+  HadamardRotation(&s[1], &s[14], false, min, max);
+  HadamardRotation(&s[2], &s[13], false, min, max);
+  HadamardRotation(&s[3], &s[12], false, min, max);
+  HadamardRotation(&s[4], &s[11], false, min, max);
+  HadamardRotation(&s[5], &s[10], false, min, max);
+  HadamardRotation(&s[6], &s[9], false, min, max);
+  HadamardRotation(&s[7], &s[8], false, min, max);
+}
+
+// Process dct16 rows or columns, depending on the |is_row| flag.
+template <ButterflyRotationFunc butterfly_rotation>
+LIBGAV1_ALWAYS_INLINE void Dct16_NEON(void* dest, int32_t step, bool is_row,
+                                      int row_shift) {
+  auto* const dst = static_cast<int32_t*>(dest);
+  const int32_t range = (is_row) ? (kBitdepth10 + 7) : 15;
+  const int32x4_t min = vdupq_n_s32(-(1 << range));
+  const int32x4_t max = vdupq_n_s32((1 << range) - 1);
+  int32x4_t s[16], x[16];
+
+  if (is_row) {
+    for (int idx = 0; idx < 16; idx += 8) {
+      LoadSrc<4>(dst, step, idx, &x[idx]);
+      LoadSrc<4>(dst, step, idx + 4, &x[idx + 4]);
+      Transpose4x4(&x[idx], &x[idx]);
+      Transpose4x4(&x[idx + 4], &x[idx + 4]);
+    }
+  } else {
+    LoadSrc<16>(dst, step, 0, &x[0]);
+  }
+
+  // stage 1
+  // kBitReverseLookup 0, 8, 4, 12, 2, 10, 6, 14, 1, 9, 5, 13, 3, 11, 7, 15,
+  s[0] = x[0];
+  s[1] = x[8];
+  s[2] = x[4];
+  s[3] = x[12];
+  s[4] = x[2];
+  s[5] = x[10];
+  s[6] = x[6];
+  s[7] = x[14];
+  s[8] = x[1];
+  s[9] = x[9];
+  s[10] = x[5];
+  s[11] = x[13];
+  s[12] = x[3];
+  s[13] = x[11];
+  s[14] = x[7];
+  s[15] = x[15];
+
+  Dct4Stages<butterfly_rotation>(s, &min, &max);
+  Dct8Stages<butterfly_rotation>(s, &min, &max);
+  Dct16Stages<butterfly_rotation>(s, &min, &max);
+
+  if (is_row) {
+    const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
+    for (int i = 0; i < 16; ++i) {
+      s[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(s[i], v_row_shift)));
+    }
+    for (int idx = 0; idx < 16; idx += 8) {
+      Transpose4x4(&s[idx], &s[idx]);
+      Transpose4x4(&s[idx + 4], &s[idx + 4]);
+      StoreDst<4>(dst, step, idx, &s[idx]);
+      StoreDst<4>(dst, step, idx + 4, &s[idx + 4]);
+    }
+  } else {
+    StoreDst<16>(dst, step, 0, &s[0]);
+  }
+}
+
 //------------------------------------------------------------------------------
 // row/column transform loops
 
@@ -557,6 +657,58 @@ void Dct8TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
   StoreToFrameWithRound<8>(frame, start_x, start_y, tx_width, src, tx_type);
 }
 
+void Dct16TransformLoopRow_NEON(TransformType /*tx_type*/,
+                                TransformSize tx_size, int adjusted_tx_height,
+                                void* src_buffer, int /*start_x*/,
+                                int /*start_y*/, void* /*dst_frame*/) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const bool should_round = kShouldRound[tx_size];
+  const uint8_t row_shift = kTransformRowShift[tx_size];
+
+  if (DctDcOnly<16>(src, adjusted_tx_height, should_round, row_shift)) {
+    return;
+  }
+
+  if (should_round) {
+    ApplyRounding<16>(src, adjusted_tx_height);
+  }
+
+  assert(adjusted_tx_height % 8 == 0);
+  int i = adjusted_tx_height;
+  auto* data = src;
+  do {
+    // Process 4 1d dct16 rows in parallel per iteration.
+    Dct16_NEON<ButterflyRotation_4>(data, 16, /*is_row=*/true, row_shift);
+    data += 64;
+    i -= 4;
+  } while (i != 0);
+}
+
+void Dct16TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
+                                   int adjusted_tx_height, void* src_buffer,
+                                   int start_x, int start_y, void* dst_frame) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_width = kTransformWidth[tx_size];
+
+  if (kTransformFlipColumnsMask.Contains(tx_type)) {
+    FlipColumns<16>(src, tx_width);
+  }
+
+  if (!DctDcOnlyColumn<16>(src, adjusted_tx_height, tx_width)) {
+    // Process 4 1d dct8 columns in parallel per iteration.
+    int i = tx_width;
+    auto* data = src;
+    do {
+      Dct16_NEON<ButterflyRotation_4>(data, tx_width, /*is_row=*/false,
+                                      /*row_shift=*/0);
+      data += 4;
+      i -= 4;
+    } while (i != 0);
+  }
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  StoreToFrameWithRound<16>(frame, start_x, start_y, tx_width, src, tx_type);
+}
+
 //------------------------------------------------------------------------------
 
 void Init10bpp() {
@@ -571,6 +723,10 @@ void Init10bpp() {
       Dct8TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformDct][k1DTransformSize8][kColumn] =
       Dct8TransformLoopColumn_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize16][kRow] =
+      Dct16TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize16][kColumn] =
+      Dct16TransformLoopColumn_NEON;
 }
 
 }  // namespace
