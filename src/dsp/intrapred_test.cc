@@ -2654,7 +2654,9 @@ INSTANTIATE_TEST_SUITE_P(SSE41, CflSubsamplerTest10bpp420,
 #endif  // LIBGAV1_ENABLE_SSE4_1
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, IntraPredTest10bpp,
-                         testing::ValuesIn(kTransformSizes));
+                         ::testing::ValuesIn(kTransformSizes));
+INSTANTIATE_TEST_SUITE_P(NEON, DirectionalIntraPredTest10bpp,
+                         ::testing::ValuesIn(kTransformSizes));
 INSTANTIATE_TEST_SUITE_P(NEON, CflIntraPredTest10bpp,
                          testing::ValuesIn(kTransformSizesSmallerThan32x32));
 INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest10bpp444,

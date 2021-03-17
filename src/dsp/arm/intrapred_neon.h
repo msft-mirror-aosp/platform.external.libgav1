@@ -310,6 +310,8 @@ void IntraPredSmoothInit_NEON();
   LIBGAV1_CPU_NEON
 
 // 10 bit
+#define LIBGAV1_Dsp10bpp_DirectionalIntraPredictorZone1 LIBGAV1_CPU_NEON
+
 // 4x4
 #define LIBGAV1_Dsp10bpp_TransformSize4x4_IntraPredictorDcTop LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp10bpp_TransformSize4x4_IntraPredictorDcLeft LIBGAV1_CPU_NEON
