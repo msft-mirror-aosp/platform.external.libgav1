@@ -673,7 +673,7 @@ void Dct16TransformLoopRow_NEON(TransformType /*tx_type*/,
     ApplyRounding<16>(src, adjusted_tx_height);
   }
 
-  assert(adjusted_tx_height % 8 == 0);
+  assert(adjusted_tx_height % 4 == 0);
   int i = adjusted_tx_height;
   auto* data = src;
   do {
