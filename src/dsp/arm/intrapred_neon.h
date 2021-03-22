@@ -23,11 +23,10 @@
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::intra_predictors, Dsp::cfl_intra_predictors,
-// Dsp::cfl_subsamplers and Dsp::filter_intra_predictor, see the defines below
-// for specifics. These functions are not thread-safe.
+// Initializes Dsp::intra_predictors, Dsp::cfl_intra_predictors, and
+// Dsp::cfl_subsamplers, see the defines below for specifics. These functions
+// are not thread-safe.
 void IntraPredCflInit_NEON();
-void IntraPredFilterIntraInit_NEON();
 void IntraPredInit_NEON();
 void IntraPredSmoothInit_NEON();
 
@@ -35,9 +34,6 @@ void IntraPredSmoothInit_NEON();
 }  // namespace libgav1
 
 #if LIBGAV1_ENABLE_NEON
-// 8 bit
-#define LIBGAV1_Dsp8bpp_FilterIntraPredictor LIBGAV1_CPU_NEON
-
 // 4x4
 #define LIBGAV1_Dsp8bpp_TransformSize4x4_IntraPredictorDcTop LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp8bpp_TransformSize4x4_IntraPredictorDcLeft LIBGAV1_CPU_NEON

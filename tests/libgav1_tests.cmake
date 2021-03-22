@@ -79,6 +79,8 @@ list(APPEND libgav1_distance_weighted_blend_test_sources
 list(APPEND libgav1_dsp_test_sources "${libgav1_source}/dsp/dsp_test.cc")
 list(APPEND libgav1_intrapred_directional_test_sources
             "${libgav1_source}/dsp/intrapred_directional_test.cc")
+list(APPEND libgav1_intrapred_filter_test_sources
+            "${libgav1_source}/dsp/intrapred_filter_test.cc")
 list(APPEND libgav1_intrapred_test_sources
             "${libgav1_source}/dsp/intrapred_test.cc")
 list(APPEND libgav1_mask_blend_test_sources

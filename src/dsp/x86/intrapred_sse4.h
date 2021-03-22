@@ -23,9 +23,9 @@
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::intra_predictors, Dsp::cfl_intra_predictors,
-// Dsp::cfl_subsamplers and Dsp::filter_intra_predictor, see the defines below
-// for specifics. These functions are not thread-safe.
+// Initializes Dsp::intra_predictors, Dsp::cfl_intra_predictors, and
+// Dsp::cfl_subsamplers, see the defines below for specifics. These functions
+// are not thread-safe.
 void IntraPredInit_SSE4_1();
 void IntraPredCflInit_SSE4_1();
 void IntraPredSmoothInit_SSE4_1();
@@ -36,10 +36,6 @@ void IntraPredSmoothInit_SSE4_1();
 // If sse4 is enabled and the baseline isn't set due to a higher level of
 // optimization being enabled, signal the sse4 implementation should be used.
 #if LIBGAV1_TARGETING_SSE4_1
-#ifndef LIBGAV1_Dsp8bpp_FilterIntraPredictor
-#define LIBGAV1_Dsp8bpp_FilterIntraPredictor LIBGAV1_CPU_SSE4_1
-#endif
-
 #ifndef LIBGAV1_Dsp8bpp_TransformSize4x4_IntraPredictorDcTop
 #define LIBGAV1_Dsp8bpp_TransformSize4x4_IntraPredictorDcTop LIBGAV1_CPU_SSE4_1
 #endif
