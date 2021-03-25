@@ -393,7 +393,7 @@ template <ButterflyRotationFunc butterfly_rotation>
 LIBGAV1_ALWAYS_INLINE void Dct16_NEON(void* dest, int32_t step, bool is_row,
                                       int row_shift) {
   auto* const dst = static_cast<int32_t*>(dest);
-  const int32_t range = (is_row) ? (kBitdepth10 + 7) : 15;
+  const int32_t range = is_row ? kBitdepth10 + 7 : 15;
   const int32x4_t min = vdupq_n_s32(-(1 << range));
   const int32x4_t max = vdupq_n_s32((1 << range) - 1);
   int32x4_t s[16], x[16];
@@ -445,6 +445,186 @@ LIBGAV1_ALWAYS_INLINE void Dct16_NEON(void* dest, int32_t step, bool is_row,
     }
   } else {
     StoreDst<16>(dst, step, 0, &s[0]);
+  }
+}
+
+template <ButterflyRotationFunc butterfly_rotation>
+LIBGAV1_ALWAYS_INLINE void Dct32Stages(int32x4_t* s, const int32x4_t* min,
+                                       const int32x4_t* max,
+                                       const bool is_last_stage) {
+  // stage 3
+  butterfly_rotation(&s[16], &s[31], 62, false);
+  butterfly_rotation(&s[17], &s[30], 30, false);
+  butterfly_rotation(&s[18], &s[29], 46, false);
+  butterfly_rotation(&s[19], &s[28], 14, false);
+  butterfly_rotation(&s[20], &s[27], 54, false);
+  butterfly_rotation(&s[21], &s[26], 22, false);
+  butterfly_rotation(&s[22], &s[25], 38, false);
+  butterfly_rotation(&s[23], &s[24], 6, false);
+
+  // stage 6.
+  HadamardRotation(&s[16], &s[17], false, min, max);
+  HadamardRotation(&s[18], &s[19], true, min, max);
+  HadamardRotation(&s[20], &s[21], false, min, max);
+  HadamardRotation(&s[22], &s[23], true, min, max);
+  HadamardRotation(&s[24], &s[25], false, min, max);
+  HadamardRotation(&s[26], &s[27], true, min, max);
+  HadamardRotation(&s[28], &s[29], false, min, max);
+  HadamardRotation(&s[30], &s[31], true, min, max);
+
+  // stage 10.
+  butterfly_rotation(&s[30], &s[17], 24 + 32, true);
+  butterfly_rotation(&s[29], &s[18], 24 + 64 + 32, true);
+  butterfly_rotation(&s[26], &s[21], 24, true);
+  butterfly_rotation(&s[25], &s[22], 24 + 64, true);
+
+  // stage 15.
+  HadamardRotation(&s[16], &s[19], false, min, max);
+  HadamardRotation(&s[17], &s[18], false, min, max);
+  HadamardRotation(&s[20], &s[23], true, min, max);
+  HadamardRotation(&s[21], &s[22], true, min, max);
+  HadamardRotation(&s[24], &s[27], false, min, max);
+  HadamardRotation(&s[25], &s[26], false, min, max);
+  HadamardRotation(&s[28], &s[31], true, min, max);
+  HadamardRotation(&s[29], &s[30], true, min, max);
+
+  // stage 20.
+  butterfly_rotation(&s[29], &s[18], 48, true);
+  butterfly_rotation(&s[28], &s[19], 48, true);
+  butterfly_rotation(&s[27], &s[20], 48 + 64, true);
+  butterfly_rotation(&s[26], &s[21], 48 + 64, true);
+
+  // stage 24.
+  HadamardRotation(&s[16], &s[23], false, min, max);
+  HadamardRotation(&s[17], &s[22], false, min, max);
+  HadamardRotation(&s[18], &s[21], false, min, max);
+  HadamardRotation(&s[19], &s[20], false, min, max);
+  HadamardRotation(&s[24], &s[31], true, min, max);
+  HadamardRotation(&s[25], &s[30], true, min, max);
+  HadamardRotation(&s[26], &s[29], true, min, max);
+  HadamardRotation(&s[27], &s[28], true, min, max);
+
+  // stage 27.
+  butterfly_rotation(&s[27], &s[20], 32, true);
+  butterfly_rotation(&s[26], &s[21], 32, true);
+  butterfly_rotation(&s[25], &s[22], 32, true);
+  butterfly_rotation(&s[24], &s[23], 32, true);
+
+  // stage 29.
+  if (is_last_stage) {
+    HadamardRotation(&s[0], &s[31], false);
+    HadamardRotation(&s[1], &s[30], false);
+    HadamardRotation(&s[2], &s[29], false);
+    HadamardRotation(&s[3], &s[28], false);
+    HadamardRotation(&s[4], &s[27], false);
+    HadamardRotation(&s[5], &s[26], false);
+    HadamardRotation(&s[6], &s[25], false);
+    HadamardRotation(&s[7], &s[24], false);
+    HadamardRotation(&s[8], &s[23], false);
+    HadamardRotation(&s[9], &s[22], false);
+    HadamardRotation(&s[10], &s[21], false);
+    HadamardRotation(&s[11], &s[20], false);
+    HadamardRotation(&s[12], &s[19], false);
+    HadamardRotation(&s[13], &s[18], false);
+    HadamardRotation(&s[14], &s[17], false);
+    HadamardRotation(&s[15], &s[16], false);
+  } else {
+    HadamardRotation(&s[0], &s[31], false, min, max);
+    HadamardRotation(&s[1], &s[30], false, min, max);
+    HadamardRotation(&s[2], &s[29], false, min, max);
+    HadamardRotation(&s[3], &s[28], false, min, max);
+    HadamardRotation(&s[4], &s[27], false, min, max);
+    HadamardRotation(&s[5], &s[26], false, min, max);
+    HadamardRotation(&s[6], &s[25], false, min, max);
+    HadamardRotation(&s[7], &s[24], false, min, max);
+    HadamardRotation(&s[8], &s[23], false, min, max);
+    HadamardRotation(&s[9], &s[22], false, min, max);
+    HadamardRotation(&s[10], &s[21], false, min, max);
+    HadamardRotation(&s[11], &s[20], false, min, max);
+    HadamardRotation(&s[12], &s[19], false, min, max);
+    HadamardRotation(&s[13], &s[18], false, min, max);
+    HadamardRotation(&s[14], &s[17], false, min, max);
+    HadamardRotation(&s[15], &s[16], false, min, max);
+  }
+}
+
+// Process dct32 rows or columns, depending on the |is_row| flag.
+LIBGAV1_ALWAYS_INLINE void Dct32_NEON(void* dest, const int32_t step,
+                                      const bool is_row, int row_shift) {
+  auto* const dst = static_cast<int32_t*>(dest);
+  const int32_t range = is_row ? kBitdepth10 + 7 : 15;
+  const int32x4_t min = vdupq_n_s32(-(1 << range));
+  const int32x4_t max = vdupq_n_s32((1 << range) - 1);
+  int32x4_t s[32], x[32];
+
+  if (is_row) {
+    for (int idx = 0; idx < 32; idx += 8) {
+      LoadSrc<4>(dst, step, idx, &x[idx]);
+      LoadSrc<4>(dst, step, idx + 4, &x[idx + 4]);
+      Transpose4x4(&x[idx], &x[idx]);
+      Transpose4x4(&x[idx + 4], &x[idx + 4]);
+    }
+  } else {
+    LoadSrc<32>(dst, step, 0, &x[0]);
+  }
+
+  // stage 1
+  // kBitReverseLookup
+  // 0, 16, 8, 24, 4, 20, 12, 28, 2, 18, 10, 26, 6, 22, 14, 30,
+  s[0] = x[0];
+  s[1] = x[16];
+  s[2] = x[8];
+  s[3] = x[24];
+  s[4] = x[4];
+  s[5] = x[20];
+  s[6] = x[12];
+  s[7] = x[28];
+  s[8] = x[2];
+  s[9] = x[18];
+  s[10] = x[10];
+  s[11] = x[26];
+  s[12] = x[6];
+  s[13] = x[22];
+  s[14] = x[14];
+  s[15] = x[30];
+
+  // 1, 17, 9, 25, 5, 21, 13, 29, 3, 19, 11, 27, 7, 23, 15, 31,
+  s[16] = x[1];
+  s[17] = x[17];
+  s[18] = x[9];
+  s[19] = x[25];
+  s[20] = x[5];
+  s[21] = x[21];
+  s[22] = x[13];
+  s[23] = x[29];
+  s[24] = x[3];
+  s[25] = x[19];
+  s[26] = x[11];
+  s[27] = x[27];
+  s[28] = x[7];
+  s[29] = x[23];
+  s[30] = x[15];
+  s[31] = x[31];
+
+  Dct4Stages<ButterflyRotation_4>(s, &min, &max, /*is_last_stage=*/false);
+  Dct8Stages<ButterflyRotation_4>(s, &min, &max, /*is_last_stage=*/false);
+  Dct16Stages<ButterflyRotation_4>(s, &min, &max, /*is_last_stage=*/false);
+  Dct32Stages<ButterflyRotation_4>(s, &min, &max, /*is_last_stage=*/true);
+
+  if (is_row) {
+    const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
+    for (int idx = 0; idx < 32; idx += 8) {
+      int32x4_t output[8];
+      Transpose4x4(&s[idx], &output[0]);
+      Transpose4x4(&s[idx + 4], &output[4]);
+      for (int i = 0; i < 8; ++i) {
+        output[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(output[i], v_row_shift)));
+      }
+      StoreDst<4>(dst, step, idx, &output[0]);
+      StoreDst<4>(dst, step, idx + 4, &output[4]);
+    }
+  } else {
+    StoreDst<32>(dst, step, 0, &s[0]);
   }
 }
 
@@ -725,7 +905,7 @@ void Dct16TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
   }
 
   if (!DctDcOnlyColumn<16>(src, adjusted_tx_height, tx_width)) {
-    // Process 4 1d dct8 columns in parallel per iteration.
+    // Process 4 1d dct16 columns in parallel per iteration.
     int i = tx_width;
     auto* data = src;
     do {
@@ -737,6 +917,57 @@ void Dct16TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
   }
   auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
   StoreToFrameWithRound<16>(frame, start_x, start_y, tx_width, src, tx_type);
+}
+
+void Dct32TransformLoopRow_NEON(TransformType /*tx_type*/,
+                                TransformSize tx_size, int adjusted_tx_height,
+                                void* src_buffer, int /*start_x*/,
+                                int /*start_y*/, void* /*dst_frame*/) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const bool should_round = kShouldRound[tx_size];
+  const uint8_t row_shift = kTransformRowShift[tx_size];
+
+  if (DctDcOnly<32>(src, adjusted_tx_height, should_round, row_shift)) {
+    return;
+  }
+
+  if (should_round) {
+    ApplyRounding<32>(src, adjusted_tx_height);
+  }
+
+  assert(adjusted_tx_height % 4 == 0);
+  int i = adjusted_tx_height;
+  auto* data = src;
+  do {
+    // Process 4 1d dct32 rows in parallel per iteration.
+    Dct32_NEON(data, 32, /*is_row=*/true, row_shift);
+    data += 128;
+    i -= 4;
+  } while (i != 0);
+}
+
+void Dct32TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
+                                   int adjusted_tx_height, void* src_buffer,
+                                   int start_x, int start_y, void* dst_frame) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_width = kTransformWidth[tx_size];
+
+  if (kTransformFlipColumnsMask.Contains(tx_type)) {
+    FlipColumns<32>(src, tx_width);
+  }
+
+  if (!DctDcOnlyColumn<32>(src, adjusted_tx_height, tx_width)) {
+    // Process 4 1d dct32 columns in parallel per iteration.
+    int i = tx_width;
+    auto* data = src;
+    do {
+      Dct32_NEON(data, tx_width, /*is_row=*/false, /*row_shift=*/0);
+      data += 4;
+      i -= 4;
+    } while (i != 0);
+  }
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  StoreToFrameWithRound<32>(frame, start_x, start_y, tx_width, src, tx_type);
 }
 
 //------------------------------------------------------------------------------
@@ -757,6 +988,10 @@ void Init10bpp() {
       Dct16TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformDct][k1DTransformSize16][kColumn] =
       Dct16TransformLoopColumn_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kRow] =
+      Dct32TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kColumn] =
+      Dct32TransformLoopColumn_NEON;
 }
 
 }  // namespace
