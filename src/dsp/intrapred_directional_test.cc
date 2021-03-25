@@ -43,7 +43,7 @@ constexpr int kMaxBlockSize = 64;
 constexpr int kTotalPixels = kMaxBlockSize * kMaxBlockSize;
 constexpr int kNumDirectionalIntraPredictors = 3;
 
-constexpr int kBaseAngles[] = {45, 67, 90, 113, 135, 157, 180, 203};
+constexpr int kBaseAngles[] = {0, 23, 45, 67, 90, 113, 135, 157, 180, 203};
 
 const char* const kDirectionalPredNames[kNumDirectionalIntraPredictors] = {
     "kDirectionalIntraPredictorZone1", "kDirectionalIntraPredictorZone2",
@@ -565,97 +565,97 @@ using DirectionalIntraPredTest8bpp = DirectionalIntraPredTest<8, uint8_t>;
 
 const char* const* GetDirectionalIntraPredDigests8bpp(TransformSize tx_size) {
   static const char* const kDigests4x4[kNumDirectionalIntraPredictors] = {
-      "9cfc1da729ad08682e165826c29b280b",
+      "8ad8df9bee4d2cd2e859222fa6d9ee41",
       "bb73539c7afbda7bddd2184723b932d6",
       "9d2882800ffe948196e984a26a2da72c",
   };
   static const char* const kDigests4x8[kNumDirectionalIntraPredictors] = {
-      "090efe6f83cc6fa301f65d3bbd5c38d2",
+      "e4142c2b1740d803430179f3b1f2c6df",
       "d0fba4cdfb90f8bd293a94cae9db1a15",
       "f7ad0eeab4389d0baa485d30fec87617",
   };
   static const char* const kDigests4x16[kNumDirectionalIntraPredictors] = {
-      "1d32b33c75fe85248c48cdc8caa78d84",
+      "cb40c290cd4e03643e7d6c09fa165fae",
       "7000e18159443d366129a6cc6ef8fcee",
       "06c02fac5f8575f687abb3f634eb0b4c",
   };
   static const char* const kDigests8x4[kNumDirectionalIntraPredictors] = {
-      "1b591799685bc135982114b731293f78",
+      "f8680474321ab994fdd3c819449d7316",
       "5cd9099acb9f7b2618dafa6712666580",
       "d023883efede88f99c19d006044d9fa1",
   };
   static const char* const kDigests8x8[kNumDirectionalIntraPredictors] = {
-      "f1e46ecf62a2516852f30c5025adb7ea",
+      "e71f70c2e29ebb0ea67e6088af71f179",
       "864442a209c16998065af28d8cdd839a",
       "411a6e554868982af577de69e53f12e8",
   };
   static const char* const kDigests8x16[kNumDirectionalIntraPredictors] = {
-      "89278302be913a85cfb06feaea339459",
+      "824db3d7eafbd03d3c6548189cd29c71",
       "6c42f1a9493490cd4529fd40729cec3c",
       "2516b5e1c681e5dcb1acedd5f3d41106",
   };
   static const char* const kDigests8x32[kNumDirectionalIntraPredictors] = {
-      "aea7078f3eeaa8afbfe6c959c9e676f1",
+      "99494835a85839df16696a7c2f58b412",
       "cad30babf12729dda5010362223ba65c",
       "ff384ebdc832007775af418a2aae1463",
   };
   static const char* const kDigests16x4[kNumDirectionalIntraPredictors] = {
-      "964a821c313c831e12f4d32e616c0b55",
+      "10770139800954c27157fcdab06efe83",
       "adf6dad3a84ab4d16c16eea218bec57a",
       "a54fa008d43895e523474686c48a81c2",
   };
   static const char* const kDigests16x8[kNumDirectionalIntraPredictors] = {
-      "fe2851b4e4f9fcf924cf17d50415a4c0",
+      "bbba8da077f36dc23693836bf456cdad",
       "50a0e279c481437ff315d08eb904c733",
       "0682065c8fb6cbf9be4949316c87c9e5",
   };
   static const char* const kDigests16x16[kNumDirectionalIntraPredictors] = {
-      "ef15503b1943642e7a0bace1616c0e11",
+      "2a60da9afba0b8d19e08ca80431d3230",
       "bf1a4d3f855f1072a902a88ec6ce0350",
       "7e87a03e29cd7fd843fd71b729a18f3f",
   };
   static const char* const kDigests16x32[kNumDirectionalIntraPredictors] = {
-      "f7b636615d2e5bf289b5db452a6f188d",
+      "cd57f4f497fb1c3c1a8f563f95a607c6",
       "e95858c532c10d00b0ce7a02a02121dd",
       "34a18ccf58ef490f32268e85ce8c7de4",
   };
   static const char* const kDigests16x64[kNumDirectionalIntraPredictors] = {
-      "b250099986c2fab9670748598058846b",
+      "b4834c765492b5ffb7ae7cdeffa80ab0",
       "f25d80af4da862a9b6b72979f1e17cb4",
       "5347dc7bc346733b4887f6c8ad5e0898",
   };
   static const char* const kDigests32x8[kNumDirectionalIntraPredictors] = {
-      "72e4c9f8af043b1cb1263490351818ab",
+      "9c220f03d4e3cd22f968c08c49bb3680",
       "1fc010d2df011b9e4e3d0957107c78df",
       "f4cbfa3ca941ef08b972a68d7e7bafc4",
   };
   static const char* const kDigests32x16[kNumDirectionalIntraPredictors] = {
-      "37e5a1aaf7549d2bce08eece9d20f0f6",
+      "a1259a4cf51e4c81a8f9cd3db51fa1f6",
       "6a2794025d0aca414ab17baa3cf8251a",
       "63dd37a6efdc91eeefef166c99ce2db1",
   };
   static const char* const kDigests32x32[kNumDirectionalIntraPredictors] = {
-      "198aabc958992eb49cceab97d1acb43e",
+      "d5fb6de7977d80d00e04af512e31738c",
       "aee88b6c8bacfcf38799fe338e6c66e7",
       "01e8f8f96696636f6d79d33951907a16",
   };
   static const char* const kDigests32x64[kNumDirectionalIntraPredictors] = {
-      "0611390202c4f90f7add7aec763ded58",
+      "dfe0ff049ff8070d5f0be9962a33577a",
       "960240c7ceda2ccfac7c90b71460578a",
       "7e7d97594aab8ad56e8c01c340335607",
   };
   static const char* const kDigests64x16[kNumDirectionalIntraPredictors] = {
-      "7e1f567e7fc510757f2d89d638bc826f",
+      "795002c7aebaa78d14bdcaa278e79654",
       "c929d687352ce40a58670be2ce3c8c90",
       "f6881e6a9ba3c3d3d730b425732656b1",
   };
   static const char* const kDigests64x32[kNumDirectionalIntraPredictors] = {
-      "27b4c2a7081d4139f22003ba8b6dfdf2",
+      "b5eec136cc7eab80c7ba08cf82fea1e1",
       "301e82740866b9274108a04c872fa848",
       "98d3aa4fef838f4abf00dac33806659f",
   };
   static const char* const kDigests64x64[kNumDirectionalIntraPredictors] = {
-      "b31816db8fade3accfd975b21aa264c7",
+      "4264bc2232655a644e294008c7cbc3ff",
       "2adce01a03b9452633d5830e1a9b4e23",
       "7b988fadba8b07c36e88d7be6b270494",
   };
@@ -730,97 +730,97 @@ using DirectionalIntraPredTest10bpp = DirectionalIntraPredTest<10, uint16_t>;
 
 const char* const* GetDirectionalIntraPredDigests10bpp(TransformSize tx_size) {
   static const char* const kDigests4x4[kNumDirectionalIntraPredictors] = {
-      "a683f4d7ccd978737615f61ecb4d638d",
+      "eea27481c42418c8d2f04eb293b581a9",
       "90c94374eaf7e9501f197863937b8639",
       "0d3969cd081523ac6a906eecc7980c43",
   };
   static const char* const kDigests4x8[kNumDirectionalIntraPredictors] = {
-      "c3ffa2979b325644e4a56c882fe27347",
+      "d67dcdcc11623b47202a11b5909f4100",
       "1f61f5ee413a9a3b8d1d93869ec2aee0",
       "4795ea944779ec4a783408769394d874",
   };
   static const char* const kDigests4x16[kNumDirectionalIntraPredictors] = {
-      "45c3282c9aa51024c1d64a40f230aa45",
+      "ad4163aeb64db43ae52379b8c04b4f47",
       "5cd47dd69f8bd0b15365a0c5cfc0a49a",
       "06336c507b05f98c1d6a21abc43e6182",
   };
   static const char* const kDigests8x4[kNumDirectionalIntraPredictors] = {
-      "7370476ff0abbdc5e92f811b8879c861",
+      "51d96f73603f0f31adf3ac1a39f299b0",
       "a239a50adb28a4791b52a0dfff3bee06",
       "4779a17f958a9ca04e8ec08c5aba1d36",
   };
   static const char* const kDigests8x8[kNumDirectionalIntraPredictors] = {
-      "305463f346c376594f82aad8304e0362",
+      "e8ad01923691af488f7fcafd1f091c68",
       "0cd481e5bda286c87a645417569fd948",
       "48c7899dc9b7163b0b1f61b3a2b4b73e",
   };
   static const char* const kDigests8x16[kNumDirectionalIntraPredictors] = {
-      "5c18fd5339be90628c82b1fb6af50d5e",
+      "7bbff9deea5234946c3126b11b88826b",
       "35eaa566ebd3bb7c903cfead5dc9ac78",
       "9fdb0e790e5965810d02c02713c84071",
   };
   static const char* const kDigests8x32[kNumDirectionalIntraPredictors] = {
-      "2168d6cc858c704748b7b343ced2ac3a",
+      "747160ae2cfe501467b4ffc19052f13a",
       "1d3ce273107447faafd2e55877e48ffb",
       "d344164049d1fe9b65a3ae8764bbbd37",
   };
   static const char* const kDigests16x4[kNumDirectionalIntraPredictors] = {
-      "dcef2cf51abe3fe150f388a14c762d30",
+      "0bbe0a6fb6eb36b658125d5c1e85dab5",
       "6a810b289b1c14f8eab8ca1274e91ecd",
       "c94da7c11f3fb11963d85c8804fce2d9",
   };
   static const char* const kDigests16x8[kNumDirectionalIntraPredictors] = {
-      "50a0d08b0d99b7a574bad2cfb36efc39",
+      "9c525326fd8cb420fabb3f942595886b",
       "2dcb55874db39da70c8ca1318559f9fe",
       "6390bcd30ff3bc389ecc0a0952bea531",
   };
   static const char* const kDigests16x16[kNumDirectionalIntraPredictors] = {
-      "7146c83c2620935606d49f3cb5876f41",
+      "c557c2c0b2f0c6133cc68a56331c779d",
       "2318ddf30c070a53c9b9cf199cd1b2c5",
       "e9042e2124925aa7c1b6110617cb10e8",
   };
   static const char* const kDigests16x32[kNumDirectionalIntraPredictors] = {
-      "c970f401de7b7c5bb4e3ad447fcbef8f",
+      "1a3d8647e36053f47954f32876c4e0d1",
       "a18cc70730eecdaa31dbcf4306ff490f",
       "32c1528ad4a576a2210399d6b4ccd46e",
   };
   static const char* const kDigests16x64[kNumDirectionalIntraPredictors] = {
-      "00b3f0007da2e5d01380594a3d7162d5",
+      "400798bdbfd6e53a126249d37baf88cf",
       "1971af519e4a18967b7311f93efdd1b8",
       "e6139769ce5a9c4982cfab9363004516",
   };
   static const char* const kDigests32x8[kNumDirectionalIntraPredictors] = {
-      "08107ad971179cc9f465ae5966bd4901",
+      "55682ca57a4bb487ddff2c4c69096752",
       "b215212a3c0dfe9182c4f2e903d731f7",
       "791274416a0da87c674e1ae318b3ce09",
   };
   static const char* const kDigests32x16[kNumDirectionalIntraPredictors] = {
-      "94ea6cccae35b5d08799aa003ac08ccf",
+      "99f5d727a66de1784435008a975956e0",
       "ae105e20e63fb55d4fd9d9e59dc62dde",
       "973d0b2358ea585e4f486e7e645c5310",
   };
   static const char* const kDigests32x32[kNumDirectionalIntraPredictors] = {
-      "d14c695c4853ddf5e5d8256bc1d1ed60",
+      "44b37c20b536865af4f139ed0612e12e",
       "6bd0ebeb53adecc11442b1218b870cb7",
       "e03bc402a9999aba8272275dce93e89f",
   };
   static const char* const kDigests32x64[kNumDirectionalIntraPredictors] = {
-      "b21a8a8723758392ee659eeeae518a1e",
+      "8f33e795dd26863b534e4530f568f854",
       "e50285454896210ce44d6f04dfde05a7",
       "f0f8ea0c6c2acc8d7d390927c3a90370",
   };
   static const char* const kDigests64x16[kNumDirectionalIntraPredictors] = {
-      "ce51db16fd4fa56e601631397b098c89",
+      "197608913847ad00cb7c10dadaf0925e",
       "aa87a8635e02c1e91d13158c61e443f6",
       "4c1ee3afd46ef34bd711a34d0bf86f13",
   };
   static const char* const kDigests64x32[kNumDirectionalIntraPredictors] = {
-      "25aaf5971e24e543e3e69a47254af777",
+      "efb33588b05ccc583b51068f7721dbff",
       "eb6f444b3df127d69460778ab5bf8fc1",
       "2f846cc0d506f90c0a58438600819817",
   };
   static const char* const kDigests64x64[kNumDirectionalIntraPredictors] = {
-      "b26ce5b5f4b5d4a438b52e5987877fb8",
+      "add2c10676d956eb1ef44b8c8f5c5d0c",
       "35721a00a70938111939cf69988d928e",
       "0af7ec35939483fac82c246a13845806",
   };
