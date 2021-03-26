@@ -23,6 +23,7 @@
 #include "src/dsp/film_grain.h"
 #include "src/dsp/intra_edge.h"
 #include "src/dsp/intrapred.h"
+#include "src/dsp/intrapred_cfl.h"
 #include "src/dsp/intrapred_directional.h"
 #include "src/dsp/intrapred_filter.h"
 #include "src/dsp/inverse_transform.h"
@@ -47,6 +48,7 @@ void DspInit_C() {
   dsp::DistanceWeightedBlendInit_C();
   dsp::FilmGrainInit_C();
   dsp::IntraEdgeInit_C();
+  dsp::IntraPredCflInit_C();
   dsp::IntraPredDirectionalInit_C();
   dsp::IntraPredFilterInit_C();
   dsp::IntraPredInit_C();
@@ -96,6 +98,7 @@ void DspInit() {
       DistanceWeightedBlendInit_SSE4_1();
       FilmGrainInit_SSE4_1();
       IntraEdgeInit_SSE4_1();
+      IntraPredCflInit_SSE4_1();
       IntraPredDirectionalInit_SSE4_1();
       IntraPredFilterInit_SSE4_1();
       IntraPredInit_SSE4_1();

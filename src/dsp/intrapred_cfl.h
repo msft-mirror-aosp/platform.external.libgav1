@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 The libgav1 Authors
+ * Copyright 2021 The libgav1 Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef LIBGAV1_SRC_DSP_INTRAPRED_H_
-#define LIBGAV1_SRC_DSP_INTRAPRED_H_
+#ifndef LIBGAV1_SRC_DSP_INTRAPRED_CFL_H_
+#define LIBGAV1_SRC_DSP_INTRAPRED_CFL_H_
 
 // Pull in LIBGAV1_DspXXX defines representing the implementation status
 // of each function. The resulting value of each can be used by each module to
@@ -23,14 +23,14 @@
 // IWYU pragma: begin_exports
 
 // ARM:
-#include "src/dsp/arm/intrapred_neon.h"
+#include "src/dsp/arm/intrapred_cfl_neon.h"
 
 // x86:
 // Note includes should be sorted in logical order avx2/avx/sse4, etc.
 // The order of includes is important as each tests for a superior version
 // before setting the base.
 // clang-format off
-#include "src/dsp/x86/intrapred_sse4.h"
+#include "src/dsp/x86/intrapred_cfl_sse4.h"
 // clang-format on
 
 // IWYU pragma: end_exports
@@ -38,10 +38,11 @@
 namespace libgav1 {
 namespace dsp {
 
-// Initializes Dsp::intra_predictors. This function is not thread-safe.
-void IntraPredInit_C();
+// Initializes Dsp::cfl_intra_predictors and Dsp::cfl_subsamplers.
+// This function is not thread-safe.
+void IntraPredCflInit_C();
 
 }  // namespace dsp
 }  // namespace libgav1
 
-#endif  // LIBGAV1_SRC_DSP_INTRAPRED_H_
+#endif  // LIBGAV1_SRC_DSP_INTRAPRED_CFL_H_

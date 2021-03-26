@@ -26,7 +26,6 @@ namespace dsp {
 // Initializes Dsp::intra_predictors, Dsp::cfl_intra_predictors, and
 // Dsp::cfl_subsamplers, see the defines below for specifics. These functions
 // are not thread-safe.
-void IntraPredCflInit_NEON();
 void IntraPredInit_NEON();
 void IntraPredSmoothInit_NEON();
 
