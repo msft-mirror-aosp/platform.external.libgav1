@@ -629,6 +629,132 @@ LIBGAV1_ALWAYS_INLINE void Dct32_NEON(void* dest, const int32_t step,
 }
 
 //------------------------------------------------------------------------------
+// Asymmetric Discrete Sine Transforms (ADST).
+LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step, bool is_row,
+                                      int row_shift) {
+  auto* const dst = static_cast<int32_t*>(dest);
+  int32x4_t s[8];
+  int32x4_t x[4];
+
+  LoadSrc<4>(dst, step, 0, x);
+  if (is_row) {
+    Transpose4x4(x, x);
+  }
+
+  // stage 1.
+  s[5] = vmulq_n_s32(x[3], kAdst4Multiplier[1]);
+  s[6] = vmulq_n_s32(x[3], kAdst4Multiplier[3]);
+
+  // stage 2.
+  const int32x4_t a7 = vsubq_s32(x[0], x[2]);
+  const int32x4_t b7 = vaddq_s32(a7, x[3]);
+
+  // stage 3.
+  s[0] = vmulq_n_s32(x[0], kAdst4Multiplier[0]);
+  s[1] = vmulq_n_s32(x[0], kAdst4Multiplier[1]);
+  // s[0] = s[0] + s[3]
+  s[0] = vmlaq_n_s32(s[0], x[2], kAdst4Multiplier[3]);
+  // s[1] = s[1] - s[4]
+  s[1] = vmlsq_n_s32(s[1], x[2], kAdst4Multiplier[0]);
+
+  s[3] = vmulq_n_s32(x[1], kAdst4Multiplier[2]);
+  s[2] = vmulq_n_s32(b7, kAdst4Multiplier[2]);
+
+  // stage 4.
+  s[0] = vaddq_s32(s[0], s[5]);
+  s[1] = vsubq_s32(s[1], s[6]);
+
+  // stages 5 and 6.
+  const int32x4_t x0 = vaddq_s32(s[0], s[3]);
+  const int32x4_t x1 = vaddq_s32(s[1], s[3]);
+  const int32x4_t x3_a = vaddq_s32(s[0], s[1]);
+  const int32x4_t x3 = vsubq_s32(x3_a, s[3]);
+  x[0] = vrshrq_n_s32(x0, 12);
+  x[1] = vrshrq_n_s32(x1, 12);
+  x[2] = vrshrq_n_s32(s[2], 12);
+  x[3] = vrshrq_n_s32(x3, 12);
+
+  if (is_row) {
+    const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
+    x[0] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[0], v_row_shift)));
+    x[1] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[1], v_row_shift)));
+    x[2] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[2], v_row_shift)));
+    x[3] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[3], v_row_shift)));
+    Transpose4x4(x, x);
+  }
+  StoreDst<4>(dst, step, 0, x);
+}
+
+alignas(16) constexpr int32_t kAdst4DcOnlyMultiplier[4] = {1321, 2482, 3344,
+                                                           2482};
+
+LIBGAV1_ALWAYS_INLINE bool Adst4DcOnly(void* dest, int adjusted_tx_height,
+                                       bool should_round, int row_shift) {
+  if (adjusted_tx_height > 1) return false;
+
+  auto* dst = static_cast<int32_t*>(dest);
+  int32x4_t s[2];
+
+  const int32x4_t v_src0 = vdupq_n_s32(dst[0]);
+  const uint32x4_t v_mask = vdupq_n_u32(should_round ? 0xffffffff : 0);
+  const int32x4_t v_src0_round =
+      vqrdmulhq_n_s32(v_src0, kTransformRowMultiplier << (31 - 12));
+
+  const int32x4_t v_src = vbslq_s32(v_mask, v_src0_round, v_src0);
+  const int32x4_t kAdst4DcOnlyMultipliers = vld1q_s32(kAdst4DcOnlyMultiplier);
+  s[1] = vdupq_n_s32(0);
+
+  // s0*k0 s0*k1 s0*k2 s0*k1
+  s[0] = vmulq_s32(kAdst4DcOnlyMultipliers, v_src);
+  // 0     0     0     s0*k0
+  s[1] = vextq_s32(s[1], s[0], 1);
+
+  const int32x4_t x3 = vaddq_s32(s[0], s[1]);
+  const int32x4_t dst_0 = vrshrq_n_s32(x3, 12);
+
+  // vqrshlq_s32 will shift right if shift value is negative.
+  vst1q_s32(dst,
+            vmovl_s16(vqmovn_s32(vqrshlq_s32(dst_0, vdupq_n_s32(-row_shift)))));
+
+  return true;
+}
+
+LIBGAV1_ALWAYS_INLINE bool Adst4DcOnlyColumn(void* dest, int adjusted_tx_height,
+                                             int width) {
+  if (adjusted_tx_height > 1) return false;
+
+  auto* dst = static_cast<int32_t*>(dest);
+  int32x4_t s[4];
+
+  int i = 0;
+  do {
+    const int32x4_t v_src = vld1q_s32(&dst[i]);
+
+    s[0] = vmulq_n_s32(v_src, kAdst4Multiplier[0]);
+    s[1] = vmulq_n_s32(v_src, kAdst4Multiplier[1]);
+    s[2] = vmulq_n_s32(v_src, kAdst4Multiplier[2]);
+
+    const int32x4_t x0 = s[0];
+    const int32x4_t x1 = s[1];
+    const int32x4_t x2 = s[2];
+    const int32x4_t x3 = vaddq_s32(s[0], s[1]);
+    const int32x4_t dst_0 = vrshrq_n_s32(x0, 12);
+    const int32x4_t dst_1 = vrshrq_n_s32(x1, 12);
+    const int32x4_t dst_2 = vrshrq_n_s32(x2, 12);
+    const int32x4_t dst_3 = vrshrq_n_s32(x3, 12);
+
+    vst1q_s32(&dst[i], dst_0);
+    vst1q_s32(&dst[i + width * 1], dst_1);
+    vst1q_s32(&dst[i + width * 2], dst_2);
+    vst1q_s32(&dst[i + width * 3], dst_3);
+
+    i += 4;
+  } while (i < width);
+
+  return true;
+}
+
+//------------------------------------------------------------------------------
 // row/column transform loops
 
 template <int tx_height>
@@ -970,6 +1096,59 @@ void Dct32TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
   StoreToFrameWithRound<32>(frame, start_x, start_y, tx_width, src, tx_type);
 }
 
+void Adst4TransformLoopRow_NEON(TransformType /*tx_type*/,
+                                TransformSize tx_size, int adjusted_tx_height,
+                                void* src_buffer, int /*start_x*/,
+                                int /*start_y*/, void* /*dst_frame*/) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_height = kTransformHeight[tx_size];
+  const int row_shift = static_cast<int>(tx_height == 16);
+  const bool should_round = (tx_height == 8);
+
+  if (Adst4DcOnly(src, adjusted_tx_height, should_round, row_shift)) {
+    return;
+  }
+
+  if (should_round) {
+    ApplyRounding<4>(src, adjusted_tx_height);
+  }
+
+  // Process 4 1d adst4 rows in parallel per iteration.
+  int i = adjusted_tx_height;
+  auto* data = src;
+  do {
+    Adst4_NEON(data, /*step=*/4, /*is_row=*/true, row_shift);
+    data += 16;
+    i -= 4;
+  } while (i != 0);
+}
+
+void Adst4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
+                                   int adjusted_tx_height, void* src_buffer,
+                                   int start_x, int start_y, void* dst_frame) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_width = kTransformWidth[tx_size];
+
+  if (kTransformFlipColumnsMask.Contains(tx_type)) {
+    FlipColumns<4>(src, tx_width);
+  }
+
+  if (!Adst4DcOnlyColumn(src, adjusted_tx_height, tx_width)) {
+    // Process 4 1d adst4 columns in parallel per iteration.
+    int i = tx_width;
+    auto* data = src;
+    do {
+      Adst4_NEON(data, tx_width, /*is_row=*/false, /*row_shift=*/0);
+      data += 4;
+      i -= 4;
+    } while (i != 0);
+  }
+
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  StoreToFrameWithRound<4, /*enable_flip_rows=*/true>(frame, start_x, start_y,
+                                                      tx_width, src, tx_type);
+}
+
 //------------------------------------------------------------------------------
 
 void Init10bpp() {
@@ -992,6 +1171,12 @@ void Init10bpp() {
       Dct32TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kColumn] =
       Dct32TransformLoopColumn_NEON;
+
+  // Maximum transform size for Adst is 16.
+  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kRow] =
+      Adst4TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kColumn] =
+      Adst4TransformLoopColumn_NEON;
 }
 
 }  // namespace
