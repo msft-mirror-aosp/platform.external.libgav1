@@ -66,7 +66,7 @@ int16_t GetDirectionalIntraPredictorDerivative(const int angle) {
 }
 
 template <int bitdepth, typename Pixel>
-class IntraPredTestBase : public ::testing::TestWithParam<TransformSize>,
+class IntraPredTestBase : public testing::TestWithParam<TransformSize>,
                           public test_utils::MaxAlignedAllocable {
  public:
   IntraPredTestBase() {
@@ -172,8 +172,8 @@ class DirectionalIntraPredTest : public IntraPredTestBase<bitdepth, Pixel> {
     base_directional_intra_pred_zone2_ = dsp->directional_intra_predictor_zone2;
     base_directional_intra_pred_zone3_ = dsp->directional_intra_predictor_zone3;
 
-    const ::testing::TestInfo* const test_info =
-        ::testing::UnitTest::GetInstance()->current_test_info();
+    const testing::TestInfo* const test_info =
+        testing::UnitTest::GetInstance()->current_test_info();
     const char* const test_case = test_info->test_suite_name();
     if (absl::StartsWith(test_case, "C/")) {
       base_directional_intra_pred_zone1_ = nullptr;
@@ -899,26 +899,26 @@ constexpr TransformSize kTransformSizes[] = {
     kTransformSize64x64};
 
 INSTANTIATE_TEST_SUITE_P(C, DirectionalIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, DirectionalIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 #endif  // LIBGAV1_ENABLE_SSE4_1
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, DirectionalIntraPredTest8bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 #endif  // LIBGAV1_ENABLE_NEON
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 INSTANTIATE_TEST_SUITE_P(C, DirectionalIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, DirectionalIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 #endif  // LIBGAV1_ENABLE_SSE4_1
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, DirectionalIntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 #endif  // LIBGAV1_ENABLE_NEON
 
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10

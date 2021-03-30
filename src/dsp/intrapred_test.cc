@@ -703,7 +703,7 @@ INSTANTIATE_TEST_SUITE_P(SSE41, IntraPredTest10bpp,
 #endif  // LIBGAV1_ENABLE_SSE4_1
 #if LIBGAV1_ENABLE_NEON
 INSTANTIATE_TEST_SUITE_P(NEON, IntraPredTest10bpp,
-                         ::testing::ValuesIn(kTransformSizes));
+                         testing::ValuesIn(kTransformSizes));
 #endif  // LIBGAV1_ENABLE_NEON
 
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
