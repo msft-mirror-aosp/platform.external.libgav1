@@ -114,6 +114,45 @@ LIBGAV1_ALWAYS_INLINE void ButterflyRotation_4(int32x4_t* a, int32x4_t* b,
   }
 }
 
+LIBGAV1_ALWAYS_INLINE void ButterflyRotation_FirstIsZero(int32x4_t* a,
+                                                         int32x4_t* b,
+                                                         const int angle,
+                                                         const bool flip) {
+  const int32_t cos128 = Cos128(angle);
+  const int32_t sin128 = Sin128(angle);
+  assert(sin128 <= 0xfff);
+  const int32x4_t x0 = vmulq_n_s32(*b, -sin128);
+  const int32x4_t y0 = vmulq_n_s32(*b, cos128);
+  const int32x4_t x = vrshrq_n_s32(x0, 12);
+  const int32x4_t y = vrshrq_n_s32(y0, 12);
+  if (flip) {
+    *a = y;
+    *b = x;
+  } else {
+    *a = x;
+    *b = y;
+  }
+}
+
+LIBGAV1_ALWAYS_INLINE void ButterflyRotation_SecondIsZero(int32x4_t* a,
+                                                          int32x4_t* b,
+                                                          const int angle,
+                                                          const bool flip) {
+  const int32_t cos128 = Cos128(angle);
+  const int32_t sin128 = Sin128(angle);
+  const int32x4_t x0 = vmulq_n_s32(*a, cos128);
+  const int32x4_t y0 = vmulq_n_s32(*a, sin128);
+  const int32x4_t x = vrshrq_n_s32(x0, 12);
+  const int32x4_t y = vrshrq_n_s32(y0, 12);
+  if (flip) {
+    *a = y;
+    *b = x;
+  } else {
+    *a = x;
+    *b = y;
+  }
+}
+
 LIBGAV1_ALWAYS_INLINE void HadamardRotation(int32x4_t* a, int32x4_t* b,
                                             bool flip) {
   int32x4_t x, y;
@@ -207,13 +246,19 @@ LIBGAV1_ALWAYS_INLINE bool DctDcOnlyColumn(void* dest, int adjusted_tx_height,
   return true;
 }
 
-template <ButterflyRotationFunc butterfly_rotation>
+template <ButterflyRotationFunc butterfly_rotation,
+          bool is_fast_butterfly = false>
 LIBGAV1_ALWAYS_INLINE void Dct4Stages(int32x4_t* s, const int32x4_t* min,
                                       const int32x4_t* max,
                                       const bool is_last_stage) {
   // stage 12.
-  butterfly_rotation(&s[0], &s[1], 32, true);
-  butterfly_rotation(&s[2], &s[3], 48, false);
+  if (is_fast_butterfly) {
+    ButterflyRotation_SecondIsZero(&s[0], &s[1], 32, true);
+    ButterflyRotation_SecondIsZero(&s[2], &s[3], 48, false);
+  } else {
+    butterfly_rotation(&s[0], &s[1], 32, true);
+    butterfly_rotation(&s[2], &s[3], 48, false);
+  }
 
   // stage 17.
   if (is_last_stage) {
@@ -260,13 +305,19 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool is_row,
   StoreDst<4>(dst, step, 0, s);
 }
 
-template <ButterflyRotationFunc butterfly_rotation>
+template <ButterflyRotationFunc butterfly_rotation,
+          bool is_fast_butterfly = false>
 LIBGAV1_ALWAYS_INLINE void Dct8Stages(int32x4_t* s, const int32x4_t* min,
                                       const int32x4_t* max,
                                       const bool is_last_stage) {
   // stage 8.
-  butterfly_rotation(&s[4], &s[7], 56, false);
-  butterfly_rotation(&s[5], &s[6], 24, false);
+  if (is_fast_butterfly) {
+    ButterflyRotation_SecondIsZero(&s[4], &s[7], 56, false);
+    ButterflyRotation_FirstIsZero(&s[5], &s[6], 24, false);
+  } else {
+    butterfly_rotation(&s[4], &s[7], 56, false);
+    butterfly_rotation(&s[5], &s[6], 24, false);
+  }
 
   // stage 13.
   HadamardRotation(&s[4], &s[5], false, min, max);
@@ -336,15 +387,23 @@ LIBGAV1_ALWAYS_INLINE void Dct8_NEON(void* dest, int32_t step, bool is_row,
   }
 }
 
-template <ButterflyRotationFunc butterfly_rotation>
+template <ButterflyRotationFunc butterfly_rotation,
+          bool is_fast_butterfly = false>
 LIBGAV1_ALWAYS_INLINE void Dct16Stages(int32x4_t* s, const int32x4_t* min,
                                        const int32x4_t* max,
                                        const bool is_last_stage) {
   // stage 5.
-  butterfly_rotation(&s[8], &s[15], 60, false);
-  butterfly_rotation(&s[9], &s[14], 28, false);
-  butterfly_rotation(&s[10], &s[13], 44, false);
-  butterfly_rotation(&s[11], &s[12], 12, false);
+  if (is_fast_butterfly) {
+    ButterflyRotation_SecondIsZero(&s[8], &s[15], 60, false);
+    ButterflyRotation_FirstIsZero(&s[9], &s[14], 28, false);
+    ButterflyRotation_SecondIsZero(&s[10], &s[13], 44, false);
+    ButterflyRotation_FirstIsZero(&s[11], &s[12], 12, false);
+  } else {
+    butterfly_rotation(&s[8], &s[15], 60, false);
+    butterfly_rotation(&s[9], &s[14], 28, false);
+    butterfly_rotation(&s[10], &s[13], 44, false);
+    butterfly_rotation(&s[11], &s[12], 12, false);
+  }
 
   // stage 9.
   HadamardRotation(&s[8], &s[9], false, min, max);
@@ -448,19 +507,31 @@ LIBGAV1_ALWAYS_INLINE void Dct16_NEON(void* dest, int32_t step, bool is_row,
   }
 }
 
-template <ButterflyRotationFunc butterfly_rotation>
+template <ButterflyRotationFunc butterfly_rotation,
+          bool is_fast_butterfly = false>
 LIBGAV1_ALWAYS_INLINE void Dct32Stages(int32x4_t* s, const int32x4_t* min,
                                        const int32x4_t* max,
                                        const bool is_last_stage) {
   // stage 3
-  butterfly_rotation(&s[16], &s[31], 62, false);
-  butterfly_rotation(&s[17], &s[30], 30, false);
-  butterfly_rotation(&s[18], &s[29], 46, false);
-  butterfly_rotation(&s[19], &s[28], 14, false);
-  butterfly_rotation(&s[20], &s[27], 54, false);
-  butterfly_rotation(&s[21], &s[26], 22, false);
-  butterfly_rotation(&s[22], &s[25], 38, false);
-  butterfly_rotation(&s[23], &s[24], 6, false);
+  if (is_fast_butterfly) {
+    ButterflyRotation_SecondIsZero(&s[16], &s[31], 62, false);
+    ButterflyRotation_FirstIsZero(&s[17], &s[30], 30, false);
+    ButterflyRotation_SecondIsZero(&s[18], &s[29], 46, false);
+    ButterflyRotation_FirstIsZero(&s[19], &s[28], 14, false);
+    ButterflyRotation_SecondIsZero(&s[20], &s[27], 54, false);
+    ButterflyRotation_FirstIsZero(&s[21], &s[26], 22, false);
+    ButterflyRotation_SecondIsZero(&s[22], &s[25], 38, false);
+    ButterflyRotation_FirstIsZero(&s[23], &s[24], 6, false);
+  } else {
+    butterfly_rotation(&s[16], &s[31], 62, false);
+    butterfly_rotation(&s[17], &s[30], 30, false);
+    butterfly_rotation(&s[18], &s[29], 46, false);
+    butterfly_rotation(&s[19], &s[28], 14, false);
+    butterfly_rotation(&s[20], &s[27], 54, false);
+    butterfly_rotation(&s[21], &s[26], 22, false);
+    butterfly_rotation(&s[22], &s[25], 38, false);
+    butterfly_rotation(&s[23], &s[24], 6, false);
+  }
 
   // stage 6.
   HadamardRotation(&s[16], &s[17], false, min, max);
@@ -625,6 +696,235 @@ LIBGAV1_ALWAYS_INLINE void Dct32_NEON(void* dest, const int32_t step,
     }
   } else {
     StoreDst<32>(dst, step, 0, &s[0]);
+  }
+}
+
+void Dct64_NEON(void* dest, int32_t step, bool is_row, int row_shift) {
+  auto* const dst = static_cast<int32_t*>(dest);
+  const int32_t range = is_row ? kBitdepth10 + 7 : 15;
+  const int32x4_t min = vdupq_n_s32(-(1 << range));
+  const int32x4_t max = vdupq_n_s32((1 << range) - 1);
+  int32x4_t s[64], x[32];
+
+  if (is_row) {
+    // The last 32 values of every row are always zero if the |tx_width| is
+    // 64.
+    for (int idx = 0; idx < 32; idx += 8) {
+      LoadSrc<4>(dst, step, idx, &x[idx]);
+      LoadSrc<4>(dst, step, idx + 4, &x[idx + 4]);
+      Transpose4x4(&x[idx], &x[idx]);
+      Transpose4x4(&x[idx + 4], &x[idx + 4]);
+    }
+  } else {
+    // The last 32 values of every column are always zero if the |tx_height| is
+    // 64.
+    LoadSrc<32>(dst, step, 0, &x[0]);
+  }
+
+  // stage 1
+  // kBitReverseLookup
+  // 0, 32, 16, 48, 8, 40, 24, 56, 4, 36, 20, 52, 12, 44, 28, 60,
+  s[0] = x[0];
+  s[2] = x[16];
+  s[4] = x[8];
+  s[6] = x[24];
+  s[8] = x[4];
+  s[10] = x[20];
+  s[12] = x[12];
+  s[14] = x[28];
+
+  // 2, 34, 18, 50, 10, 42, 26, 58, 6, 38, 22, 54, 14, 46, 30, 62,
+  s[16] = x[2];
+  s[18] = x[18];
+  s[20] = x[10];
+  s[22] = x[26];
+  s[24] = x[6];
+  s[26] = x[22];
+  s[28] = x[14];
+  s[30] = x[30];
+
+  // 1, 33, 17, 49, 9, 41, 25, 57, 5, 37, 21, 53, 13, 45, 29, 61,
+  s[32] = x[1];
+  s[34] = x[17];
+  s[36] = x[9];
+  s[38] = x[25];
+  s[40] = x[5];
+  s[42] = x[21];
+  s[44] = x[13];
+  s[46] = x[29];
+
+  // 3, 35, 19, 51, 11, 43, 27, 59, 7, 39, 23, 55, 15, 47, 31, 63
+  s[48] = x[3];
+  s[50] = x[19];
+  s[52] = x[11];
+  s[54] = x[27];
+  s[56] = x[7];
+  s[58] = x[23];
+  s[60] = x[15];
+  s[62] = x[31];
+
+  Dct4Stages<ButterflyRotation_4, /*is_fast_butterfly=*/true>(
+      s, &min, &max, /*is_last_stage=*/false);
+  Dct8Stages<ButterflyRotation_4, /*is_fast_butterfly=*/true>(
+      s, &min, &max, /*is_last_stage=*/false);
+  Dct16Stages<ButterflyRotation_4, /*is_fast_butterfly=*/true>(
+      s, &min, &max, /*is_last_stage=*/false);
+  Dct32Stages<ButterflyRotation_4, /*is_fast_butterfly=*/true>(
+      s, &min, &max, /*is_last_stage=*/false);
+
+  //-- start dct 64 stages
+  // stage 2.
+  ButterflyRotation_SecondIsZero(&s[32], &s[63], 63 - 0, false);
+  ButterflyRotation_FirstIsZero(&s[33], &s[62], 63 - 32, false);
+  ButterflyRotation_SecondIsZero(&s[34], &s[61], 63 - 16, false);
+  ButterflyRotation_FirstIsZero(&s[35], &s[60], 63 - 48, false);
+  ButterflyRotation_SecondIsZero(&s[36], &s[59], 63 - 8, false);
+  ButterflyRotation_FirstIsZero(&s[37], &s[58], 63 - 40, false);
+  ButterflyRotation_SecondIsZero(&s[38], &s[57], 63 - 24, false);
+  ButterflyRotation_FirstIsZero(&s[39], &s[56], 63 - 56, false);
+  ButterflyRotation_SecondIsZero(&s[40], &s[55], 63 - 4, false);
+  ButterflyRotation_FirstIsZero(&s[41], &s[54], 63 - 36, false);
+  ButterflyRotation_SecondIsZero(&s[42], &s[53], 63 - 20, false);
+  ButterflyRotation_FirstIsZero(&s[43], &s[52], 63 - 52, false);
+  ButterflyRotation_SecondIsZero(&s[44], &s[51], 63 - 12, false);
+  ButterflyRotation_FirstIsZero(&s[45], &s[50], 63 - 44, false);
+  ButterflyRotation_SecondIsZero(&s[46], &s[49], 63 - 28, false);
+  ButterflyRotation_FirstIsZero(&s[47], &s[48], 63 - 60, false);
+
+  // stage 4.
+  HadamardRotation(&s[32], &s[33], false, &min, &max);
+  HadamardRotation(&s[34], &s[35], true, &min, &max);
+  HadamardRotation(&s[36], &s[37], false, &min, &max);
+  HadamardRotation(&s[38], &s[39], true, &min, &max);
+  HadamardRotation(&s[40], &s[41], false, &min, &max);
+  HadamardRotation(&s[42], &s[43], true, &min, &max);
+  HadamardRotation(&s[44], &s[45], false, &min, &max);
+  HadamardRotation(&s[46], &s[47], true, &min, &max);
+  HadamardRotation(&s[48], &s[49], false, &min, &max);
+  HadamardRotation(&s[50], &s[51], true, &min, &max);
+  HadamardRotation(&s[52], &s[53], false, &min, &max);
+  HadamardRotation(&s[54], &s[55], true, &min, &max);
+  HadamardRotation(&s[56], &s[57], false, &min, &max);
+  HadamardRotation(&s[58], &s[59], true, &min, &max);
+  HadamardRotation(&s[60], &s[61], false, &min, &max);
+  HadamardRotation(&s[62], &s[63], true, &min, &max);
+
+  // stage 7.
+  ButterflyRotation_4(&s[62], &s[33], 60 - 0, true);
+  ButterflyRotation_4(&s[61], &s[34], 60 - 0 + 64, true);
+  ButterflyRotation_4(&s[58], &s[37], 60 - 32, true);
+  ButterflyRotation_4(&s[57], &s[38], 60 - 32 + 64, true);
+  ButterflyRotation_4(&s[54], &s[41], 60 - 16, true);
+  ButterflyRotation_4(&s[53], &s[42], 60 - 16 + 64, true);
+  ButterflyRotation_4(&s[50], &s[45], 60 - 48, true);
+  ButterflyRotation_4(&s[49], &s[46], 60 - 48 + 64, true);
+
+  // stage 11.
+  HadamardRotation(&s[32], &s[35], false, &min, &max);
+  HadamardRotation(&s[33], &s[34], false, &min, &max);
+  HadamardRotation(&s[36], &s[39], true, &min, &max);
+  HadamardRotation(&s[37], &s[38], true, &min, &max);
+  HadamardRotation(&s[40], &s[43], false, &min, &max);
+  HadamardRotation(&s[41], &s[42], false, &min, &max);
+  HadamardRotation(&s[44], &s[47], true, &min, &max);
+  HadamardRotation(&s[45], &s[46], true, &min, &max);
+  HadamardRotation(&s[48], &s[51], false, &min, &max);
+  HadamardRotation(&s[49], &s[50], false, &min, &max);
+  HadamardRotation(&s[52], &s[55], true, &min, &max);
+  HadamardRotation(&s[53], &s[54], true, &min, &max);
+  HadamardRotation(&s[56], &s[59], false, &min, &max);
+  HadamardRotation(&s[57], &s[58], false, &min, &max);
+  HadamardRotation(&s[60], &s[63], true, &min, &max);
+  HadamardRotation(&s[61], &s[62], true, &min, &max);
+
+  // stage 16.
+  ButterflyRotation_4(&s[61], &s[34], 56, true);
+  ButterflyRotation_4(&s[60], &s[35], 56, true);
+  ButterflyRotation_4(&s[59], &s[36], 56 + 64, true);
+  ButterflyRotation_4(&s[58], &s[37], 56 + 64, true);
+  ButterflyRotation_4(&s[53], &s[42], 56 - 32, true);
+  ButterflyRotation_4(&s[52], &s[43], 56 - 32, true);
+  ButterflyRotation_4(&s[51], &s[44], 56 - 32 + 64, true);
+  ButterflyRotation_4(&s[50], &s[45], 56 - 32 + 64, true);
+
+  // stage 21.
+  HadamardRotation(&s[32], &s[39], false, &min, &max);
+  HadamardRotation(&s[33], &s[38], false, &min, &max);
+  HadamardRotation(&s[34], &s[37], false, &min, &max);
+  HadamardRotation(&s[35], &s[36], false, &min, &max);
+  HadamardRotation(&s[40], &s[47], true, &min, &max);
+  HadamardRotation(&s[41], &s[46], true, &min, &max);
+  HadamardRotation(&s[42], &s[45], true, &min, &max);
+  HadamardRotation(&s[43], &s[44], true, &min, &max);
+  HadamardRotation(&s[48], &s[55], false, &min, &max);
+  HadamardRotation(&s[49], &s[54], false, &min, &max);
+  HadamardRotation(&s[50], &s[53], false, &min, &max);
+  HadamardRotation(&s[51], &s[52], false, &min, &max);
+  HadamardRotation(&s[56], &s[63], true, &min, &max);
+  HadamardRotation(&s[57], &s[62], true, &min, &max);
+  HadamardRotation(&s[58], &s[61], true, &min, &max);
+  HadamardRotation(&s[59], &s[60], true, &min, &max);
+
+  // stage 25.
+  ButterflyRotation_4(&s[59], &s[36], 48, true);
+  ButterflyRotation_4(&s[58], &s[37], 48, true);
+  ButterflyRotation_4(&s[57], &s[38], 48, true);
+  ButterflyRotation_4(&s[56], &s[39], 48, true);
+  ButterflyRotation_4(&s[55], &s[40], 112, true);
+  ButterflyRotation_4(&s[54], &s[41], 112, true);
+  ButterflyRotation_4(&s[53], &s[42], 112, true);
+  ButterflyRotation_4(&s[52], &s[43], 112, true);
+
+  // stage 28.
+  HadamardRotation(&s[32], &s[47], false, &min, &max);
+  HadamardRotation(&s[33], &s[46], false, &min, &max);
+  HadamardRotation(&s[34], &s[45], false, &min, &max);
+  HadamardRotation(&s[35], &s[44], false, &min, &max);
+  HadamardRotation(&s[36], &s[43], false, &min, &max);
+  HadamardRotation(&s[37], &s[42], false, &min, &max);
+  HadamardRotation(&s[38], &s[41], false, &min, &max);
+  HadamardRotation(&s[39], &s[40], false, &min, &max);
+  HadamardRotation(&s[48], &s[63], true, &min, &max);
+  HadamardRotation(&s[49], &s[62], true, &min, &max);
+  HadamardRotation(&s[50], &s[61], true, &min, &max);
+  HadamardRotation(&s[51], &s[60], true, &min, &max);
+  HadamardRotation(&s[52], &s[59], true, &min, &max);
+  HadamardRotation(&s[53], &s[58], true, &min, &max);
+  HadamardRotation(&s[54], &s[57], true, &min, &max);
+  HadamardRotation(&s[55], &s[56], true, &min, &max);
+
+  // stage 30.
+  ButterflyRotation_4(&s[55], &s[40], 32, true);
+  ButterflyRotation_4(&s[54], &s[41], 32, true);
+  ButterflyRotation_4(&s[53], &s[42], 32, true);
+  ButterflyRotation_4(&s[52], &s[43], 32, true);
+  ButterflyRotation_4(&s[51], &s[44], 32, true);
+  ButterflyRotation_4(&s[50], &s[45], 32, true);
+  ButterflyRotation_4(&s[49], &s[46], 32, true);
+  ButterflyRotation_4(&s[48], &s[47], 32, true);
+
+  // stage 31.
+  for (int i = 0; i < 32; i += 4) {
+    HadamardRotation(&s[i], &s[63 - i], false, &min, &max);
+    HadamardRotation(&s[i + 1], &s[63 - i - 1], false, &min, &max);
+    HadamardRotation(&s[i + 2], &s[63 - i - 2], false, &min, &max);
+    HadamardRotation(&s[i + 3], &s[63 - i - 3], false, &min, &max);
+  }
+  //-- end dct 64 stages
+  if (is_row) {
+    const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
+    for (int idx = 0; idx < 64; idx += 8) {
+      int32x4_t output[8];
+      Transpose4x4(&s[idx], &output[0]);
+      Transpose4x4(&s[idx + 4], &output[4]);
+      for (int i = 0; i < 8; ++i) {
+        output[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(output[i], v_row_shift)));
+      }
+      StoreDst<4>(dst, step, idx, &output[0]);
+      StoreDst<4>(dst, step, idx + 4, &output[4]);
+    }
+  } else {
+    StoreDst<64>(dst, step, 0, &s[0]);
   }
 }
 
@@ -1096,6 +1396,57 @@ void Dct32TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
   StoreToFrameWithRound<32>(frame, start_x, start_y, tx_width, src, tx_type);
 }
 
+void Dct64TransformLoopRow_NEON(TransformType /*tx_type*/,
+                                TransformSize tx_size, int adjusted_tx_height,
+                                void* src_buffer, int /*start_x*/,
+                                int /*start_y*/, void* /*dst_frame*/) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const bool should_round = kShouldRound[tx_size];
+  const uint8_t row_shift = kTransformRowShift[tx_size];
+
+  if (DctDcOnly<64>(src, adjusted_tx_height, should_round, row_shift)) {
+    return;
+  }
+
+  if (should_round) {
+    ApplyRounding<64>(src, adjusted_tx_height);
+  }
+
+  assert(adjusted_tx_height % 4 == 0);
+  int i = adjusted_tx_height;
+  auto* data = src;
+  do {
+    // Process 4 1d dct64 rows in parallel per iteration.
+    Dct64_NEON(data, 64, /*is_row=*/true, row_shift);
+    data += 128 * 2;
+    i -= 4;
+  } while (i != 0);
+}
+
+void Dct64TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
+                                   int adjusted_tx_height, void* src_buffer,
+                                   int start_x, int start_y, void* dst_frame) {
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_width = kTransformWidth[tx_size];
+
+  if (kTransformFlipColumnsMask.Contains(tx_type)) {
+    FlipColumns<64>(src, tx_width);
+  }
+
+  if (!DctDcOnlyColumn<64>(src, adjusted_tx_height, tx_width)) {
+    // Process 4 1d dct64 columns in parallel per iteration.
+    int i = tx_width;
+    auto* data = src;
+    do {
+      Dct64_NEON(data, tx_width, /*is_row=*/false, /*row_shift=*/0);
+      data += 4;
+      i -= 4;
+    } while (i != 0);
+  }
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  StoreToFrameWithRound<64>(frame, start_x, start_y, tx_width, src, tx_type);
+}
+
 void Adst4TransformLoopRow_NEON(TransformType /*tx_type*/,
                                 TransformSize tx_size, int adjusted_tx_height,
                                 void* src_buffer, int /*start_x*/,
@@ -1171,6 +1522,10 @@ void Init10bpp() {
       Dct32TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kColumn] =
       Dct32TransformLoopColumn_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize64][kRow] =
+      Dct64TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize64][kColumn] =
+      Dct64TransformLoopColumn_NEON;
 
   // Maximum transform size for Adst is 16.
   dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kRow] =
