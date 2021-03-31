@@ -224,17 +224,23 @@ class DirectionalIntraPredTest : public IntraPredTestBase<bitdepth, Pixel> {
     ASSERT_NE(min_angle, nullptr);
     ASSERT_NE(max_angle, nullptr);
     switch (zone) {
+        // The overall minimum angle comes from mode D45_PRED, yielding:
+        // min_angle = 45-(MAX_ANGLE_DELTA*ANGLE_STEP) = 36
+        // The overall maximum angle comes from mode D203_PRED, yielding:
+        // max_angle = 203+(MAX_ANGLE_DELTA*ANGLE_STEP) = 212
+        // The angles 180 and 90 are not permitted because they correspond to
+        // V_PRED and H_PRED, which are handled in distinct functions.
       case kZone1:
-        *min_angle = 0;
-        *max_angle = 90;
+        *min_angle = 36;
+        *max_angle = 87;
         break;
       case kZone2:
-        *min_angle = 90;
-        *max_angle = 180;
+        *min_angle = 93;
+        *max_angle = 177;
         break;
       case kZone3:
-        *min_angle = 180;
-        *max_angle = 270;
+        *min_angle = 183;
+        *max_angle = 212;
         break;
       case kNumZones:
         FAIL() << "Invalid zone value: " << zone;
@@ -317,7 +323,7 @@ void DirectionalIntraPredTest<bitdepth, Pixel>::TestSpeed(
         for (int angle_delta = kAngleDeltaStart; angle_delta <= kAngleDeltaStop;
              angle_delta += kAngleDeltaStep) {
           const int predictor_angle = base_angle + angle_delta;
-          if (predictor_angle <= min_angle || predictor_angle >= max_angle) {
+          if (predictor_angle < min_angle || predictor_angle > max_angle) {
             continue;
           }
 
