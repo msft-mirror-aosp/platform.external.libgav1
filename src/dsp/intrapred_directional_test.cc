@@ -49,16 +49,6 @@ const char* const kDirectionalPredNames[kNumDirectionalIntraPredictors] = {
     "kDirectionalIntraPredictorZone1", "kDirectionalIntraPredictorZone2",
     "kDirectionalIntraPredictorZone3"};
 
-const char* const kTransformSizeNames[kNumTransformSizes] = {
-    "kTransformSize4x4",   "kTransformSize4x8",   "kTransformSize4x16",
-    "kTransformSize8x4",   "kTransformSize8x8",   "kTransformSize8x16",
-    "kTransformSize8x32",  "kTransformSize16x4",  "kTransformSize16x8",
-    "kTransformSize16x16", "kTransformSize16x32", "kTransformSize16x64",
-    "kTransformSize32x8",  "kTransformSize32x16", "kTransformSize32x32",
-    "kTransformSize32x64", "kTransformSize64x16", "kTransformSize64x32",
-    "kTransformSize64x64",
-};
-
 int16_t GetDirectionalIntraPredictorDerivative(const int angle) {
   EXPECT_GE(angle, 3);
   EXPECT_LE(angle, 87);
@@ -371,9 +361,9 @@ void DirectionalIntraPredTest<bitdepth, Pixel>::TestSpeed(
     }
   }
 
-  test_utils::CheckMd5Digest(kTransformSizeNames[tx_size_],
-                             kDirectionalPredNames[zone], digests[zone],
-                             dest.get(), ref_alloc_size, elapsed_time);
+  test_utils::CheckMd5Digest(ToString(tx_size_), kDirectionalPredNames[zone],
+                             digests[zone], dest.get(), ref_alloc_size,
+                             elapsed_time);
 }
 
 template <int bitdepth, typename Pixel>
@@ -933,7 +923,7 @@ INSTANTIATE_TEST_SUITE_P(NEON, DirectionalIntraPredTest10bpp,
 }  // namespace dsp
 
 static std::ostream& operator<<(std::ostream& os, const TransformSize tx_size) {
-  return os << dsp::kTransformSizeNames[tx_size];
+  return os << ToString(tx_size);
 }
 
 }  // namespace libgav1

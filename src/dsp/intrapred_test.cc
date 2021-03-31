@@ -42,16 +42,6 @@ namespace {
 constexpr int kMaxBlockSize = 64;
 constexpr int kTotalPixels = kMaxBlockSize * kMaxBlockSize;
 
-const char* const kTransformSizeNames[kNumTransformSizes] = {
-    "kTransformSize4x4",   "kTransformSize4x8",   "kTransformSize4x16",
-    "kTransformSize8x4",   "kTransformSize8x8",   "kTransformSize8x16",
-    "kTransformSize8x32",  "kTransformSize16x4",  "kTransformSize16x8",
-    "kTransformSize16x16", "kTransformSize16x32", "kTransformSize16x64",
-    "kTransformSize32x8",  "kTransformSize32x16", "kTransformSize32x32",
-    "kTransformSize32x64", "kTransformSize64x16", "kTransformSize64x32",
-    "kTransformSize64x64",
-};
-
 template <int bitdepth, typename Pixel>
 class IntraPredTestBase : public testing::TestWithParam<TransformSize>,
                           public test_utils::MaxAlignedAllocable {
@@ -215,7 +205,7 @@ void IntraPredTest<bitdepth, Pixel>::TestSpeed(
       cur_intrapreds_[i](intra_pred_mem_.dst, stride, top, left);
     }
     const absl::Duration elapsed_time = absl::Now() - start;
-    test_utils::CheckMd5Digest(kTransformSizeNames[tx_size_],
+    test_utils::CheckMd5Digest(ToString(tx_size_),
                                ToString(static_cast<IntraPredictor>(i)),
                                digests[i], intra_pred_mem_.dst,
                                sizeof(intra_pred_mem_.dst), elapsed_time);
@@ -712,7 +702,7 @@ INSTANTIATE_TEST_SUITE_P(NEON, IntraPredTest10bpp,
 }  // namespace dsp
 
 static std::ostream& operator<<(std::ostream& os, const TransformSize tx_size) {
-  return os << dsp::kTransformSizeNames[tx_size];
+  return os << ToString(tx_size);
 }
 
 }  // namespace libgav1

@@ -44,16 +44,6 @@ constexpr int kTotalPixels = kMaxBlockSize * kMaxBlockSize;
 
 const char* const kCflIntraPredName = "kCflIntraPredictor";
 
-const char* const kTransformSizeNames[kNumTransformSizes] = {
-    "kTransformSize4x4",   "kTransformSize4x8",   "kTransformSize4x16",
-    "kTransformSize8x4",   "kTransformSize8x8",   "kTransformSize8x16",
-    "kTransformSize8x32",  "kTransformSize16x4",  "kTransformSize16x8",
-    "kTransformSize16x16", "kTransformSize16x32", "kTransformSize16x64",
-    "kTransformSize32x8",  "kTransformSize32x16", "kTransformSize32x32",
-    "kTransformSize32x64", "kTransformSize64x16", "kTransformSize64x32",
-    "kTransformSize64x64",
-};
-
 template <int bitdepth, typename Pixel>
 class IntraPredTestBase : public testing::TestWithParam<TransformSize>,
                           public test_utils::MaxAlignedAllocable {
@@ -214,9 +204,9 @@ void CflIntraPredTest<bitdepth, Pixel>::TestSpeed(const char* const digest,
     cur_cfl_intra_pred_(intra_pred_mem_.dst, stride, luma, alpha);
     elapsed_time += absl::Now() - start;
   }
-  test_utils::CheckMd5Digest(kTransformSizeNames[tx_size_], kCflIntraPredName,
-                             digest, intra_pred_mem_.dst,
-                             sizeof(intra_pred_mem_.dst), elapsed_time);
+  test_utils::CheckMd5Digest(ToString(tx_size_), kCflIntraPredName, digest,
+                             intra_pred_mem_.dst, sizeof(intra_pred_mem_.dst),
+                             elapsed_time);
 }
 
 template <int bitdepth, typename Pixel>
@@ -375,8 +365,8 @@ void CflSubsamplerTest<bitdepth, Pixel, subsampling_type>::TestSpeed(
     cur_cfl_subsampler_(luma, width, height, intra_pred_mem_.ref_src, stride);
   }
   const absl::Duration elapsed_time = absl::Now() - start;
-  test_utils::CheckMd5Digest(kTransformSizeNames[tx_size_], kCflIntraPredName,
-                             digest, luma, sizeof(luma), elapsed_time);
+  test_utils::CheckMd5Digest(ToString(tx_size_), kCflIntraPredName, digest,
+                             luma, sizeof(luma), elapsed_time);
 }
 
 template <int bitdepth, typename Pixel, SubsamplingType subsampling_type>
@@ -927,7 +917,7 @@ INSTANTIATE_TEST_SUITE_P(NEON, CflSubsamplerTest10bpp420,
 }  // namespace dsp
 
 static std::ostream& operator<<(std::ostream& os, const TransformSize tx_size) {
-  return os << dsp::kTransformSizeNames[tx_size];
+  return os << ToString(tx_size);
 }
 
 }  // namespace libgav1
