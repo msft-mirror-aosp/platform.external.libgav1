@@ -28,8 +28,7 @@
 
 #if 0
 #include <cstdio>
-
-#include "absl/strings/str_cat.h"
+#include <string>
 
 constexpr bool kEnablePrintRegs = true;
 
@@ -86,11 +85,11 @@ inline void PrintVectQ(const DebugRegisterQ r, const char* const name,
 
 inline void PrintReg(const int32x4x2_t val, const std::string& name) {
   DebugRegisterQ r;
-  vst1q_u32(r.u32, val.val[0]);
-  const std::string name0 = absl::StrCat(name, ".val[0]").c_str();
+  vst1q_s32(r.i32, val.val[0]);
+  const std::string name0 = name + std::string(".val[0]");
   PrintVectQ(r, name0.c_str(), 32);
-  vst1q_u32(r.u32, val.val[1]);
-  const std::string name1 = absl::StrCat(name, ".val[1]").c_str();
+  vst1q_s32(r.i32, val.val[1]);
+  const std::string name1 = name + std::string(".val[1]");
   PrintVectQ(r, name1.c_str(), 32);
 }
 
@@ -169,14 +168,14 @@ inline void PrintReg(const int8x8_t val, const char* name) {
 // Print an individual (non-vector) value in decimal format.
 inline void PrintReg(const int x, const char* name) {
   if (kEnablePrintRegs) {
-    printf("%s: %d\n", name, x);
+    fprintf(stderr, "%s: %d\n", name, x);
   }
 }
 
 // Print an individual (non-vector) value in hexadecimal format.
 inline void PrintHex(const int x, const char* name) {
   if (kEnablePrintRegs) {
-    printf("%s: %x\n", name, x);
+    fprintf(stderr, "%s: %x\n", name, x);
   }
 }
 
@@ -277,22 +276,32 @@ inline void Store2(uint16_t* const buf, const uint16x4_t val) {
   ValueToMem<uint32_t>(buf, vget_lane_u32(vreinterpret_u32_u16(val), lane));
 }
 
+// Simplify code when caller has |buf| cast as uint8_t*.
+inline void Store4(void* const buf, const uint16x4_t val) {
+  vst1_u16(static_cast<uint16_t*>(buf), val);
+}
+
+// Simplify code when caller has |buf| cast as uint8_t*.
+inline void Store8(void* const buf, const uint16x8_t val) {
+  vst1q_u16(static_cast<uint16_t*>(buf), val);
+}
+
 //------------------------------------------------------------------------------
 // Bit manipulation.
 
 // vshXX_n_XX() requires an immediate.
 template <int shift>
-inline uint8x8_t LeftShift(const uint8x8_t vector) {
+inline uint8x8_t LeftShiftVector(const uint8x8_t vector) {
   return vreinterpret_u8_u64(vshl_n_u64(vreinterpret_u64_u8(vector), shift));
 }
 
 template <int shift>
-inline uint8x8_t RightShift(const uint8x8_t vector) {
+inline uint8x8_t RightShiftVector(const uint8x8_t vector) {
   return vreinterpret_u8_u64(vshr_n_u64(vreinterpret_u64_u8(vector), shift));
 }
 
 template <int shift>
-inline int8x8_t RightShift(const int8x8_t vector) {
+inline int8x8_t RightShiftVector(const int8x8_t vector) {
   return vreinterpret_s8_u64(vshr_n_u64(vreinterpret_u64_s8(vector), shift));
 }
 
@@ -387,6 +396,15 @@ inline uint16_t SumVector(const uint8x8_t a) {
 #endif  // defined(__aarch64__)
 }
 
+inline uint32_t SumVector(const uint32x2_t a) {
+#if defined(__aarch64__)
+  return vaddv_u32(a);
+#else
+  const uint64x1_t b = vpaddl_u32(a);
+  return vget_lane_u32(vreinterpret_u32_u64(b), 0);
+#endif  // defined(__aarch64__)
+}
+
 inline uint32_t SumVector(const uint32x4_t a) {
 #if defined(__aarch64__)
   return vaddvq_u32(a);
@@ -444,6 +462,36 @@ inline uint16x8x2_t VtrnqU64(uint32x4_t a0, uint32x4_t a1) {
   b0.val[1] = vcombine_u16(vreinterpret_u16_u32(vget_high_u32(a0)),
                            vreinterpret_u16_u32(vget_high_u32(a1)));
   return b0;
+}
+
+// Input:
+// 00 01 02 03
+// 10 11 12 13
+// 20 21 22 23
+// 30 31 32 33
+inline void Transpose4x4(uint16x4_t a[4]) {
+  // b:
+  // 00 10 02 12
+  // 01 11 03 13
+  const uint16x4x2_t b = vtrn_u16(a[0], a[1]);
+  // c:
+  // 20 30 22 32
+  // 21 31 23 33
+  const uint16x4x2_t c = vtrn_u16(a[2], a[3]);
+  // d:
+  // 00 10 20 30
+  // 02 12 22 32
+  const uint32x2x2_t d =
+      vtrn_u32(vreinterpret_u32_u16(b.val[0]), vreinterpret_u32_u16(c.val[0]));
+  // e:
+  // 01 11 21 31
+  // 03 13 23 33
+  const uint32x2x2_t e =
+      vtrn_u32(vreinterpret_u32_u16(b.val[1]), vreinterpret_u32_u16(c.val[1]));
+  a[0] = vreinterpret_u16_u32(d.val[0]);
+  a[1] = vreinterpret_u16_u32(e.val[0]);
+  a[2] = vreinterpret_u16_u32(d.val[1]);
+  a[3] = vreinterpret_u16_u32(e.val[1]);
 }
 
 // Input:
@@ -587,6 +635,28 @@ inline void Transpose8x8(uint8x8_t a[8]) {
   a[7] = vreinterpret_u8_u32(vget_high_u32(d1.val[1]));
 }
 
+inline void Transpose8x8(uint8x8_t in[8], uint8x16_t out[4]) {
+  const uint8x16x2_t a0 =
+      vtrnq_u8(vcombine_u8(in[0], in[4]), vcombine_u8(in[1], in[5]));
+  const uint8x16x2_t a1 =
+      vtrnq_u8(vcombine_u8(in[2], in[6]), vcombine_u8(in[3], in[7]));
+
+  const uint16x8x2_t b0 = vtrnq_u16(vreinterpretq_u16_u8(a0.val[0]),
+                                    vreinterpretq_u16_u8(a1.val[0]));
+  const uint16x8x2_t b1 = vtrnq_u16(vreinterpretq_u16_u8(a0.val[1]),
+                                    vreinterpretq_u16_u8(a1.val[1]));
+
+  const uint32x4x2_t c0 = vuzpq_u32(vreinterpretq_u32_u16(b0.val[0]),
+                                    vreinterpretq_u32_u16(b1.val[0]));
+  const uint32x4x2_t c1 = vuzpq_u32(vreinterpretq_u32_u16(b0.val[1]),
+                                    vreinterpretq_u32_u16(b1.val[1]));
+
+  out[0] = vreinterpretq_u8_u32(c0.val[0]);
+  out[1] = vreinterpretq_u8_u32(c1.val[0]);
+  out[2] = vreinterpretq_u8_u32(c0.val[1]);
+  out[3] = vreinterpretq_u8_u32(c1.val[1]);
+}
+
 // Input:
 // a[0]: 00 01 02 03 04 05 06 07
 // a[1]: 10 11 12 13 14 15 16 17
@@ -665,6 +735,83 @@ inline void Transpose8x8(uint16x8_t a[8]) {
   a[5] = d1.val[1];
   a[6] = d2.val[1];
   a[7] = d3.val[1];
+}
+
+// Input:
+// a[0]: 00 01 02 03 04 05 06 07  80 81 82 83 84 85 86 87
+// a[1]: 10 11 12 13 14 15 16 17  90 91 92 93 94 95 96 97
+// a[2]: 20 21 22 23 24 25 26 27  a0 a1 a2 a3 a4 a5 a6 a7
+// a[3]: 30 31 32 33 34 35 36 37  b0 b1 b2 b3 b4 b5 b6 b7
+// a[4]: 40 41 42 43 44 45 46 47  c0 c1 c2 c3 c4 c5 c6 c7
+// a[5]: 50 51 52 53 54 55 56 57  d0 d1 d2 d3 d4 d5 d6 d7
+// a[6]: 60 61 62 63 64 65 66 67  e0 e1 e2 e3 e4 e5 e6 e7
+// a[7]: 70 71 72 73 74 75 76 77  f0 f1 f2 f3 f4 f5 f6 f7
+
+// Output:
+// a[0]: 00 10 20 30 40 50 60 70  80 90 a0 b0 c0 d0 e0 f0
+// a[1]: 01 11 21 31 41 51 61 71  81 91 a1 b1 c1 d1 e1 f1
+// a[2]: 02 12 22 32 42 52 62 72  82 92 a2 b2 c2 d2 e2 f2
+// a[3]: 03 13 23 33 43 53 63 73  83 93 a3 b3 c3 d3 e3 f3
+// a[4]: 04 14 24 34 44 54 64 74  84 94 a4 b4 c4 d4 e4 f4
+// a[5]: 05 15 25 35 45 55 65 75  85 95 a5 b5 c5 d5 e5 f5
+// a[6]: 06 16 26 36 46 56 66 76  86 96 a6 b6 c6 d6 e6 f6
+// a[7]: 07 17 27 37 47 57 67 77  87 97 a7 b7 c7 d7 e7 f7
+inline void Transpose8x16(uint8x16_t a[8]) {
+  // b0.val[0]: 00 10 02 12 04 14 06 16  80 90 82 92 84 94 86 96
+  // b0.val[1]: 01 11 03 13 05 15 07 17  81 91 83 93 85 95 87 97
+  // b1.val[0]: 20 30 22 32 24 34 26 36  a0 b0 a2 b2 a4 b4 a6 b6
+  // b1.val[1]: 21 31 23 33 25 35 27 37  a1 b1 a3 b3 a5 b5 a7 b7
+  // b2.val[0]: 40 50 42 52 44 54 46 56  c0 d0 c2 d2 c4 d4 c6 d6
+  // b2.val[1]: 41 51 43 53 45 55 47 57  c1 d1 c3 d3 c5 d5 c7 d7
+  // b3.val[0]: 60 70 62 72 64 74 66 76  e0 f0 e2 f2 e4 f4 e6 f6
+  // b3.val[1]: 61 71 63 73 65 75 67 77  e1 f1 e3 f3 e5 f5 e7 f7
+  const uint8x16x2_t b0 = vtrnq_u8(a[0], a[1]);
+  const uint8x16x2_t b1 = vtrnq_u8(a[2], a[3]);
+  const uint8x16x2_t b2 = vtrnq_u8(a[4], a[5]);
+  const uint8x16x2_t b3 = vtrnq_u8(a[6], a[7]);
+
+  // c0.val[0]: 00 10 20 30 04 14 24 34  80 90 a0 b0 84 94 a4 b4
+  // c0.val[1]: 02 12 22 32 06 16 26 36  82 92 a2 b2 86 96 a6 b6
+  // c1.val[0]: 01 11 21 31 05 15 25 35  81 91 a1 b1 85 95 a5 b5
+  // c1.val[1]: 03 13 23 33 07 17 27 37  83 93 a3 b3 87 97 a7 b7
+  // c2.val[0]: 40 50 60 70 44 54 64 74  c0 d0 e0 f0 c4 d4 e4 f4
+  // c2.val[1]: 42 52 62 72 46 56 66 76  c2 d2 e2 f2 c6 d6 e6 f6
+  // c3.val[0]: 41 51 61 71 45 55 65 75  c1 d1 e1 f1 c5 d5 e5 f5
+  // c3.val[1]: 43 53 63 73 47 57 67 77  c3 d3 e3 f3 c7 d7 e7 f7
+  const uint16x8x2_t c0 = vtrnq_u16(vreinterpretq_u16_u8(b0.val[0]),
+                                    vreinterpretq_u16_u8(b1.val[0]));
+  const uint16x8x2_t c1 = vtrnq_u16(vreinterpretq_u16_u8(b0.val[1]),
+                                    vreinterpretq_u16_u8(b1.val[1]));
+  const uint16x8x2_t c2 = vtrnq_u16(vreinterpretq_u16_u8(b2.val[0]),
+                                    vreinterpretq_u16_u8(b3.val[0]));
+  const uint16x8x2_t c3 = vtrnq_u16(vreinterpretq_u16_u8(b2.val[1]),
+                                    vreinterpretq_u16_u8(b3.val[1]));
+
+  // d0.val[0]: 00 10 20 30 40 50 60 70  80 90 a0 b0 c0 d0 e0 f0
+  // d0.val[1]: 04 14 24 34 44 54 64 74  84 94 a4 b4 c4 d4 e4 f4
+  // d1.val[0]: 01 11 21 31 41 51 61 71  81 91 a1 b1 c1 d1 e1 f1
+  // d1.val[1]: 05 15 25 35 45 55 65 75  85 95 a5 b5 c5 d5 e5 f5
+  // d2.val[0]: 02 12 22 32 42 52 62 72  82 92 a2 b2 c2 d2 e2 f2
+  // d2.val[1]: 06 16 26 36 46 56 66 76  86 96 a6 b6 c6 d6 e6 f6
+  // d3.val[0]: 03 13 23 33 43 53 63 73  83 93 a3 b3 c3 d3 e3 f3
+  // d3.val[1]: 07 17 27 37 47 57 67 77  87 97 a7 b7 c7 d7 e7 f7
+  const uint32x4x2_t d0 = vtrnq_u32(vreinterpretq_u32_u16(c0.val[0]),
+                                    vreinterpretq_u32_u16(c2.val[0]));
+  const uint32x4x2_t d1 = vtrnq_u32(vreinterpretq_u32_u16(c1.val[0]),
+                                    vreinterpretq_u32_u16(c3.val[0]));
+  const uint32x4x2_t d2 = vtrnq_u32(vreinterpretq_u32_u16(c0.val[1]),
+                                    vreinterpretq_u32_u16(c2.val[1]));
+  const uint32x4x2_t d3 = vtrnq_u32(vreinterpretq_u32_u16(c1.val[1]),
+                                    vreinterpretq_u32_u16(c3.val[1]));
+
+  a[0] = vreinterpretq_u8_u32(d0.val[0]);
+  a[1] = vreinterpretq_u8_u32(d1.val[0]);
+  a[2] = vreinterpretq_u8_u32(d2.val[0]);
+  a[3] = vreinterpretq_u8_u32(d3.val[0]);
+  a[4] = vreinterpretq_u8_u32(d0.val[1]);
+  a[5] = vreinterpretq_u8_u32(d1.val[1]);
+  a[6] = vreinterpretq_u8_u32(d2.val[1]);
+  a[7] = vreinterpretq_u8_u32(d3.val[1]);
 }
 
 inline int16x8_t ZeroExtend(const uint8x8_t in) {
