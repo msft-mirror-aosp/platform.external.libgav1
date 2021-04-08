@@ -1478,6 +1478,125 @@ LIBGAV1_ALWAYS_INLINE bool Adst16DcOnlyColumn(void* dest,
 }
 
 //------------------------------------------------------------------------------
+// Identity Transforms.
+
+LIBGAV1_ALWAYS_INLINE void Identity4_NEON(void* dest, int32_t step, int shift) {
+  auto* const dst = static_cast<int32_t*>(dest);
+  const int32x4_t v_dual_round = vdupq_n_s32((1 + (shift << 1)) << 11);
+  const int32x4_t v_multiplier = vdupq_n_s32(kIdentity4Multiplier);
+  const int32x4_t v_shift = vdupq_n_s32(-(12 + shift));
+  for (int i = 0; i < 4; ++i) {
+    const int32x4_t v_src = vld1q_s32(&dst[i * step]);
+    const int32x4_t v_src_mult_lo =
+        vmlaq_s32(v_dual_round, v_src, v_multiplier);
+    const int32x4_t shift_lo = vqshlq_s32(v_src_mult_lo, v_shift);
+    vst1q_s32(&dst[i * step], vmovl_s16(vqmovn_s32(shift_lo)));
+  }
+}
+
+LIBGAV1_ALWAYS_INLINE bool Identity4DcOnly(void* dest, int adjusted_tx_height,
+                                           bool should_round, int tx_height) {
+  if (adjusted_tx_height > 1) return false;
+
+  auto* dst = static_cast<int32_t*>(dest);
+  const int32x4_t v_src0 = vdupq_n_s32(dst[0]);
+  const uint32x4_t v_mask = vdupq_n_u32(should_round ? 0xffffffff : 0);
+  const int32x4_t v_src_round =
+      vqrdmulhq_n_s32(v_src0, kTransformRowMultiplier << (31 - 12));
+  const int32x4_t v_src = vbslq_s32(v_mask, v_src_round, v_src0);
+  const int shift = tx_height < 16 ? 0 : 1;
+  const int32x4_t v_dual_round = vdupq_n_s32((1 + (shift << 1)) << 11);
+  const int32x4_t v_multiplier = vdupq_n_s32(kIdentity4Multiplier);
+  const int32x4_t v_shift = vdupq_n_s32(-(12 + shift));
+  const int32x4_t v_src_mult_lo = vmlaq_s32(v_dual_round, v_src, v_multiplier);
+  const int32x4_t dst_0 = vqshlq_s32(v_src_mult_lo, v_shift);
+  vst1q_lane_s32(dst, vmovl_s16(vqmovn_s32(dst_0)), 0);
+  return true;
+}
+
+LIBGAV1_ALWAYS_INLINE void IdentityColumnStoreToFrame(
+    Array2DView<uint16_t> frame, const int start_x, const int start_y,
+    const int tx_width, const int tx_height, const int32_t* source) {
+  const int stride = frame.columns();
+  uint16_t* dst = frame[start_y] + start_x;
+  const int32x4_t v_dual_round = vdupq_n_s32((1 + (1 << 4)) << 11);
+  const uint16x4_t v_max_bitdepth = vdup_n_u16((1 << kBitdepth10) - 1);
+
+  if (tx_width == 4) {
+    int i = 0;
+    do {
+      int32x4x2_t v_src, v_dst_i, a, b;
+      v_src.val[0] = vld1q_s32(&source[i * 4]);
+      v_src.val[1] = vld1q_s32(&source[(i * 4) + 4]);
+      v_dst_i.val[0] =
+          vmlaq_n_s32(v_dual_round, v_src.val[0], kIdentity4Multiplier);
+      v_dst_i.val[1] =
+          vmlaq_n_s32(v_dual_round, v_src.val[1], kIdentity4Multiplier);
+      uint16x4x2_t frame_data;
+      frame_data.val[0] = vld1_u16(dst);
+      frame_data.val[1] = vld1_u16(dst + stride);
+      a.val[0] = vshrq_n_s32(v_dst_i.val[0], 4 + 12);
+      a.val[1] = vshrq_n_s32(v_dst_i.val[1], 4 + 12);
+      b.val[0] = vaddw_s16(a.val[0], vreinterpret_s16_u16(frame_data.val[0]));
+      b.val[1] = vaddw_s16(a.val[1], vreinterpret_s16_u16(frame_data.val[1]));
+      vst1_u16(dst, vmin_u16(vqmovun_s32(b.val[0]), v_max_bitdepth));
+      vst1_u16(dst + stride, vmin_u16(vqmovun_s32(b.val[1]), v_max_bitdepth));
+      dst += stride << 1;
+      i += 2;
+    } while (i < tx_height);
+  } else {
+    int i = 0;
+    do {
+      const int row = i * tx_width;
+      int j = 0;
+      do {
+        int32x4x2_t v_src, v_dst_i, a, b;
+        v_src.val[0] = vld1q_s32(&source[row + j]);
+        v_src.val[1] = vld1q_s32(&source[row + j + 4]);
+        v_dst_i.val[0] =
+            vmlaq_n_s32(v_dual_round, v_src.val[0], kIdentity4Multiplier);
+        v_dst_i.val[1] =
+            vmlaq_n_s32(v_dual_round, v_src.val[1], kIdentity4Multiplier);
+        uint16x4x2_t frame_data;
+        frame_data.val[0] = vld1_u16(dst + j);
+        frame_data.val[1] = vld1_u16(dst + j + 4);
+        a.val[0] = vshrq_n_s32(v_dst_i.val[0], 4 + 12);
+        a.val[1] = vshrq_n_s32(v_dst_i.val[1], 4 + 12);
+        b.val[0] = vaddw_s16(a.val[0], vreinterpret_s16_u16(frame_data.val[0]));
+        b.val[1] = vaddw_s16(a.val[1], vreinterpret_s16_u16(frame_data.val[1]));
+        vst1_u16(dst + j, vmin_u16(vqmovun_s32(b.val[0]), v_max_bitdepth));
+        vst1_u16(dst + j + 4, vmin_u16(vqmovun_s32(b.val[1]), v_max_bitdepth));
+        j += 8;
+      } while (j < tx_width);
+      dst += stride;
+    } while (++i < tx_height);
+  }
+}
+
+LIBGAV1_ALWAYS_INLINE void Identity4RowColumnStoreToFrame(
+    Array2DView<uint16_t> frame, const int start_x, const int start_y,
+    const int tx_width, const int tx_height, const int32_t* source) {
+  const int stride = frame.columns();
+  uint16_t* dst = frame[start_y] + start_x;
+  const int32x4_t v_round = vdupq_n_s32((1 + (0)) << 11);
+  const uint16x4_t v_max_bitdepth = vdup_n_u16((1 << kBitdepth10) - 1);
+
+  int i = 0;
+  do {
+    const int32x4_t v_src = vld1q_s32(&source[i * tx_width]);
+    const int32x4_t v_dst_row =
+        vshrq_n_s32(vmlaq_n_s32(v_round, v_src, kIdentity4Multiplier), 12);
+    const int32x4_t v_dst_col =
+        vmlaq_n_s32(v_round, v_dst_row, kIdentity4Multiplier);
+    const uint16x4_t frame_data = vld1_u16(dst);
+    const int32x4_t a = vrshrq_n_s32(v_dst_col, 4 + 12);
+    const int32x4_t b = vaddw_s16(a, vreinterpret_s16_u16(frame_data));
+    vst1_u16(dst, vmin_u16(vqmovun_s32(b), v_max_bitdepth));
+    dst += stride;
+  } while (++i < tx_height);
+}
+
+//------------------------------------------------------------------------------
 // row/column transform loops
 
 template <int tx_height>
@@ -2030,6 +2149,64 @@ void Adst16TransformLoopColumn_NEON(TransformType tx_type,
                                                        tx_width, src, tx_type);
 }
 
+void Identity4TransformLoopRow_NEON(TransformType tx_type,
+                                    TransformSize tx_size,
+                                    int adjusted_tx_height, void* src_buffer,
+                                    int /*start_x*/, int /*start_y*/,
+                                    void* /*dst_frame*/) {
+  // Special case: Process row calculations during column transform call.
+  // Improves performance.
+  if (tx_type == kTransformTypeIdentityIdentity &&
+      tx_size == kTransformSize4x4) {
+    return;
+  }
+
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_height = kTransformHeight[tx_size];
+  const bool should_round = (tx_height == 8);
+
+  if (Identity4DcOnly(src, adjusted_tx_height, should_round, tx_height)) {
+    return;
+  }
+
+  if (should_round) {
+    ApplyRounding<4>(src, adjusted_tx_height);
+  }
+
+  const int shift = tx_height > 8 ? 1 : 0;
+  int i = adjusted_tx_height;
+  do {
+    Identity4_NEON(src, /*step=*/4, shift);
+    src += 16;
+    i -= 4;
+  } while (i != 0);
+}
+
+void Identity4TransformLoopColumn_NEON(TransformType tx_type,
+                                       TransformSize tx_size,
+                                       int adjusted_tx_height, void* src_buffer,
+                                       int start_x, int start_y,
+                                       void* dst_frame) {
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_width = kTransformWidth[tx_size];
+
+  // Special case: Process row calculations during column transform call.
+  if (tx_type == kTransformTypeIdentityIdentity &&
+      tx_size == kTransformSize4x4) {
+    Identity4RowColumnStoreToFrame(frame, start_x, start_y, tx_width,
+                                   adjusted_tx_height, src);
+    return;
+  }
+
+  if (kTransformFlipColumnsMask.Contains(tx_type)) {
+    FlipColumns<4>(src, tx_width);
+  }
+
+  IdentityColumnStoreToFrame(frame, start_x, start_y, tx_width,
+                             adjusted_tx_height, src);
+}
+
 //------------------------------------------------------------------------------
 
 void Init10bpp() {
@@ -2070,6 +2247,12 @@ void Init10bpp() {
       Adst16TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize16][kColumn] =
       Adst16TransformLoopColumn_NEON;
+
+  // Maximum transform size for Identity transform is 32.
+  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize4][kRow] =
+      Identity4TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize4][kColumn] =
+      Identity4TransformLoopColumn_NEON;
 }
 
 }  // namespace
