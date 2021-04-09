@@ -313,6 +313,10 @@ INSTANTIATE_TEST_SUITE_P(C, DistanceWeightedBlendTest10bpp,
 INSTANTIATE_TEST_SUITE_P(SSE41, DistanceWeightedBlendTest10bpp,
                          testing::ValuesIn(kTestParam));
 #endif
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, DistanceWeightedBlendTest10bpp,
+                         testing::ValuesIn(kTestParam));
+#endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
 }  // namespace
