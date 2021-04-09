@@ -85,10 +85,10 @@ inline void PrintVectQ(const DebugRegisterQ r, const char* const name,
 
 inline void PrintReg(const int32x4x2_t val, const std::string& name) {
   DebugRegisterQ r;
-  vst1q_u32(r.u32, val.val[0]);
+  vst1q_s32(r.i32, val.val[0]);
   const std::string name0 = name + std::string(".val[0]");
   PrintVectQ(r, name0.c_str(), 32);
-  vst1q_u32(r.u32, val.val[1]);
+  vst1q_s32(r.i32, val.val[1]);
   const std::string name1 = name + std::string(".val[1]");
   PrintVectQ(r, name1.c_str(), 32);
 }
