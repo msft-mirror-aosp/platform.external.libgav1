@@ -276,6 +276,16 @@ inline void Store2(uint16_t* const buf, const uint16x4_t val) {
   ValueToMem<uint32_t>(buf, vget_lane_u32(vreinterpret_u32_u16(val), lane));
 }
 
+// Simplify code when caller has |buf| cast as uint8_t*.
+inline void Store4(void* const buf, const uint16x4_t val) {
+  vst1_u16(static_cast<uint16_t*>(buf), val);
+}
+
+// Simplify code when caller has |buf| cast as uint8_t*.
+inline void Store8(void* const buf, const uint16x8_t val) {
+  vst1q_u16(static_cast<uint16_t*>(buf), val);
+}
+
 //------------------------------------------------------------------------------
 // Bit manipulation.
 
@@ -452,6 +462,36 @@ inline uint16x8x2_t VtrnqU64(uint32x4_t a0, uint32x4_t a1) {
   b0.val[1] = vcombine_u16(vreinterpret_u16_u32(vget_high_u32(a0)),
                            vreinterpret_u16_u32(vget_high_u32(a1)));
   return b0;
+}
+
+// Input:
+// 00 01 02 03
+// 10 11 12 13
+// 20 21 22 23
+// 30 31 32 33
+inline void Transpose4x4(uint16x4_t a[4]) {
+  // b:
+  // 00 10 02 12
+  // 01 11 03 13
+  const uint16x4x2_t b = vtrn_u16(a[0], a[1]);
+  // c:
+  // 20 30 22 32
+  // 21 31 23 33
+  const uint16x4x2_t c = vtrn_u16(a[2], a[3]);
+  // d:
+  // 00 10 20 30
+  // 02 12 22 32
+  const uint32x2x2_t d =
+      vtrn_u32(vreinterpret_u32_u16(b.val[0]), vreinterpret_u32_u16(c.val[0]));
+  // e:
+  // 01 11 21 31
+  // 03 13 23 33
+  const uint32x2x2_t e =
+      vtrn_u32(vreinterpret_u32_u16(b.val[1]), vreinterpret_u32_u16(c.val[1]));
+  a[0] = vreinterpret_u16_u32(d.val[0]);
+  a[1] = vreinterpret_u16_u32(e.val[0]);
+  a[2] = vreinterpret_u16_u32(d.val[1]);
+  a[3] = vreinterpret_u16_u32(e.val[1]);
 }
 
 // Input:
