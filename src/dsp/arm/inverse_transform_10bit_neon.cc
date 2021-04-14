@@ -1518,58 +1518,21 @@ template <int identity_size>
 LIBGAV1_ALWAYS_INLINE void IdentityColumnStoreToFrame(
     Array2DView<uint16_t> frame, const int start_x, const int start_y,
     const int tx_width, const int tx_height, const int32_t* source) {
-  static_assert(identity_size == 4 || identity_size == 8 || identity_size == 16,
+  static_assert(identity_size == 4 || identity_size == 8 ||
+                    identity_size == 16 || identity_size == 32,
                 "Invalid identity_size.");
   const int stride = frame.columns();
   uint16_t* dst = frame[start_y] + start_x;
   const int32x4_t v_dual_round = vdupq_n_s32((1 + (1 << 4)) << 11);
   const uint16x4_t v_max_bitdepth = vdup_n_u16((1 << kBitdepth10) - 1);
 
-  if (tx_width == 4) {
-    int i = 0;
-    do {
-      int32x4x2_t v_src, v_dst_i, a, b;
-      v_src.val[0] = vld1q_s32(&source[i * 4]);
-      v_src.val[1] = vld1q_s32(&source[(i * 4) + 4]);
-      if (identity_size == 4) {
-        v_dst_i.val[0] =
-            vmlaq_n_s32(v_dual_round, v_src.val[0], kIdentity4Multiplier);
-        v_dst_i.val[1] =
-            vmlaq_n_s32(v_dual_round, v_src.val[1], kIdentity4Multiplier);
-        a.val[0] = vshrq_n_s32(v_dst_i.val[0], 4 + 12);
-        a.val[1] = vshrq_n_s32(v_dst_i.val[1], 4 + 12);
-      } else if (identity_size == 8) {
-        v_dst_i.val[0] = vaddq_s32(v_src.val[0], v_src.val[0]);
-        v_dst_i.val[1] = vaddq_s32(v_src.val[1], v_src.val[1]);
-        a.val[0] = vrshrq_n_s32(v_dst_i.val[0], 4);
-        a.val[1] = vrshrq_n_s32(v_dst_i.val[1], 4);
-      } else {  // identity_size == 16
-        v_dst_i.val[0] =
-            vmlaq_n_s32(v_dual_round, v_src.val[0], kIdentity16Multiplier);
-        v_dst_i.val[1] =
-            vmlaq_n_s32(v_dual_round, v_src.val[1], kIdentity16Multiplier);
-        a.val[0] = vshrq_n_s32(v_dst_i.val[0], 4 + 12);
-        a.val[1] = vshrq_n_s32(v_dst_i.val[1], 4 + 12);
-      }
-      uint16x4x2_t frame_data;
-      frame_data.val[0] = vld1_u16(dst);
-      frame_data.val[1] = vld1_u16(dst + stride);
-      b.val[0] = vaddw_s16(a.val[0], vreinterpret_s16_u16(frame_data.val[0]));
-      b.val[1] = vaddw_s16(a.val[1], vreinterpret_s16_u16(frame_data.val[1]));
-      vst1_u16(dst, vmin_u16(vqmovun_s32(b.val[0]), v_max_bitdepth));
-      vst1_u16(dst + stride, vmin_u16(vqmovun_s32(b.val[1]), v_max_bitdepth));
-      dst += stride << 1;
-      i += 2;
-    } while (i < tx_height);
-  } else {
-    int i = 0;
-    do {
-      const int row = i * tx_width;
-      int j = 0;
+  if (identity_size < 32) {
+    if (tx_width == 4) {
+      int i = 0;
       do {
         int32x4x2_t v_src, v_dst_i, a, b;
-        v_src.val[0] = vld1q_s32(&source[row + j]);
-        v_src.val[1] = vld1q_s32(&source[row + j + 4]);
+        v_src.val[0] = vld1q_s32(&source[i * 4]);
+        v_src.val[1] = vld1q_s32(&source[(i * 4) + 4]);
         if (identity_size == 4) {
           v_dst_i.val[0] =
               vmlaq_n_s32(v_dual_round, v_src.val[0], kIdentity4Multiplier);
@@ -1591,13 +1554,72 @@ LIBGAV1_ALWAYS_INLINE void IdentityColumnStoreToFrame(
           a.val[1] = vshrq_n_s32(v_dst_i.val[1], 4 + 12);
         }
         uint16x4x2_t frame_data;
-        frame_data.val[0] = vld1_u16(dst + j);
-        frame_data.val[1] = vld1_u16(dst + j + 4);
+        frame_data.val[0] = vld1_u16(dst);
+        frame_data.val[1] = vld1_u16(dst + stride);
         b.val[0] = vaddw_s16(a.val[0], vreinterpret_s16_u16(frame_data.val[0]));
         b.val[1] = vaddw_s16(a.val[1], vreinterpret_s16_u16(frame_data.val[1]));
-        vst1_u16(dst + j, vmin_u16(vqmovun_s32(b.val[0]), v_max_bitdepth));
-        vst1_u16(dst + j + 4, vmin_u16(vqmovun_s32(b.val[1]), v_max_bitdepth));
-        j += 8;
+        vst1_u16(dst, vmin_u16(vqmovun_s32(b.val[0]), v_max_bitdepth));
+        vst1_u16(dst + stride, vmin_u16(vqmovun_s32(b.val[1]), v_max_bitdepth));
+        dst += stride << 1;
+        i += 2;
+      } while (i < tx_height);
+    } else {
+      int i = 0;
+      do {
+        const int row = i * tx_width;
+        int j = 0;
+        do {
+          int32x4x2_t v_src, v_dst_i, a, b;
+          v_src.val[0] = vld1q_s32(&source[row + j]);
+          v_src.val[1] = vld1q_s32(&source[row + j + 4]);
+          if (identity_size == 4) {
+            v_dst_i.val[0] =
+                vmlaq_n_s32(v_dual_round, v_src.val[0], kIdentity4Multiplier);
+            v_dst_i.val[1] =
+                vmlaq_n_s32(v_dual_round, v_src.val[1], kIdentity4Multiplier);
+            a.val[0] = vshrq_n_s32(v_dst_i.val[0], 4 + 12);
+            a.val[1] = vshrq_n_s32(v_dst_i.val[1], 4 + 12);
+          } else if (identity_size == 8) {
+            v_dst_i.val[0] = vaddq_s32(v_src.val[0], v_src.val[0]);
+            v_dst_i.val[1] = vaddq_s32(v_src.val[1], v_src.val[1]);
+            a.val[0] = vrshrq_n_s32(v_dst_i.val[0], 4);
+            a.val[1] = vrshrq_n_s32(v_dst_i.val[1], 4);
+          } else {  // identity_size == 16
+            v_dst_i.val[0] =
+                vmlaq_n_s32(v_dual_round, v_src.val[0], kIdentity16Multiplier);
+            v_dst_i.val[1] =
+                vmlaq_n_s32(v_dual_round, v_src.val[1], kIdentity16Multiplier);
+            a.val[0] = vshrq_n_s32(v_dst_i.val[0], 4 + 12);
+            a.val[1] = vshrq_n_s32(v_dst_i.val[1], 4 + 12);
+          }
+          uint16x4x2_t frame_data;
+          frame_data.val[0] = vld1_u16(dst + j);
+          frame_data.val[1] = vld1_u16(dst + j + 4);
+          b.val[0] =
+              vaddw_s16(a.val[0], vreinterpret_s16_u16(frame_data.val[0]));
+          b.val[1] =
+              vaddw_s16(a.val[1], vreinterpret_s16_u16(frame_data.val[1]));
+          vst1_u16(dst + j, vmin_u16(vqmovun_s32(b.val[0]), v_max_bitdepth));
+          vst1_u16(dst + j + 4,
+                   vmin_u16(vqmovun_s32(b.val[1]), v_max_bitdepth));
+          j += 8;
+        } while (j < tx_width);
+        dst += stride;
+      } while (++i < tx_height);
+    }
+  } else {
+    int i = 0;
+    do {
+      const int row = i * tx_width;
+      int j = 0;
+      do {
+        const int32x4_t v_dst_i = vld1q_s32(&source[row + j]);
+        const uint16x4_t frame_data = vld1_u16(dst + j);
+        const int32x4_t a = vrshrq_n_s32(v_dst_i, 2);
+        const int32x4_t b = vaddw_s16(a, vreinterpret_s16_u16(frame_data));
+        const uint16x4_t d = vmin_u16(vqmovun_s32(b), v_max_bitdepth);
+        vst1_u16(dst + j, d);
+        j += 4;
       } while (j < tx_width);
       dst += stride;
     } while (++i < tx_height);
@@ -1744,6 +1766,38 @@ LIBGAV1_ALWAYS_INLINE bool Identity16DcOnly(void* dest, int adjusted_tx_height,
       vmlaq_n_s32(v_dual_round, v_src, kIdentity16Multiplier);
   const int32x4_t dst_0 = vqshlq_s32(v_src_mult_lo, vdupq_n_s32(-(12 + shift)));
   vst1q_lane_s32(dst, vmovl_s16(vqmovn_s32(dst_0)), 0);
+  return true;
+}
+
+LIBGAV1_ALWAYS_INLINE void Identity32Row16_NEON(void* dest,
+                                                const int32_t step) {
+  auto* const dst = static_cast<int32_t*>(dest);
+
+  // When combining the identity32 multiplier with the row shift, the
+  // calculation for tx_height equal to 16 can be simplified from
+  // ((A * 4) + 1) >> 1) to (A * 2).
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 32; j += 4) {
+      const int32x4_t v_src = vld1q_s32(&dst[i * step + j]);
+      const int32x4_t v_dst_i = vqaddq_s32(v_src, v_src);
+      vst1q_s32(&dst[i * step + j], v_dst_i);
+    }
+  }
+}
+
+LIBGAV1_ALWAYS_INLINE bool Identity32DcOnly(void* dest,
+                                            int adjusted_tx_height) {
+  if (adjusted_tx_height > 1) return false;
+
+  auto* dst = static_cast<int32_t*>(dest);
+  const int32x2_t v_src0 = vdup_n_s32(dst[0]);
+  const int32x2_t v_src =
+      vqrdmulh_n_s32(v_src0, kTransformRowMultiplier << (31 - 12));
+  // When combining the identity32 multiplier with the row shift, the
+  // calculation for tx_height equal to 16 can be simplified from
+  // ((A * 4) + 1) >> 1) to (A * 2).
+  const int32x2_t v_dst_0 = vqadd_s32(v_src, v_src);
+  vst1_lane_s32(dst, v_dst_0, 0);
   return true;
 }
 
@@ -2470,6 +2524,50 @@ void Identity16TransformLoopColumn_NEON(TransformType tx_type,
                                  adjusted_tx_height, src);
 }
 
+void Identity32TransformLoopRow_NEON(TransformType /*tx_type*/,
+                                     TransformSize tx_size,
+                                     int adjusted_tx_height, void* src_buffer,
+                                     int /*start_x*/, int /*start_y*/,
+                                     void* /*dst_frame*/) {
+  const int tx_height = kTransformHeight[tx_size];
+
+  // When combining the identity32 multiplier with the row shift, the
+  // calculations for tx_height == 8 and tx_height == 32 can be simplified
+  // from ((A * 4) + 2) >> 2) to A.
+  if ((tx_height & 0x28) != 0) {
+    return;
+  }
+
+  // Process kTransformSize32x16. The src is always rounded before the identity
+  // transform and shifted by 1 afterwards.
+  auto* src = static_cast<int32_t*>(src_buffer);
+  if (Identity32DcOnly(src, adjusted_tx_height)) {
+    return;
+  }
+
+  assert(tx_size == kTransformSize32x16);
+  ApplyRounding<32>(src, adjusted_tx_height);
+  int i = adjusted_tx_height;
+  do {
+    Identity32Row16_NEON(src, /*step=*/32);
+    src += 128;
+    i -= 4;
+  } while (i != 0);
+}
+
+void Identity32TransformLoopColumn_NEON(TransformType /*tx_type*/,
+                                        TransformSize tx_size,
+                                        int adjusted_tx_height,
+                                        void* src_buffer, int start_x,
+                                        int start_y, void* dst_frame) {
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  auto* src = static_cast<int32_t*>(src_buffer);
+  const int tx_width = kTransformWidth[tx_size];
+
+  IdentityColumnStoreToFrame<32>(frame, start_x, start_y, tx_width,
+                                 adjusted_tx_height, src);
+}
+
 //------------------------------------------------------------------------------
 
 void Init10bpp() {
@@ -2524,6 +2622,10 @@ void Init10bpp() {
       Identity16TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize16][kColumn] =
       Identity16TransformLoopColumn_NEON;
+  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kRow] =
+      Identity32TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kColumn] =
+      Identity32TransformLoopColumn_NEON;
 }
 
 }  // namespace
