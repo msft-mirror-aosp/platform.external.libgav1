@@ -601,7 +601,271 @@ void Init8bpp() {
 }  // namespace
 }  // namespace low_bitdepth
 
-void IntraPredSmoothInit_NEON() { low_bitdepth::Init8bpp(); }
+#if LIBGAV1_MAX_BITDEPTH >= 10
+namespace high_bitdepth {
+namespace {
+
+// Note these constants are duplicated from intrapred.cc to allow the compiler
+// to have visibility of the values. This helps reduce loads and in the
+// creation of the inverse weights.
+constexpr uint16_t kSmoothWeights[] = {
+    // block dimension = 4
+    255, 149, 85, 64,
+    // block dimension = 8
+    255, 197, 146, 105, 73, 50, 37, 32,
+    // block dimension = 16
+    255, 225, 196, 170, 145, 123, 102, 84, 68, 54, 43, 33, 26, 20, 17, 16,
+    // block dimension = 32
+    255, 240, 225, 210, 196, 182, 169, 157, 145, 133, 122, 111, 101, 92, 83, 74,
+    66, 59, 52, 45, 39, 34, 29, 25, 21, 17, 14, 12, 10, 9, 8, 8,
+    // block dimension = 64
+    255, 248, 240, 233, 225, 218, 210, 203, 196, 189, 182, 176, 169, 163, 156,
+    150, 144, 138, 133, 127, 121, 116, 111, 106, 101, 96, 91, 86, 82, 77, 73,
+    69, 65, 61, 57, 54, 50, 47, 44, 41, 38, 35, 32, 29, 27, 25, 22, 20, 18, 16,
+    15, 13, 12, 10, 9, 8, 7, 6, 6, 5, 5, 4, 4, 4};
+
+template <int height>
+inline void Smooth4xH_NEON(void* __restrict__ const dest, ptrdiff_t stride,
+                           const void* __restrict__ const top_row,
+                           const void* __restrict__ const left_column) {
+  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
+  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const uint16_t top_right = top[3];
+  const uint16_t bottom_left = left[height - 1];
+  const uint16_t* const weights_y = kSmoothWeights + height - 4;
+  uint8_t* dst = static_cast<uint8_t*>(dest);
+
+  const uint16x4_t top_v = vld1_u16(top);
+  const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
+  const uint16x4_t weights_x_v = vld1_u16(kSmoothWeights);
+  const uint16x4_t scaled_weights_x = vsub_u16(vdup_n_u16(256), weights_x_v);
+
+  // Weighted top right doesn't change with each row.
+  const uint32x4_t weighted_tr = vmull_n_u16(scaled_weights_x, top_right);
+
+  for (int y = 0; y < height; ++y) {
+    // Each variable in the running summation is named for the last item to be
+    // accumulated.
+    const uint32x4_t weighted_top =
+        vmlal_n_u16(weighted_tr, top_v, weights_y[y]);
+    const uint32x4_t weighted_left =
+        vmlal_n_u16(weighted_top, weights_x_v, left[y]);
+    const uint32x4_t weighted_bl =
+        vmlal_n_u16(weighted_left, bottom_left_v, 256 - weights_y[y]);
+
+    const uint16x4_t pred = vrshrn_n_u32(weighted_bl, kSmoothWeightScale + 1);
+    vst1_u16(reinterpret_cast<uint16_t*>(dst), pred);
+    dst += stride;
+  }
+}
+
+// Common code between 8xH and [16|32|64]xH.
+inline void CalculatePred8(uint16_t* dst,
+                           const uint32x4_t& weighted_corners_low,
+                           const uint32x4_t& weighted_corners_high,
+                           const uint16x4x2_t& top_vals,
+                           const uint16x4x2_t& weights_x, const uint16_t left_y,
+                           const uint16_t weight_y) {
+  // Each variable in the running summation is named for the last item to be
+  // accumulated.
+  const uint32x4_t weighted_top_low =
+      vmlal_n_u16(weighted_corners_low, top_vals.val[0], weight_y);
+  const uint32x4_t weighted_edges_low =
+      vmlal_n_u16(weighted_top_low, weights_x.val[0], left_y);
+
+  const uint16x4_t pred_low =
+      vrshrn_n_u32(weighted_edges_low, kSmoothWeightScale + 1);
+  vst1_u16(dst, pred_low);
+
+  const uint32x4_t weighted_top_high =
+      vmlal_n_u16(weighted_corners_high, top_vals.val[1], weight_y);
+  const uint32x4_t weighted_edges_high =
+      vmlal_n_u16(weighted_top_high, weights_x.val[1], left_y);
+
+  const uint16x4_t pred_high =
+      vrshrn_n_u32(weighted_edges_high, kSmoothWeightScale + 1);
+  vst1_u16(dst + 4, pred_high);
+}
+
+template <int height>
+inline void Smooth8xH_NEON(void* const __restrict__ dest, ptrdiff_t stride,
+                           const void* const __restrict__ top_row,
+                           const void* const __restrict__ left_column) {
+  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
+  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const uint16_t top_right = top[7];
+  const uint16_t bottom_left = left[height - 1];
+  const uint16_t* const weights_y = kSmoothWeights + height - 4;
+
+  uint8_t* dst = static_cast<uint8_t*>(dest);
+
+  const uint16x4x2_t top_vals = {vld1_u16(top), vld1_u16(top + 4)};
+  const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
+  const uint16x4x2_t weights_x = {vld1_u16(kSmoothWeights + 4),
+                                  vld1_u16(kSmoothWeights + 8)};
+  // Weighted top right doesn't change with each row.
+  const uint32x4_t weighted_tr_low =
+      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[0]), top_right);
+  const uint32x4_t weighted_tr_high =
+      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[1]), top_right);
+
+  for (int y = 0; y < height; ++y) {
+    // |weighted_bl| is invariant across the row.
+    const uint32x4_t weighted_bl =
+        vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
+    const uint32x4_t weighted_corners_low =
+        vaddq_u32(weighted_bl, weighted_tr_low);
+    const uint32x4_t weighted_corners_high =
+        vaddq_u32(weighted_bl, weighted_tr_high);
+    CalculatePred8(reinterpret_cast<uint16_t*>(dst), weighted_corners_low,
+                   weighted_corners_high, top_vals, weights_x, left[y],
+                   weights_y[y]);
+    dst += stride;
+  }
+}
+
+// For width 16 and above.
+template <int width, int height>
+inline void SmoothWxH_NEON(void* const __restrict__ dest, ptrdiff_t stride,
+                           const void* const __restrict__ top_row,
+                           const void* const __restrict__ left_column) {
+  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
+  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const uint16_t top_right = top[width - 1];
+  const uint16_t bottom_left = left[height - 1];
+  const uint16_t* const weights_y = kSmoothWeights + height - 4;
+
+  uint8_t* dst = static_cast<uint8_t*>(dest);
+
+  const uint16x4_t weight_scaling = vdup_n_u16(256);
+  // Precompute weighted values that don't vary with |y|.
+  uint32x4_t weighted_tr_low[width >> 3];
+  uint32x4_t weighted_tr_high[width >> 3];
+  for (int i = 0; i < (width >> 3); ++i) {
+    const int x = i << 3;
+    const uint16x4_t weights_x_low = vld1_u16(kSmoothWeights + width - 4 + x);
+    weighted_tr_low[i] =
+        vmull_n_u16(vsub_u16(weight_scaling, weights_x_low), top_right);
+    const uint16x4_t weights_x_high = vld1_u16(kSmoothWeights + width + x);
+    weighted_tr_high[i] =
+        vmull_n_u16(vsub_u16(weight_scaling, weights_x_high), top_right);
+  }
+
+  const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
+  for (int y = 0; y < height; ++y) {
+    // |weighted_bl| is invariant across the row.
+    const uint32x4_t weighted_bl =
+        vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
+    uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
+    for (int i = 0; i < (width >> 3); ++i) {
+      const int x = i << 3;
+      const uint16x4x2_t top_vals = {vld1_u16(top + x), vld1_u16(top + x + 4)};
+      // This doesn't depend on |y|, so it's a good candidate to precompute
+      // before the loops.
+      const uint32x4_t weighted_corners_low =
+          vaddq_u32(weighted_bl, weighted_tr_low[i]);
+      const uint32x4_t weighted_corners_high =
+          vaddq_u32(weighted_bl, weighted_tr_high[i]);
+      // Accumulate weighted edge values and store.
+      const uint16x4x2_t weights_x = {vld1_u16(kSmoothWeights + width - 4 + x),
+                                      vld1_u16(kSmoothWeights + width + x)};
+      CalculatePred8(dst_x, weighted_corners_low, weighted_corners_high,
+                     top_vals, weights_x, left[y], weights_y[y]);
+      dst_x += 8;
+    }
+    dst += stride;
+  }
+}
+
+void Init10bpp() {
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
+  assert(dsp != nullptr);
+  // 4x4
+  dsp->intra_predictors[kTransformSize4x4][kIntraPredictorSmooth] =
+      Smooth4xH_NEON<4>;
+
+  // 4x8
+  dsp->intra_predictors[kTransformSize4x8][kIntraPredictorSmooth] =
+      Smooth4xH_NEON<8>;
+
+  // 4x16
+  dsp->intra_predictors[kTransformSize4x16][kIntraPredictorSmooth] =
+      Smooth4xH_NEON<16>;
+
+  // 8x4
+  dsp->intra_predictors[kTransformSize8x4][kIntraPredictorSmooth] =
+      Smooth8xH_NEON<4>;
+
+  // 8x8
+  dsp->intra_predictors[kTransformSize8x8][kIntraPredictorSmooth] =
+      Smooth8xH_NEON<8>;
+
+  // 8x16
+  dsp->intra_predictors[kTransformSize8x16][kIntraPredictorSmooth] =
+      Smooth8xH_NEON<16>;
+
+  // 8x32
+  dsp->intra_predictors[kTransformSize8x32][kIntraPredictorSmooth] =
+      Smooth8xH_NEON<32>;
+
+  // 16x4
+  dsp->intra_predictors[kTransformSize16x4][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<16, 4>;
+
+  // 16x8
+  dsp->intra_predictors[kTransformSize16x8][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<16, 8>;
+
+  // 16x16
+  dsp->intra_predictors[kTransformSize16x16][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<16, 16>;
+
+  // 16x32
+  dsp->intra_predictors[kTransformSize16x32][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<16, 32>;
+
+  // 16x64
+  dsp->intra_predictors[kTransformSize16x64][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<16, 64>;
+
+  // 32x8
+  dsp->intra_predictors[kTransformSize32x8][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<32, 8>;
+
+  // 32x16
+  dsp->intra_predictors[kTransformSize32x16][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<32, 16>;
+
+  // 32x32
+  dsp->intra_predictors[kTransformSize32x32][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<32, 32>;
+
+  // 32x64
+  dsp->intra_predictors[kTransformSize32x64][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<32, 64>;
+
+  // 64x16
+  dsp->intra_predictors[kTransformSize64x16][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<64, 16>;
+
+  // 64x32
+  dsp->intra_predictors[kTransformSize64x32][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<64, 32>;
+
+  // 64x64
+  dsp->intra_predictors[kTransformSize64x64][kIntraPredictorSmooth] =
+      SmoothWxH_NEON<64, 64>;
+}
+}  // namespace
+}  // namespace high_bitdepth
+#endif  // LIBGAV1_MAX_BITDEPTH >= 10
+
+void IntraPredSmoothInit_NEON() {
+  low_bitdepth::Init8bpp();
+#if LIBGAV1_MAX_BITDEPTH >= 10
+  high_bitdepth::Init10bpp();
+#endif
+}
 
 }  // namespace dsp
 }  // namespace libgav1
