@@ -44,6 +44,8 @@ enum {
   kMinQuantizer = 0,
   kMinLossyQuantizer = 1,
   kMaxQuantizer = 255,
+  // Quantizer matrix is used only when level < 15.
+  kNumQuantizerLevelsForQuantizerMatrix = 15,
   kFrameLfCount = 4,
   kMaxLoopFilterValue = 63,
   kNum4x4In64x64 = 256,
@@ -106,6 +108,7 @@ enum {
   kMaxScaledSuperBlockSizeInPixels = 128 * 2,
   kMaxSuperBlockSizeSquareInPixels = 128 * 128,
   kNum4x4InLoopFilterUnit = 16,
+  kNum4x4InLoopRestorationUnit = 16,
   kProjectionMvClamp = (1 << 14) - 1,  // == 16383
   kProjectionMvMaxHorizontalOffset = 8,
   kCdefUnitSize = 64,
@@ -124,11 +127,12 @@ enum {
   kSuperResScaleBits = 14,
   kSuperResExtraBits = kSuperResScaleBits - kSuperResFilterBits,
   kSuperResScaleMask = (1 << 14) - 1,
-  kSuperResHorizontalBorder = 8,
+  kSuperResHorizontalBorder = 4,
   kSuperResVerticalBorder = 1,
-  // The SIMD implementations of superres calculate up to 4 extra upscaled
-  // pixels which will over-read 2 downscaled pixels in the end of each row.
-  kSuperResHorizontalPadding = 2,
+  // The SIMD implementations of superres calculate up to 15 extra upscaled
+  // pixels which will over-read up to 15 downscaled pixels in the end of each
+  // row. Set the padding to 16 for alignment purposes.
+  kSuperResHorizontalPadding = 16,
   // TODO(chengchen): consider merging these constants:
   // kFilterBits, kWienerFilterBits, and kSgrProjPrecisionBits, which are all 7,
   // They are designed to match AV1 convolution, which increases coeff
@@ -625,6 +629,52 @@ inline const char* ToString(const LoopRestorationType type) {
   abort();
 }
 
+inline const char* ToString(const TransformSize size) {
+  switch (size) {
+    case kTransformSize4x4:
+      return "kTransformSize4x4";
+    case kTransformSize4x8:
+      return "kTransformSize4x8";
+    case kTransformSize4x16:
+      return "kTransformSize4x16";
+    case kTransformSize8x4:
+      return "kTransformSize8x4";
+    case kTransformSize8x8:
+      return "kTransformSize8x8";
+    case kTransformSize8x16:
+      return "kTransformSize8x16";
+    case kTransformSize8x32:
+      return "kTransformSize8x32";
+    case kTransformSize16x4:
+      return "kTransformSize16x4";
+    case kTransformSize16x8:
+      return "kTransformSize16x8";
+    case kTransformSize16x16:
+      return "kTransformSize16x16";
+    case kTransformSize16x32:
+      return "kTransformSize16x32";
+    case kTransformSize16x64:
+      return "kTransformSize16x64";
+    case kTransformSize32x8:
+      return "kTransformSize32x8";
+    case kTransformSize32x16:
+      return "kTransformSize32x16";
+    case kTransformSize32x32:
+      return "kTransformSize32x32";
+    case kTransformSize32x64:
+      return "kTransformSize32x64";
+    case kTransformSize64x16:
+      return "kTransformSize64x16";
+    case kTransformSize64x32:
+      return "kTransformSize64x32";
+    case kTransformSize64x64:
+      return "kTransformSize64x64";
+    case kNumTransformSizes:
+      return "kNumTransformSizes";
+  }
+  abort();
+}
+
 inline const char* ToString(const TransformType type) {
   switch (type) {
     case kTransformTypeDctDct:
@@ -734,14 +784,6 @@ extern const uint8_t kAbsHalfSubPixelFilters[6][16][8];
 extern const int16_t kDirectionalIntraPredictorDerivative[44];
 
 extern const uint8_t kDeblockFilterLevelIndex[kMaxPlanes][kNumLoopFilterTypes];
-
-extern const int8_t kMaskIdLookup[4][kMaxBlockSizes];
-
-extern const int8_t kVerticalBorderMaskIdLookup[kMaxBlockSizes];
-
-extern const uint64_t kTopMaskLookup[67][4];
-
-extern const uint64_t kLeftMaskLookup[67][4];
 
 }  // namespace libgav1
 
