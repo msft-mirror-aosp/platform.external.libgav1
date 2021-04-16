@@ -370,15 +370,14 @@ int main(int argc, char* argv[]) {
 
     const libgav1::DecoderBuffer* buffer;
     status = decoder.DequeueFrame(&buffer);
-    if (status != libgav1::kStatusOk &&
-        status != libgav1::kStatusNothingToDequeue) {
-      fprintf(stderr, "Unable to dequeue frame: %s\n",
-              libgav1::GetErrorString(status));
-      return EXIT_FAILURE;
-    }
     if (status == libgav1::kStatusNothingToDequeue) {
       dequeue_finished = true;
       continue;
+    }
+    if (status != libgav1::kStatusOk) {
+      fprintf(stderr, "Unable to dequeue frame: %s\n",
+              libgav1::GetErrorString(status));
+      return EXIT_FAILURE;
     }
     dequeue_finished = false;
     if (buffer == nullptr) continue;
@@ -420,6 +419,9 @@ int main(int argc, char* argv[]) {
         input_buffers.ReleaseInputBuffer(input_buffer);
       }
       input_buffer = nullptr;
+      // Clear any in progress frames to ensure the output frame limit is
+      // respected.
+      decoder.SignalEOS();
     }
   } while (input_buffer != nullptr ||
            (!file_reader->IsEndOfFile() && !limit_reached) ||
