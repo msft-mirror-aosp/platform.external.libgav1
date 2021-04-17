@@ -1,4 +1,4 @@
-// Copyright 2019 The libgav1 Authors
+// Copyright 2021 The libgav1 Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/dsp/intrapred.h"
+#include "src/dsp/intrapred_filter.h"
 #include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_NEON
@@ -160,16 +160,16 @@ void Init8bpp() {
 }  // namespace
 }  // namespace low_bitdepth
 
-void IntraPredFilterIntraInit_NEON() { low_bitdepth::Init8bpp(); }
+void IntraPredFilterInit_NEON() { low_bitdepth::Init8bpp(); }
 
 }  // namespace dsp
 }  // namespace libgav1
 
-#else  // !LIBGAV1_ENABLE_NEON
+#else   // !LIBGAV1_ENABLE_NEON
 namespace libgav1 {
 namespace dsp {
 
-void IntraPredFilterIntraInit_NEON() {}
+void IntraPredFilterInit_NEON() {}
 
 }  // namespace dsp
 }  // namespace libgav1
