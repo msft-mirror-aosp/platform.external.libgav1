@@ -276,6 +276,9 @@ class ObuParser : public Allocable {
   const ObuFrameHeader& frame_header() const { return frame_header_; }
   const Vector<TileBuffer>& tile_buffers() const { return tile_buffers_; }
   const ObuMetadata& metadata() const { return metadata_; }
+  // Returns true if the last call to ParseOneFrame() encountered a sequence
+  // header change.
+  bool sequence_header_changed() const { return sequence_header_changed_; }
 
   // Setters.
   void set_sequence_header(const ObuSequenceHeader& sequence_header) {
@@ -284,7 +287,7 @@ class ObuParser : public Allocable {
   }
 
   // Moves |tile_buffers_| into |tile_buffers|.
-  void MoveTileBuffer(Vector<TileBuffer>* tile_buffers) {
+  void MoveTileBuffers(Vector<TileBuffer>* tile_buffers) {
     *tile_buffers = std::move(tile_buffers_);
   }
 
@@ -362,7 +365,8 @@ class ObuParser : public Allocable {
   // ParseMetadata() can find the trailing bit of the OBU and either extract
   // or skip over the payload data as an opaque chunk of data.
   bool ParseMetadata(const uint8_t* data, size_t size);  // 5.8.
-  // Adds and populates the TileBuffer for each tile in the tile group.
+  // Adds and populates the TileBuffer for each tile in the tile group and
+  // updates |next_tile_group_start_|
   bool AddTileBuffers(int start, int end, size_t total_size,
                       size_t tg_header_size, size_t bytes_consumed_so_far);
   bool ParseTileGroup(size_t size, size_t bytes_consumed_so_far);  // 5.11.1.
@@ -383,6 +387,9 @@ class ObuParser : public Allocable {
   int next_tile_group_start_ = 0;
   // If true, the sequence_header_ field is valid.
   bool has_sequence_header_ = false;
+  // If true, it means that the last call to ParseOneFrame() encountered a
+  // sequence header change.
+  bool sequence_header_changed_ = false;
   // If true, the obu_extension_flag syntax element in the OBU header must be
   // 0. Set to true when parsing a sequence header if OperatingPointIdc is 0.
   bool extension_disallowed_ = false;
