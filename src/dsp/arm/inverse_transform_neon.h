@@ -64,6 +64,8 @@ void InverseTransformInit10bpp_NEON();
 #define LIBGAV1_Dsp10bpp_1DTransformSize16_1DTransformIdentity LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp10bpp_1DTransformSize32_1DTransformIdentity LIBGAV1_CPU_NEON
 
+#define LIBGAV1_Dsp10bpp_1DTransformSize4_1DTransformWht LIBGAV1_CPU_NEON
+
 #endif  // LIBGAV1_ENABLE_NEON
 
 #endif  // LIBGAV1_SRC_DSP_ARM_INVERSE_TRANSFORM_NEON_H_

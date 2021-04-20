@@ -1802,6 +1802,86 @@ LIBGAV1_ALWAYS_INLINE bool Identity32DcOnly(void* dest,
 }
 
 //------------------------------------------------------------------------------
+// Walsh Hadamard Transform.
+
+// Process 4 wht4 rows and columns.
+LIBGAV1_ALWAYS_INLINE void Wht4_NEON(uint16_t* dst, const int dst_stride,
+                                     const void* source,
+                                     const int adjusted_tx_height) {
+  const auto* const src = static_cast<const int32_t*>(source);
+  int32x4_t s[4];
+
+  if (adjusted_tx_height == 1) {
+    // Special case: only src[0] is nonzero.
+    //   src[0]  0   0   0
+    //       0   0   0   0
+    //       0   0   0   0
+    //       0   0   0   0
+    //
+    // After the row and column transforms are applied, we have:
+    //       f   h   h   h
+    //       g   i   i   i
+    //       g   i   i   i
+    //       g   i   i   i
+    // where f, g, h, i are computed as follows.
+    int32_t f = (src[0] >> 2) - (src[0] >> 3);
+    const int32_t g = f >> 1;
+    f = f - (f >> 1);
+    const int32_t h = (src[0] >> 3) - (src[0] >> 4);
+    const int32_t i = (src[0] >> 4);
+    s[0] = vdupq_n_s32(h);
+    s[0] = vsetq_lane_s32(f, s[0], 0);
+    s[1] = vdupq_n_s32(i);
+    s[1] = vsetq_lane_s32(g, s[1], 0);
+    s[2] = s[3] = s[1];
+  } else {
+    // Load the 4x4 source in transposed form.
+    int32x4x4_t columns = vld4q_s32(src);
+
+    // Shift right and permute the columns for the WHT.
+    s[0] = vshrq_n_s32(columns.val[0], 2);
+    s[2] = vshrq_n_s32(columns.val[1], 2);
+    s[3] = vshrq_n_s32(columns.val[2], 2);
+    s[1] = vshrq_n_s32(columns.val[3], 2);
+
+    // Row transforms.
+    s[0] = vaddq_s32(s[0], s[2]);
+    s[3] = vsubq_s32(s[3], s[1]);
+    int32x4_t e = vhsubq_s32(s[0], s[3]);  // e = (s[0] - s[3]) >> 1
+    s[1] = vsubq_s32(e, s[1]);
+    s[2] = vsubq_s32(e, s[2]);
+    s[0] = vsubq_s32(s[0], s[1]);
+    s[3] = vaddq_s32(s[3], s[2]);
+
+    int32x4_t x[4];
+    Transpose4x4(s, x);
+
+    s[0] = x[0];
+    s[2] = x[1];
+    s[3] = x[2];
+    s[1] = x[3];
+
+    // Column transforms.
+    s[0] = vaddq_s32(s[0], s[2]);
+    s[3] = vsubq_s32(s[3], s[1]);
+    e = vhsubq_s32(s[0], s[3]);  // e = (s[0] - s[3]) >> 1
+    s[1] = vsubq_s32(e, s[1]);
+    s[2] = vsubq_s32(e, s[2]);
+    s[0] = vsubq_s32(s[0], s[1]);
+    s[3] = vaddq_s32(s[3], s[2]);
+  }
+
+  // Store to frame.
+  const uint16x4_t v_max_bitdepth = vdup_n_u16((1 << kBitdepth10) - 1);
+  for (int row = 0; row < 4; row += 1) {
+    const uint16x4_t frame_data = vld1_u16(dst);
+    const int32x4_t b = vaddw_s16(s[row], vreinterpret_s16_u16(frame_data));
+    vst1_u16(dst, vmin_u16(vqmovun_s32(b), v_max_bitdepth));
+    dst += dst_stride;
+  }
+}
+
+//------------------------------------------------------------------------------
 // row/column transform loops
 
 template <int tx_height>
@@ -2568,6 +2648,33 @@ void Identity32TransformLoopColumn_NEON(TransformType /*tx_type*/,
                                  adjusted_tx_height, src);
 }
 
+void Wht4TransformLoopRow_NEON(TransformType tx_type, TransformSize tx_size,
+                               int /*adjusted_tx_height*/, void* /*src_buffer*/,
+                               int /*start_x*/, int /*start_y*/,
+                               void* /*dst_frame*/) {
+  assert(tx_type == kTransformTypeDctDct);
+  assert(tx_size == kTransformSize4x4);
+  static_cast<void>(tx_type);
+  static_cast<void>(tx_size);
+  // Do both row and column transforms in the column-transform pass.
+}
+
+void Wht4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
+                                  int adjusted_tx_height, void* src_buffer,
+                                  int start_x, int start_y, void* dst_frame) {
+  assert(tx_type == kTransformTypeDctDct);
+  assert(tx_size == kTransformSize4x4);
+  static_cast<void>(tx_type);
+  static_cast<void>(tx_size);
+
+  // Process 4 1d wht4 rows and columns in parallel.
+  const auto* src = static_cast<int32_t*>(src_buffer);
+  auto& frame = *static_cast<Array2DView<uint16_t>*>(dst_frame);
+  uint16_t* dst = frame[start_y] + start_x;
+  const int dst_stride = frame.columns();
+  Wht4_NEON(dst, dst_stride, src, adjusted_tx_height);
+}
+
 //------------------------------------------------------------------------------
 
 void Init10bpp() {
@@ -2626,6 +2733,12 @@ void Init10bpp() {
       Identity32TransformLoopRow_NEON;
   dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kColumn] =
       Identity32TransformLoopColumn_NEON;
+
+  // Maximum transform size for Wht is 4.
+  dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kRow] =
+      Wht4TransformLoopRow_NEON;
+  dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kColumn] =
+      Wht4TransformLoopColumn_NEON;
 }
 
 }  // namespace

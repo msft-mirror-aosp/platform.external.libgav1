@@ -281,10 +281,14 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestRandomValues(
     int num_tests) {
   libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
 
-  for (int tx_type_idx = 0; tx_type_idx < kNumTransformTypes; ++tx_type_idx) {
-    const TransformType tx_type = kLibgav1TxType[tx_type_idx];
-    const Transform1D row_transform = kRowTransform[tx_type];
-    const Transform1D column_transform = kColumnTransform[tx_type];
+  for (int tx_type_idx = -1; tx_type_idx < kNumTransformTypes; ++tx_type_idx) {
+    const TransformType tx_type = (tx_type_idx == -1)
+                                      ? kTransformTypeDctDct
+                                      : kLibgav1TxType[tx_type_idx];
+    const Transform1D row_transform =
+        (tx_type_idx == -1) ? k1DTransformWht : kRowTransform[tx_type];
+    const Transform1D column_transform =
+        (tx_type_idx == -1) ? k1DTransformWht : kColumnTransform[tx_type];
 
     // Skip the 'C' test case as this is used as the reference.
     if (base_inverse_transforms_[row_transform][tx_size_1d_row_][kRow] ==
@@ -349,7 +353,7 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestRandomValues(
                       << ToString(
                              static_cast<TransformSize1D>(tx_size_1d_column_))
                       << " differs from reference in iteration #" << n
-                      << "tx_type_idx:" << tx_type_idx;
+                      << " tx_type_idx:" << tx_type_idx;
         break;
       }
     }
@@ -360,19 +364,22 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestRandomValues(
       const auto cur_row_elapsed_time_us =
           static_cast<int>(absl::ToInt64Microseconds(cur_elapsed_time[kRow]));
       printf("TxType %30s[%19s]:: base_row: %5d us  cur_row: %5d us  %2.2fx \n",
-             ToString(tx_type), kTransformSize1DNames[tx_size_1d_row_],
-             base_row_elapsed_time_us, cur_row_elapsed_time_us,
+             (tx_type_idx == -1) ? ToString(row_transform) : ToString(tx_type),
+             kTransformSize1DNames[tx_size_1d_row_], base_row_elapsed_time_us,
+             cur_row_elapsed_time_us,
              static_cast<float>(base_row_elapsed_time_us) /
                  static_cast<float>(cur_row_elapsed_time_us));
       const auto base_column_elapsed_time_us = static_cast<int>(
           absl::ToInt64Microseconds(base_elapsed_time[kColumn]));
       const auto cur_column_elapsed_time_us = static_cast<int>(
           absl::ToInt64Microseconds(cur_elapsed_time[kColumn]));
-      printf("TxType %30s[%19s]:: base_col: %5d us  cur_col: %5d us  %2.2fx \n",
-             ToString(tx_type), kTransformSize1DNames[tx_size_1d_column_],
-             base_column_elapsed_time_us, cur_column_elapsed_time_us,
-             static_cast<float>(base_column_elapsed_time_us) /
-                 static_cast<float>(cur_column_elapsed_time_us));
+      printf(
+          "TxType %30s[%19s]:: base_col: %5d us  cur_col: %5d us  %2.2fx \n",
+          (tx_type_idx == -1) ? ToString(column_transform) : ToString(tx_type),
+          kTransformSize1DNames[tx_size_1d_column_],
+          base_column_elapsed_time_us, cur_column_elapsed_time_us,
+          static_cast<float>(base_column_elapsed_time_us) /
+              static_cast<float>(cur_column_elapsed_time_us));
     }
   }
 }
