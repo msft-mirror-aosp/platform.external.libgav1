@@ -1159,6 +1159,145 @@ void Vertical64xH_NEON(void* const dest, ptrdiff_t stride,
   } while (y != 0);
 }
 
+template <int height>
+inline void Paeth4xH_NEON(void* const dest, ptrdiff_t stride,
+                          const void* const top_ptr,
+                          const void* const left_ptr) {
+  auto* dst = static_cast<uint8_t*>(dest);
+  const auto* const top_row = static_cast<const uint16_t*>(top_ptr);
+  const auto* const left_col = static_cast<const uint16_t*>(left_ptr);
+
+  const uint16x4_t top_left = vdup_n_u16(top_row[-1]);
+  const uint16x4_t top_left_x2 = vshl_n_u16(top_left, 1);
+  const uint16x4_t top = vld1_u16(top_row);
+
+  for (int y = 0; y < height; ++y) {
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
+    const uint16x4_t left = vdup_n_u16(left_col[y]);
+
+    const uint16x4_t left_dist = vabd_u16(top, top_left);
+    const uint16x4_t top_dist = vabd_u16(left, top_left);
+    const uint16x4_t top_left_dist = vabd_u16(vadd_u16(top, left), top_left_x2);
+
+    const uint16x4_t left_le_top = vcle_u16(left_dist, top_dist);
+    const uint16x4_t left_le_top_left = vcle_u16(left_dist, top_left_dist);
+    const uint16x4_t top_le_top_left = vcle_u16(top_dist, top_left_dist);
+
+    // if (left_dist <= top_dist && left_dist <= top_left_dist)
+    const uint16x4_t left_mask = vand_u16(left_le_top, left_le_top_left);
+    //   dest[x] = left_column[y];
+    // Fill all the unused spaces with 'top'. They will be overwritten when
+    // the positions for top_left are known.
+    uint16x4_t result = vbsl_u16(left_mask, left, top);
+    // else if (top_dist <= top_left_dist)
+    //   dest[x] = top_row[x];
+    // Add these values to the mask. They were already set.
+    const uint16x4_t left_or_top_mask = vorr_u16(left_mask, top_le_top_left);
+    // else
+    //   dest[x] = top_left;
+    result = vbsl_u16(left_or_top_mask, result, top_left);
+
+    vst1_u16(dst16, result);
+    dst += stride;
+  }
+}
+
+template <int height>
+inline void Paeth8xH_NEON(void* const dest, ptrdiff_t stride,
+                          const void* const top_ptr,
+                          const void* const left_ptr) {
+  auto* dst = static_cast<uint8_t*>(dest);
+  const auto* const top_row = static_cast<const uint16_t*>(top_ptr);
+  const auto* const left_col = static_cast<const uint16_t*>(left_ptr);
+
+  const uint16x8_t top_left = vdupq_n_u16(top_row[-1]);
+  const uint16x8_t top_left_x2 = vshlq_n_u16(top_left, 1);
+  const uint16x8_t top = vld1q_u16(top_row);
+
+  for (int y = 0; y < height; ++y) {
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
+    const uint16x8_t left = vdupq_n_u16(left_col[y]);
+
+    const uint16x8_t left_dist = vabdq_u16(top, top_left);
+    const uint16x8_t top_dist = vabdq_u16(left, top_left);
+    const uint16x8_t top_left_dist =
+        vabdq_u16(vaddq_u16(top, left), top_left_x2);
+
+    const uint16x8_t left_le_top = vcleq_u16(left_dist, top_dist);
+    const uint16x8_t left_le_top_left = vcleq_u16(left_dist, top_left_dist);
+    const uint16x8_t top_le_top_left = vcleq_u16(top_dist, top_left_dist);
+
+    // if (left_dist <= top_dist && left_dist <= top_left_dist)
+    const uint16x8_t left_mask = vandq_u16(left_le_top, left_le_top_left);
+    //   dest[x] = left_column[y];
+    // Fill all the unused spaces with 'top'. They will be overwritten when
+    // the positions for top_left are known.
+    uint16x8_t result = vbslq_u16(left_mask, left, top);
+    // else if (top_dist <= top_left_dist)
+    //   dest[x] = top_row[x];
+    // Add these values to the mask. They were already set.
+    const uint16x8_t left_or_top_mask = vorrq_u16(left_mask, top_le_top_left);
+    // else
+    //   dest[x] = top_left;
+    result = vbslq_u16(left_or_top_mask, result, top_left);
+
+    vst1q_u16(dst16, result);
+    dst += stride;
+  }
+}
+
+// For 16xH and above.
+template <int width, int height>
+inline void PaethWxH_NEON(void* const dest, ptrdiff_t stride,
+                          const void* const top_ptr,
+                          const void* const left_ptr) {
+  auto* dst = static_cast<uint8_t*>(dest);
+  const auto* const top_row = static_cast<const uint16_t*>(top_ptr);
+  const auto* const left_col = static_cast<const uint16_t*>(left_ptr);
+
+  const uint16x8_t top_left = vdupq_n_u16(top_row[-1]);
+  const uint16x8_t top_left_x2 = vshlq_n_u16(top_left, 1);
+
+  uint16x8_t top[width >> 3];
+  for (int i = 0; i < width >> 3; ++i) {
+    top[i] = vld1q_u16(top_row + (i << 3));
+  }
+
+  for (int y = 0; y < height; ++y) {
+    auto* dst_x = reinterpret_cast<uint16_t*>(dst);
+    const uint16x8_t left = vdupq_n_u16(left_col[y]);
+    const uint16x8_t top_dist = vabdq_u16(left, top_left);
+
+    for (int i = 0; i < (width >> 3); ++i) {
+      const uint16x8_t left_dist = vabdq_u16(top[i], top_left);
+      const uint16x8_t top_left_dist =
+          vabdq_u16(vaddq_u16(top[i], left), top_left_x2);
+
+      const uint16x8_t left_le_top = vcleq_u16(left_dist, top_dist);
+      const uint16x8_t left_le_top_left = vcleq_u16(left_dist, top_left_dist);
+      const uint16x8_t top_le_top_left = vcleq_u16(top_dist, top_left_dist);
+
+      // if (left_dist <= top_dist && left_dist <= top_left_dist)
+      const uint16x8_t left_mask = vandq_u16(left_le_top, left_le_top_left);
+      //   dest[x] = left_column[y];
+      // Fill all the unused spaces with 'top'. They will be overwritten when
+      // the positions for top_left are known.
+      uint16x8_t result = vbslq_u16(left_mask, left, top[i]);
+      // else if (top_dist <= top_left_dist)
+      //   dest[x] = top_row[x];
+      // Add these values to the mask. They were already set.
+      const uint16x8_t left_or_top_mask = vorrq_u16(left_mask, top_le_top_left);
+      // else
+      //   dest[x] = top_left;
+      result = vbslq_u16(left_or_top_mask, result, top_left);
+
+      vst1q_u16(dst_x, result);
+      dst_x += 8;
+    }
+    dst += stride;
+  }
+}
+
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
@@ -1170,6 +1309,8 @@ void Init10bpp() {
       DcDefs::_4x4::Dc;
   dsp->intra_predictors[kTransformSize4x4][kIntraPredictorVertical] =
       Vertical4xH_NEON<4>;
+  dsp->intra_predictors[kTransformSize4x4][kIntraPredictorPaeth] =
+      Paeth4xH_NEON<4>;
 
   // 4x8
   dsp->intra_predictors[kTransformSize4x8][kIntraPredictorDcTop] =
@@ -1182,6 +1323,8 @@ void Init10bpp() {
       Horizontal4xH_NEON<8>;
   dsp->intra_predictors[kTransformSize4x8][kIntraPredictorVertical] =
       Vertical4xH_NEON<8>;
+  dsp->intra_predictors[kTransformSize4x8][kIntraPredictorPaeth] =
+      Paeth4xH_NEON<8>;
 
   // 4x16
   dsp->intra_predictors[kTransformSize4x16][kIntraPredictorDcTop] =
@@ -1194,6 +1337,8 @@ void Init10bpp() {
       Horizontal4xH_NEON<16>;
   dsp->intra_predictors[kTransformSize4x16][kIntraPredictorVertical] =
       Vertical4xH_NEON<16>;
+  dsp->intra_predictors[kTransformSize4x16][kIntraPredictorPaeth] =
+      Paeth4xH_NEON<16>;
 
   // 8x4
   dsp->intra_predictors[kTransformSize8x4][kIntraPredictorDcTop] =
@@ -1204,6 +1349,8 @@ void Init10bpp() {
       DcDefs::_8x4::Dc;
   dsp->intra_predictors[kTransformSize8x4][kIntraPredictorVertical] =
       Vertical8xH_NEON<4>;
+  dsp->intra_predictors[kTransformSize8x4][kIntraPredictorPaeth] =
+      Paeth8xH_NEON<4>;
 
   // 8x8
   dsp->intra_predictors[kTransformSize8x8][kIntraPredictorDcTop] =
@@ -1216,6 +1363,8 @@ void Init10bpp() {
       Horizontal8xH_NEON<8>;
   dsp->intra_predictors[kTransformSize8x8][kIntraPredictorVertical] =
       Vertical8xH_NEON<8>;
+  dsp->intra_predictors[kTransformSize8x8][kIntraPredictorPaeth] =
+      Paeth8xH_NEON<8>;
 
   // 8x16
   dsp->intra_predictors[kTransformSize8x16][kIntraPredictorDcTop] =
@@ -1226,6 +1375,8 @@ void Init10bpp() {
       DcDefs::_8x16::Dc;
   dsp->intra_predictors[kTransformSize8x16][kIntraPredictorVertical] =
       Vertical8xH_NEON<16>;
+  dsp->intra_predictors[kTransformSize8x16][kIntraPredictorPaeth] =
+      Paeth8xH_NEON<16>;
 
   // 8x32
   dsp->intra_predictors[kTransformSize8x32][kIntraPredictorDcTop] =
@@ -1238,6 +1389,8 @@ void Init10bpp() {
       Horizontal8xH_NEON<32>;
   dsp->intra_predictors[kTransformSize8x32][kIntraPredictorVertical] =
       Vertical8xH_NEON<32>;
+  dsp->intra_predictors[kTransformSize8x32][kIntraPredictorPaeth] =
+      Paeth8xH_NEON<32>;
 
   // 16x4
   dsp->intra_predictors[kTransformSize16x4][kIntraPredictorDcTop] =
@@ -1248,6 +1401,8 @@ void Init10bpp() {
       DcDefs::_16x4::Dc;
   dsp->intra_predictors[kTransformSize16x4][kIntraPredictorVertical] =
       Vertical16xH_NEON<4>;
+  dsp->intra_predictors[kTransformSize16x4][kIntraPredictorPaeth] =
+      PaethWxH_NEON<16, 4>;
 
   // 16x8
   dsp->intra_predictors[kTransformSize16x8][kIntraPredictorDcTop] =
@@ -1260,6 +1415,8 @@ void Init10bpp() {
       Horizontal16xH_NEON<8>;
   dsp->intra_predictors[kTransformSize16x8][kIntraPredictorVertical] =
       Vertical16xH_NEON<8>;
+  dsp->intra_predictors[kTransformSize16x8][kIntraPredictorPaeth] =
+      PaethWxH_NEON<16, 8>;
 
   // 16x16
   dsp->intra_predictors[kTransformSize16x16][kIntraPredictorDcTop] =
@@ -1270,6 +1427,8 @@ void Init10bpp() {
       DcDefs::_16x16::Dc;
   dsp->intra_predictors[kTransformSize16x16][kIntraPredictorVertical] =
       Vertical16xH_NEON<16>;
+  dsp->intra_predictors[kTransformSize16x16][kIntraPredictorPaeth] =
+      PaethWxH_NEON<16, 16>;
 
   // 16x32
   dsp->intra_predictors[kTransformSize16x32][kIntraPredictorDcTop] =
@@ -1280,6 +1439,8 @@ void Init10bpp() {
       DcDefs::_16x32::Dc;
   dsp->intra_predictors[kTransformSize16x32][kIntraPredictorVertical] =
       Vertical16xH_NEON<32>;
+  dsp->intra_predictors[kTransformSize16x32][kIntraPredictorPaeth] =
+      PaethWxH_NEON<16, 32>;
 
   // 16x64
   dsp->intra_predictors[kTransformSize16x64][kIntraPredictorDcTop] =
@@ -1290,6 +1451,8 @@ void Init10bpp() {
       DcDefs::_16x64::Dc;
   dsp->intra_predictors[kTransformSize16x64][kIntraPredictorVertical] =
       Vertical16xH_NEON<64>;
+  dsp->intra_predictors[kTransformSize16x64][kIntraPredictorPaeth] =
+      PaethWxH_NEON<16, 64>;
 
   // 32x8
   dsp->intra_predictors[kTransformSize32x8][kIntraPredictorDcTop] =
@@ -1300,6 +1463,8 @@ void Init10bpp() {
       DcDefs::_32x8::Dc;
   dsp->intra_predictors[kTransformSize32x8][kIntraPredictorVertical] =
       Vertical32xH_NEON<8>;
+  dsp->intra_predictors[kTransformSize32x8][kIntraPredictorPaeth] =
+      PaethWxH_NEON<32, 8>;
 
   // 32x16
   dsp->intra_predictors[kTransformSize32x16][kIntraPredictorDcTop] =
@@ -1310,6 +1475,8 @@ void Init10bpp() {
       DcDefs::_32x16::Dc;
   dsp->intra_predictors[kTransformSize32x16][kIntraPredictorVertical] =
       Vertical32xH_NEON<16>;
+  dsp->intra_predictors[kTransformSize32x16][kIntraPredictorPaeth] =
+      PaethWxH_NEON<32, 16>;
 
   // 32x32
   dsp->intra_predictors[kTransformSize32x32][kIntraPredictorDcTop] =
@@ -1320,6 +1487,8 @@ void Init10bpp() {
       DcDefs::_32x32::Dc;
   dsp->intra_predictors[kTransformSize32x32][kIntraPredictorVertical] =
       Vertical32xH_NEON<32>;
+  dsp->intra_predictors[kTransformSize32x32][kIntraPredictorPaeth] =
+      PaethWxH_NEON<32, 32>;
 
   // 32x64
   dsp->intra_predictors[kTransformSize32x64][kIntraPredictorDcTop] =
@@ -1332,6 +1501,8 @@ void Init10bpp() {
       Horizontal32xH_NEON<64>;
   dsp->intra_predictors[kTransformSize32x64][kIntraPredictorVertical] =
       Vertical32xH_NEON<64>;
+  dsp->intra_predictors[kTransformSize32x64][kIntraPredictorPaeth] =
+      PaethWxH_NEON<32, 64>;
 
   // 64x16
   dsp->intra_predictors[kTransformSize64x16][kIntraPredictorDcTop] =
@@ -1342,6 +1513,8 @@ void Init10bpp() {
       DcDefs::_64x16::Dc;
   dsp->intra_predictors[kTransformSize64x16][kIntraPredictorVertical] =
       Vertical64xH_NEON<16>;
+  dsp->intra_predictors[kTransformSize64x16][kIntraPredictorPaeth] =
+      PaethWxH_NEON<64, 16>;
 
   // 64x32
   dsp->intra_predictors[kTransformSize64x32][kIntraPredictorDcTop] =
@@ -1352,6 +1525,8 @@ void Init10bpp() {
       DcDefs::_64x32::Dc;
   dsp->intra_predictors[kTransformSize64x32][kIntraPredictorVertical] =
       Vertical64xH_NEON<32>;
+  dsp->intra_predictors[kTransformSize64x32][kIntraPredictorPaeth] =
+      PaethWxH_NEON<64, 32>;
 
   // 64x64
   dsp->intra_predictors[kTransformSize64x64][kIntraPredictorDcTop] =
@@ -1362,6 +1537,8 @@ void Init10bpp() {
       DcDefs::_64x64::Dc;
   dsp->intra_predictors[kTransformSize64x64][kIntraPredictorVertical] =
       Vertical64xH_NEON<64>;
+  dsp->intra_predictors[kTransformSize64x64][kIntraPredictorPaeth] =
+      PaethWxH_NEON<64, 64>;
 }
 
 }  // namespace
