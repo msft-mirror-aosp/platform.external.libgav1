@@ -26,6 +26,7 @@ namespace dsp {
 // Initializes Dsp::loop_restorations, see the defines below for specifics.
 // This function is not thread-safe.
 void LoopRestorationInit_NEON();
+void LoopRestorationInit10bpp_NEON();
 
 }  // namespace dsp
 }  // namespace libgav1
