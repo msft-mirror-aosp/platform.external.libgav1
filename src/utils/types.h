@@ -178,9 +178,8 @@ struct BlockParameters : public Allocable {
   bool is_inter;
   bool is_explicit_compound_type;  // comp_group_idx in the spec.
   bool is_compound_type_average;   // compound_idx in the spec.
-  bool is_global_mv_block;
-  bool use_predicted_segment_id;  // only valid with temporal update enabled.
-  int8_t segment_id;              // segment_id is in the range [0, 7].
+  bool use_predicted_segment_id;   // only valid with temporal update enabled.
+  int8_t segment_id;               // segment_id is in the range [0, 7].
   PredictionMode y_mode;
   PredictionMode uv_mode;
   TransformSize transform_size;

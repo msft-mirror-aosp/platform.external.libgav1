@@ -695,7 +695,7 @@ GlobalMotion* Tile::GetWarpParams(
             ? global_motion_params->type
             : kNumGlobalMotionTransformationTypes;
     const bool is_global_valid =
-        IsGlobalMvBlock(block.bp->is_global_mv_block, global_motion_type) &&
+        IsGlobalMvBlock(*block.bp, global_motion_type) &&
         SetupShear(global_motion_params);
     // Valid global motion type implies reference type can't be intra.
     assert(!is_global_valid || reference_type != kReferenceFrameIntra);
