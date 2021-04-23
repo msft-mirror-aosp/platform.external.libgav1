@@ -564,8 +564,8 @@ inline void DirectionalZone2_4xH(uint8_t* dst, const ptrdiff_t stride,
   // If the 64 scaling is regarded as a decimal point, the first value of the
   // left_y vector omits the portion which is covered under the left_column
   // offset. The following values need the full ystep as a relative offset.
-  int16x8_t left_y = vmulq_n_s16(zero_to_seven, -ystep);
-  left_y = vaddq_s16(left_y, vdupq_n_s16(-ystep_remainder));
+  const int16x8_t remainder = vdupq_n_s16(-ystep_remainder);
+  const int16x8_t left_y = vmlaq_n_s16(remainder, zero_to_seven, -ystep);
 
   // This loop treats each set of 4 columns in 3 stages with y-value boundaries.
   // The first stage, before the first y-loop, covers blocks that are only
@@ -687,8 +687,8 @@ inline void DirectionalZone2_8(uint8_t* const dst, const ptrdiff_t stride,
   // If the 64 scaling is regarded as a decimal point, the first value of the
   // left_y vector omits the portion which is covered under the left_column
   // offset. Following values need the full ystep as a relative offset.
-  int16x8_t left_y = vmulq_n_s16(zero_to_seven, -ystep);
-  left_y = vaddq_s16(left_y, vdupq_n_s16(-ystep_remainder));
+  const int16x8_t remainder = vdupq_n_s16(-ystep_remainder);
+  int16x8_t left_y = vmlaq_n_s16(remainder, zero_to_seven, -ystep);
 
   // This loop treats each set of 4 columns in 3 stages with y-value boundaries.
   // The first stage, before the first y-loop, covers blocks that are only
