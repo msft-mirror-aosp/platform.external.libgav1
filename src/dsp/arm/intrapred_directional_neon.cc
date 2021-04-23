@@ -40,9 +40,9 @@ inline uint8x8_t WeightedBlend(const uint8x8_t a, const uint8x8_t b,
                                const uint8x8_t a_weight,
                                const uint8x8_t b_weight) {
   const uint16x8_t a_product = vmull_u8(a, a_weight);
-  const uint16x8_t b_product = vmull_u8(b, b_weight);
+  const uint16x8_t sum = vmlal_u8(a_product, b, b_weight);
 
-  return vrshrn_n_u16(vaddq_u16(a_product, b_product), 5 /*log2(32)*/);
+  return vrshrn_n_u16(sum, 5 /*log2(32)*/);
 }
 
 // For vertical operations the weights are one constant value.
