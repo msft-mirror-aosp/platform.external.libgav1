@@ -17,7 +17,7 @@
 #ifndef LIBGAV1_SRC_DSP_DSP_H_
 #define LIBGAV1_SRC_DSP_DSP_H_
 
-#include <cstddef>  // ptrdiff_t
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 
@@ -77,6 +77,11 @@ enum LoopFilterSize : uint8_t {
   kLoopFilterSize8,
   kLoopFilterSize14,
   kNumLoopFilterSizes
+};
+
+enum : uint8_t {
+  kRow = 0,
+  kColumn = 1,
 };
 
 //------------------------------------------------------------------------------
@@ -298,16 +303,20 @@ using IntraEdgeUpsamplerFunc = void (*)(void* buffer, int size);
 // 7.13.3).
 // Apply the inverse transforms and add the residual to the destination frame
 // for the transform type and block size |tx_size| starting at position
-// |start_x| and |start_y|.  |dst_frame| is a pointer to an Array2D. |is_row|
-// signals the direction of the transform loop. |non_zero_coeff_count| is the
-// number of non zero coefficients in the block.
+// |start_x| and |start_y|. |dst_frame| is a pointer to an Array2D.
+// |adjusted_tx_height| is the number of rows to process based on the non-zero
+// coefficient count in the block. It will be 1 (non-zero coefficient count ==
+// 1), 4 or a multiple of 8 up to 32 or the original transform height,
+// whichever is less.
 using InverseTransformAddFunc = void (*)(TransformType tx_type,
                                          TransformSize tx_size,
+                                         int adjusted_tx_height,
                                          void* src_buffer, int start_x,
-                                         int start_y, void* dst_frame,
-                                         bool is_row, int non_zero_coeff_count);
+                                         int start_y, void* dst_frame);
+// The final dimension holds row and column transforms indexed with kRow and
+// kColumn.
 using InverseTransformAddFuncs =
-    InverseTransformAddFunc[kNum1DTransformSizes][kNum1DTransforms];
+    InverseTransformAddFunc[kNum1DTransforms][kNum1DTransformSizes][2];
 
 //------------------------------------------------------------------------------
 // Post processing.
@@ -325,7 +334,7 @@ using LoopFilterFuncs =
 // with |stride| given in bytes. |direction| and |variance| are output
 // parameters and must not be nullptr.
 using CdefDirectionFunc = void (*)(const void* src, ptrdiff_t stride,
-                                   int* direction, int* variance);
+                                   uint8_t* direction, int* variance);
 
 // Cdef filtering function signature. Section 7.15.3.
 // |source| is a pointer to the input block padded with kCdefLargeValue if at a
@@ -346,30 +355,53 @@ using CdefFilteringFunc = void (*)(const uint16_t* source,
 // |primary_strength| only, [2]: |secondary_strength| only.
 using CdefFilteringFuncs = CdefFilteringFunc[2][3];
 
-// Upscaling process function signature. Section 7.16.
-// Operates on a single row.
-// |source| is the input frame buffer at the given row.
-// |dest| is the output row.
+// Upscaling coefficients function signature. Section 7.16.
+// This is an auxiliary function for SIMD optimizations and has no corresponding
+// C function. Different SIMD versions may have different outputs. So it must
+// pair with the corresponding version of SuperResFunc.
 // |upscaled_width| is the width of the output frame.
 // |step| is the number of subpixels to move the kernel for the next destination
 // pixel.
 // |initial_subpixel_x| is a base offset from which |step| increments.
-using SuperResRowFunc = void (*)(const void* source, const int upscaled_width,
-                                 const int initial_subpixel_x, const int step,
-                                 void* const dest);
+// |coefficients| is the upscale filter used by each pixel in a row.
+using SuperResCoefficientsFunc = void (*)(int upscaled_width,
+                                          int initial_subpixel_x, int step,
+                                          void* coefficients);
+
+// Upscaling process function signature. Section 7.16.
+// |coefficients| is the upscale filter used by each pixel in a row. It is not
+// used by the C function.
+// |source| is the input frame buffer. It will be line extended.
+// |source_stride| is given in pixels.
+// |dest| is the output buffer.
+// |dest_stride| is given in pixels.
+// |height| is the height of the block to be processed.
+// |downscaled_width| is the width of the input frame.
+// |upscaled_width| is the width of the output frame.
+// |step| is the number of subpixels to move the kernel for the next destination
+// pixel.
+// |initial_subpixel_x| is a base offset from which |step| increments.
+using SuperResFunc = void (*)(const void* coefficients, void* source,
+                              ptrdiff_t source_stride, int height,
+                              int downscaled_width, int upscaled_width,
+                              int initial_subpixel_x, int step, void* dest,
+                              ptrdiff_t dest_stride);
 
 // Loop restoration function signature. Sections 7.16, 7.17.
-// |source| is the input frame buffer, which is deblocked and cdef filtered.
-// |dest| is the output.
 // |restoration_info| contains loop restoration information, such as filter
 // type, strength.
-// |source_stride| and |dest_stride| are given in pixels.
-// |buffer| contains buffers required for self guided filter and wiener filter.
-// They must be initialized before calling.
+// |source| is the input frame buffer, which is deblocked and cdef filtered.
+// |top_border| and |bottom_border| are the top and bottom borders.
+// |dest| is the output.
+// |stride| is given in pixels, and shared by |source| and |dest|.
+// |top_border_stride| and |bottom_border_stride| are given in pixels.
+// |restoration_buffer| contains buffers required for self guided filter and
+// wiener filter. They must be initialized before calling.
 using LoopRestorationFunc = void (*)(
-    const void* source, void* dest, const RestorationUnitInfo& restoration_info,
-    ptrdiff_t source_stride, ptrdiff_t dest_stride, int width, int height,
-    RestorationBuffer* buffer);
+    const RestorationUnitInfo& restoration_info, const void* source,
+    ptrdiff_t stride, const void* top_border, ptrdiff_t top_border_stride,
+    const void* bottom_border, ptrdiff_t bottom_border_stride, int width,
+    int height, RestorationBuffer* restoration_buffer, void* dest);
 
 // Index 0 is Wiener Filter.
 // Index 1 is Self Guided Restoration Filter.
@@ -383,7 +415,7 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 // |vertical_filter_index|/|horizontal_filter_index| is the index to
 // retrieve the type of filter to be applied for vertical/horizontal direction
 // from the filter lookup table 'kSubPixelFilters'.
-// |subpixel_x| and |subpixel_y| are starting positions in units of 1/1024.
+// |horizontal_filter_id| and |vertical_filter_id| are the filter ids.
 // |width| and |height| are width and height of the block to be filtered.
 // |ref_last_x| and |ref_last_y| are the last pixel of the reference frame in
 // x/y direction.
@@ -395,9 +427,10 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 // be used.
 using ConvolveFunc = void (*)(const void* reference, ptrdiff_t reference_stride,
                               int horizontal_filter_index,
-                              int vertical_filter_index, int subpixel_x,
-                              int subpixel_y, int width, int height,
-                              void* prediction, ptrdiff_t pred_stride);
+                              int vertical_filter_index,
+                              int horizontal_filter_id, int vertical_filter_id,
+                              int width, int height, void* prediction,
+                              ptrdiff_t pred_stride);
 
 // Convolve functions signature. Each points to one convolve function with
 // a specific setting:
@@ -815,7 +848,8 @@ struct Dsp {
   MvProjectionCompoundFunc mv_projection_compound[3];
   MvProjectionSingleFunc mv_projection_single[3];
   ObmcBlendFuncs obmc_blend;
-  SuperResRowFunc super_res_row;
+  SuperResCoefficientsFunc super_res_coefficients;
+  SuperResFunc super_res;
   WarpCompoundFunc warp_compound;
   WarpFunc warp;
   WeightMaskFuncs weight_mask;
@@ -834,6 +868,14 @@ const Dsp* GetDspTable(int bitdepth);
 
 namespace dsp_internal {
 
+// Visual Studio builds don't have a way to detect SSE4_1. Only exclude the C
+// functions if /arch:AVX2 is used across all sources.
+#if !LIBGAV1_TARGETING_AVX2 && \
+    (defined(_MSC_VER) || (defined(_M_IX86) || defined(_M_X64)))
+#undef LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+#define LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS 1
+#endif
+
 // Returns true if a more highly optimized version of |func| is not defined for
 // the associated bitdepth or if it is forcibly enabled with
 // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS. The define checked for |func| corresponds
@@ -848,12 +890,23 @@ namespace dsp_internal {
 //  NEON support is the only extension available for ARM and it is always
 //  required. Because of this restriction DSP_ENABLED_8BPP_NEON(func) is always
 //  true and can be omitted.
+#define DSP_ENABLED_8BPP_AVX2(func)    \
+  (LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS || \
+   LIBGAV1_Dsp8bpp_##func == LIBGAV1_CPU_AVX2)
+#define DSP_ENABLED_10BPP_AVX2(func)   \
+  (LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS || \
+   LIBGAV1_Dsp10bpp_##func == LIBGAV1_CPU_AVX2)
 #define DSP_ENABLED_8BPP_SSE4_1(func)  \
   (LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS || \
    LIBGAV1_Dsp8bpp_##func == LIBGAV1_CPU_SSE4_1)
 #define DSP_ENABLED_10BPP_SSE4_1(func) \
   (LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS || \
    LIBGAV1_Dsp10bpp_##func == LIBGAV1_CPU_SSE4_1)
+
+// Initializes C-only function pointers. Note some entries may be set to
+// nullptr if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS is not defined. This is meant
+// for use in tests only, it is not thread-safe.
+void DspInit_C();
 
 // Returns the appropriate Dsp table for |bitdepth| or nullptr if one doesn't
 // exist. This version is meant for use by test or dsp/*Init() functions only.
