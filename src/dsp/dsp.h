@@ -194,6 +194,7 @@ inline const char* ToString(const LoopFilterType filter_type) {
 // by bitdepth with |stride| given in bytes. |top| is an unaligned pointer to
 // the row above |dst|. |left| is an aligned vector of the column to the left
 // of |dst|. top-left and bottom-left may be accessed.
+// The pointer arguments do not alias one another.
 using IntraPredictorFunc = void (*)(void* dst, ptrdiff_t stride,
                                     const void* top, const void* left);
 using IntraPredictorFuncs =
@@ -209,6 +210,7 @@ using IntraPredictorFuncs =
 // |top| has been upsampled as described in '7.11.2.11. Intra edge upsample
 // process'. This can occur in cases with |width| + |height| <= 16. top-right
 // is accessed.
+// The pointer arguments do not alias one another.
 using DirectionalIntraPredictorZone1Func = void (*)(void* dst, ptrdiff_t stride,
                                                     const void* top, int width,
                                                     int height, int xstep,
@@ -226,6 +228,7 @@ using DirectionalIntraPredictorZone1Func = void (*)(void* dst, ptrdiff_t stride,
 // described in '7.11.2.11. Intra edge upsample process'. This can occur in
 // cases with |width| + |height| <= 16. top-left and upper-left are accessed,
 // up to [-2] in each if |upsampled_top/left| are set.
+// The pointer arguments do not alias one another.
 using DirectionalIntraPredictorZone2Func = void (*)(
     void* dst, ptrdiff_t stride, const void* top, const void* left, int width,
     int height, int xstep, int ystep, bool upsampled_top, bool upsampled_left);
@@ -240,6 +243,7 @@ using DirectionalIntraPredictorZone2Func = void (*)(
 // |left| has been upsampled as described in '7.11.2.11. Intra edge upsample
 // process'. This can occur in cases with |width| + |height| <= 16. bottom-left
 // is accessed.
+// The pointer arguments do not alias one another.
 using DirectionalIntraPredictorZone3Func = void (*)(void* dst, ptrdiff_t stride,
                                                     const void* left, int width,
                                                     int height, int ystep,
@@ -250,6 +254,7 @@ using DirectionalIntraPredictorZone3Func = void (*)(void* dst, ptrdiff_t stride,
 // by bitdepth with |stride| given in bytes. |top| is an unaligned pointer to
 // the row above |dst|. |left| is an aligned vector of the column to the left
 // of |dst|. |width| and |height| are the size of the block in pixels.
+// The pointer arguments do not alias one another.
 using FilterIntraPredictorFunc = void (*)(void* dst, ptrdiff_t stride,
                                           const void* top, const void* left,
                                           FilterIntraPredictor pred, int width,
@@ -303,11 +308,14 @@ using IntraEdgeUpsamplerFunc = void (*)(void* buffer, int size);
 // 7.13.3).
 // Apply the inverse transforms and add the residual to the destination frame
 // for the transform type and block size |tx_size| starting at position
-// |start_x| and |start_y|. |dst_frame| is a pointer to an Array2D.
-// |adjusted_tx_height| is the number of rows to process based on the non-zero
-// coefficient count in the block. It will be 1 (non-zero coefficient count ==
-// 1), 4 or a multiple of 8 up to 32 or the original transform height,
-// whichever is less.
+// |start_x| and |start_y|. |dst_frame| is a pointer to an Array2D of Pixel
+// values. |adjusted_tx_height| is the number of rows to process based on the
+// non-zero coefficient count in the block. It will be 1 (non-zero coefficient
+// count == 1), 4 or a multiple of 8 up to 32 or the original transform height,
+// whichever is less. |src_buffer| is a pointer to an Array2D of Residual
+// values. On input |src_buffer| contains the dequantized values, on output it
+// contains the residual.
+// The pointer arguments do not alias one another.
 using InverseTransformAddFunc = void (*)(TransformType tx_type,
                                          TransformSize tx_size,
                                          int adjusted_tx_height,
@@ -333,6 +341,7 @@ using LoopFilterFuncs =
 // |src| is a pointer to the source block. Pixel size is determined by bitdepth
 // with |stride| given in bytes. |direction| and |variance| are output
 // parameters and must not be nullptr.
+// The pointer arguments do not alias one another.
 using CdefDirectionFunc = void (*)(const void* src, ptrdiff_t stride,
                                    uint8_t* direction, int* variance);
 
@@ -344,6 +353,7 @@ using CdefDirectionFunc = void (*)(const void* src, ptrdiff_t stride,
 // parameters.
 // |direction| is the filtering direction.
 // |dest| is the output buffer. |dest_stride| is given in bytes.
+// The pointer arguments do not alias one another.
 using CdefFilteringFunc = void (*)(const uint16_t* source,
                                    ptrdiff_t source_stride, int block_height,
                                    int primary_strength, int secondary_strength,
@@ -381,6 +391,7 @@ using SuperResCoefficientsFunc = void (*)(int upscaled_width,
 // |step| is the number of subpixels to move the kernel for the next destination
 // pixel.
 // |initial_subpixel_x| is a base offset from which |step| increments.
+// The pointer arguments do not alias one another.
 using SuperResFunc = void (*)(const void* coefficients, void* source,
                               ptrdiff_t source_stride, int height,
                               int downscaled_width, int upscaled_width,
@@ -397,6 +408,7 @@ using SuperResFunc = void (*)(const void* coefficients, void* source,
 // |top_border_stride| and |bottom_border_stride| are given in pixels.
 // |restoration_buffer| contains buffers required for self guided filter and
 // wiener filter. They must be initialized before calling.
+// The pointer arguments do not alias one another.
 using LoopRestorationFunc = void (*)(
     const RestorationUnitInfo& restoration_info, const void* source,
     ptrdiff_t stride, const void* top_border, ptrdiff_t top_border_stride,
@@ -425,6 +437,7 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 // used. For compound vertical filtering kInterRoundBitsCompoundVertical will be
 // used. Otherwise kInterRoundBitsVertical & kInterRoundBitsVertical12bpp will
 // be used.
+// The pointer arguments do not alias one another.
 using ConvolveFunc = void (*)(const void* reference, ptrdiff_t reference_stride,
                               int horizontal_filter_index,
                               int vertical_filter_index,
@@ -462,6 +475,7 @@ using ConvolveFuncs = ConvolveFunc[2][2][2][2];
 // used. For compound vertical filtering kInterRoundBitsCompoundVertical will be
 // used. Otherwise kInterRoundBitsVertical & kInterRoundBitsVertical12bpp will
 // be used.
+// The pointer arguments do not alias one another.
 using ConvolveScaleFunc = void (*)(const void* reference,
                                    ptrdiff_t reference_stride,
                                    int horizontal_filter_index,
@@ -482,6 +496,7 @@ using ConvolveScaleFuncs = ConvolveScaleFunc[2];
 // The stride for the input buffers is equal to |width|.
 // The valid range of block size is [8x8, 128x128] for the luma plane.
 // |mask| is the output buffer. |mask_stride| is the output buffer stride.
+// The pointer arguments do not alias one another.
 using WeightMaskFunc = void (*)(const void* prediction_0,
                                 const void* prediction_1, uint8_t* mask,
                                 ptrdiff_t mask_stride);
@@ -504,6 +519,7 @@ using WeightMaskFuncs = WeightMaskFunc[6][6][2];
 // The stride for the input buffers is equal to |width|.
 // The valid range of block size is [8x8, 128x128] for the luma plane.
 // |dest| is the output buffer. |dest_stride| is the output buffer stride.
+// The pointer arguments do not alias one another.
 using AverageBlendFunc = void (*)(const void* prediction_0,
                                   const void* prediction_1, int width,
                                   int height, void* dest,
@@ -525,6 +541,7 @@ using AverageBlendFunc = void (*)(const void* prediction_0,
 // The stride for the input buffers is equal to |width|.
 // The valid range of block size is [8x8, 128x128] for the luma plane.
 // |dest| is the output buffer. |dest_stride| is the output buffer stride.
+// The pointer arguments do not alias one another.
 using DistanceWeightedBlendFunc = void (*)(const void* prediction_0,
                                            const void* prediction_1,
                                            uint8_t weight_0, uint8_t weight_1,
@@ -561,6 +578,7 @@ using DistanceWeightedBlendFunc = void (*)(const void* prediction_0,
 // |is_wedge_inter_intra| indicates if the mask is for the wedge prediction.
 // |dest| is the output block.
 // |dest_stride| is the corresponding stride for dest.
+// The pointer arguments do not alias one another.
 using MaskBlendFunc = void (*)(const void* prediction_0,
                                const void* prediction_1,
                                ptrdiff_t prediction_stride_1,
@@ -577,6 +595,7 @@ using MaskBlendFuncs = MaskBlendFunc[3][2];
 // |is_inter_intra| is true and |bitdepth| == 8.
 // |prediction_[01]| are Pixel values (uint8_t).
 // |prediction_1| is also the output buffer.
+// The pointer arguments do not alias one another.
 using InterIntraMaskBlendFunc8bpp = void (*)(const uint8_t* prediction_0,
                                              uint8_t* prediction_1,
                                              ptrdiff_t prediction_stride_1,
@@ -603,6 +622,7 @@ using InterIntraMaskBlendFuncs8bpp = InterIntraMaskBlendFunc8bpp[3];
 // |width|, |height| are the same for both input blocks.
 // |obmc_prediction| is the second input block.
 // |obmc_prediction_stride| is its stride, given in bytes.
+// The pointer arguments do not alias one another.
 using ObmcBlendFunc = void (*)(void* prediction, ptrdiff_t prediction_stride,
                                int width, int height,
                                const void* obmc_prediction,
@@ -645,6 +665,7 @@ using ObmcBlendFuncs = ObmcBlendFunc[kNumObmcDirections];
 //   Therefore, there must be at least one extra padding byte after the right
 //   border of the last row in the source buffer.
 // * The top and bottom borders must be at least 13 pixels high.
+// The pointer arguments do not alias one another.
 using WarpFunc = void (*)(const void* source, ptrdiff_t source_stride,
                           int source_width, int source_height,
                           const int* warp_params, int subsampling_x,
@@ -686,6 +707,7 @@ using LumaAutoRegressionFuncs =
 // from frame header, mainly providing auto_regression_coeff_u and
 // auto_regression_coeff_v for each chroma plane's filter, and
 // auto_regression_shift to right shift the filter sums by.
+// The pointer arguments do not alias one another.
 using ChromaAutoRegressionFunc = void (*)(const FilmGrainParams& params,
                                           const void* luma_grain_buffer,
                                           int subsampling_x, int subsampling_y,
@@ -704,6 +726,7 @@ using ChromaAutoRegressionFuncs =
 // Because this function treats all planes identically and independently, it is
 // simplified to take one grain buffer at a time. This means duplicating some
 // random number generations, but that work can be reduced in other ways.
+// The pointer arguments do not alias one another.
 using ConstructNoiseStripesFunc = void (*)(const void* grain_buffer,
                                            int grain_seed, int width,
                                            int height, int subsampling_x,
@@ -720,6 +743,7 @@ using ConstructNoiseStripesFuncs =
 // Array2D containing the allocated plane for this frame. Because this function
 // treats all planes identically and independently, it is simplified to take one
 // grain buffer at a time.
+// The pointer arguments do not alias one another.
 using ConstructNoiseImageOverlapFunc =
     void (*)(const void* noise_stripes_buffer, int width, int height,
              int subsampling_x, int subsampling_y, void* noise_image_buffer);
@@ -730,6 +754,7 @@ using ConstructNoiseImageOverlapFunc =
 // |num_points| can be between 0 and 15. When 0, the lookup table is set to
 // zero.
 // |point_value| and |point_scaling| have |num_points| valid elements.
+// The pointer arguments do not alias one another.
 using InitializeScalingLutFunc = void (*)(
     int num_points, const uint8_t point_value[], const uint8_t point_scaling[],
     uint8_t scaling_lut[kScalingLookupTableSize]);
@@ -749,6 +774,7 @@ using InitializeScalingLutFunc = void (*)(
 // |scaling_shift| is applied as a right shift after scaling, so that scaling
 // down is possible. It is found in FilmGrainParams, but supplied directly to
 // BlendNoiseWithImageLumaFunc because it's the only member used.
+// The pointer arguments do not alias one another.
 using BlendNoiseWithImageLumaFunc =
     void (*)(const void* noise_image_ptr, int min_value, int max_value,
              int scaling_shift, int width, int height, int start_height,
@@ -804,6 +830,7 @@ using MotionFieldProjectionKernelFunc = void (*)(
 // projected motion vector.
 // |count| is the number of the temporal motion vectors.
 // |candidate_mvs| is the aligned set of projected motion vectors.
+// The pointer arguments do not alias one another.
 using MvProjectionCompoundFunc = void (*)(
     const MotionVector* temporal_mvs, const int8_t* temporal_reference_offsets,
     const int reference_offsets[2], int count,
@@ -818,6 +845,7 @@ using MvProjectionCompoundFunc = void (*)(
 // projected motion vector.
 // |count| is the number of the temporal motion vectors.
 // |candidate_mvs| is the aligned set of projected motion vectors.
+// The pointer arguments do not alias one another.
 using MvProjectionSingleFunc = void (*)(
     const MotionVector* temporal_mvs, const int8_t* temporal_reference_offsets,
     int reference_offset, int count, MotionVector* candidate_mvs);
