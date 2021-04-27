@@ -797,13 +797,13 @@ using MotionFieldProjectionKernelFunc = void (*)(
 
 // Compound temporal motion vector projection function signature.
 // Section 7.9.3 and 7.10.2.10.
-// |temporal_mvs| is the set of temporal reference motion vectors.
+// |temporal_mvs| is the aligned set of temporal reference motion vectors.
 // |temporal_reference_offsets| specifies the number of frames covered by the
 // original motion vector.
 // |reference_offsets| specifies the number of frames to be covered by the
 // projected motion vector.
 // |count| is the number of the temporal motion vectors.
-// |candidate_mvs| is the set of projected motion vectors.
+// |candidate_mvs| is the aligned set of projected motion vectors.
 using MvProjectionCompoundFunc = void (*)(
     const MotionVector* temporal_mvs, const int8_t* temporal_reference_offsets,
     const int reference_offsets[2], int count,
@@ -811,13 +811,13 @@ using MvProjectionCompoundFunc = void (*)(
 
 // Single temporal motion vector projection function signature.
 // Section 7.9.3 and 7.10.2.10.
-// |temporal_mvs| is the set of temporal reference motion vectors.
+// |temporal_mvs| is the aligned set of temporal reference motion vectors.
 // |temporal_reference_offsets| specifies the number of frames covered by the
 // original motion vector.
 // |reference_offset| specifies the number of frames to be covered by the
 // projected motion vector.
 // |count| is the number of the temporal motion vectors.
-// |candidate_mvs| is the set of projected motion vectors.
+// |candidate_mvs| is the aligned set of projected motion vectors.
 using MvProjectionSingleFunc = void (*)(
     const MotionVector* temporal_mvs, const int8_t* temporal_reference_offsets,
     int reference_offset, int count, MotionVector* candidate_mvs);

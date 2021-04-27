@@ -284,7 +284,8 @@ void AddTemporalReferenceMvCandidate(
       frame_header.allow_high_precision_mv ? 2 : frame_header.force_integer_mv;
   const MotionVector* const global_mv = prediction_parameters->global_mv;
   if (is_compound) {
-    CompoundMotionVector candidate_mvs[kMaxTemporalMvCandidatesWithPadding];
+    alignas(kMaxAlignment)
+        CompoundMotionVector candidate_mvs[kMaxTemporalMvCandidatesWithPadding];
     const dsp::Dsp& dsp = *dsp::GetDspTable(8);
     dsp.mv_projection_compound[mv_projection_function_index](
         temporal_mvs, temporal_reference_offsets, reference_offsets, count,
