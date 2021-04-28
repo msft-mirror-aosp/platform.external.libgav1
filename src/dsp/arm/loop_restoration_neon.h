@@ -36,6 +36,8 @@ void LoopRestorationInit10bpp_NEON();
 #define LIBGAV1_Dsp8bpp_WienerFilter LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp8bpp_SelfGuidedFilter LIBGAV1_CPU_NEON
 
+#define LIBGAV1_Dsp10bpp_WienerFilter LIBGAV1_CPU_NEON
+
 #endif  // LIBGAV1_ENABLE_NEON
 
 #endif  // LIBGAV1_SRC_DSP_ARM_LOOP_RESTORATION_NEON_H_

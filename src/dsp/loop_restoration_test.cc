@@ -83,6 +83,9 @@ class SelfGuidedFilterTest : public testing::TestWithParam<int>,
       }
     } else if (absl::StartsWith(test_case, "NEON/")) {
       LoopRestorationInit_NEON();
+#if LIBGAV1_MAX_BITDEPTH >= 10
+      LoopRestorationInit10bpp_NEON();
+#endif
     } else {
       FAIL() << "Unrecognized architecture prefix in test case name: "
              << test_case;
@@ -348,6 +351,9 @@ class WienerFilterTest : public testing::TestWithParam<int>,
       }
     } else if (absl::StartsWith(test_case, "NEON/")) {
       LoopRestorationInit_NEON();
+#if LIBGAV1_MAX_BITDEPTH >= 10
+      LoopRestorationInit10bpp_NEON();
+#endif
     } else {
       FAIL() << "Unrecognized architecture prefix in test case name: "
              << test_case;
@@ -545,7 +551,7 @@ void WienerFilterTest<bitdepth, Pixel>::TestCompare2C() {
                                    kStride, unit_width_, unit_height_,
                                    &restoration_buffer_, tmp);
         if (!test_utils::CompareBlocks(dst, tmp, unit_width_, unit_height_,
-                                       kStride, kStride, false, false)) {
+                                       kStride, kStride, false, true)) {
           ADD_FAILURE() << "Mismatch -- wiener taps min/max";
         }
       }
@@ -606,6 +612,10 @@ INSTANTIATE_TEST_SUITE_P(AVX2, WienerFilterTest10bpp,
 #endif
 #if LIBGAV1_ENABLE_SSE4_1
 INSTANTIATE_TEST_SUITE_P(SSE41, WienerFilterTest10bpp,
+                         testing::ValuesIn(kUnitWidths));
+#endif
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, WienerFilterTest10bpp,
                          testing::ValuesIn(kUnitWidths));
 #endif
 
