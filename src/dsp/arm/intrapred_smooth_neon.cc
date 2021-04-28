@@ -876,6 +876,105 @@ inline void SmoothVerticalWxH_NEON(void* const dest, const ptrdiff_t stride,
   }
 }
 
+template <int height>
+inline void SmoothHorizontal4xH_NEON(void* const dest, ptrdiff_t stride,
+                                     const void* const top_row,
+                                     const void* const left_column) {
+  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
+  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const uint16_t top_right = top[3];
+
+  uint8_t* dst = static_cast<uint8_t*>(dest);
+
+  const uint16x4_t weights_x = vld1_u16(kSmoothWeights);
+  const uint16x4_t scaled_weights_x = vsub_u16(vdup_n_u16(256), weights_x);
+
+  const uint32x4_t weighted_tr = vmull_n_u16(scaled_weights_x, top_right);
+  for (int y = 0; y < height; ++y) {
+    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    const uint32x4_t weighted_left =
+        vmlal_n_u16(weighted_tr, weights_x, left[y]);
+    vst1_u16(dst16, vrshrn_n_u32(weighted_left, kSmoothWeightScale));
+    dst += stride;
+  }
+}
+
+template <int height>
+inline void SmoothHorizontal8xH_NEON(void* const dest, ptrdiff_t stride,
+                                     const void* const top_row,
+                                     const void* const left_column) {
+  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
+  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const uint16_t top_right = top[7];
+
+  uint8_t* dst = static_cast<uint8_t*>(dest);
+
+  const uint16x4x2_t weights_x = {vld1_u16(kSmoothWeights + 4),
+                                  vld1_u16(kSmoothWeights + 8)};
+
+  const uint32x4_t weighted_tr_low =
+      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[0]), top_right);
+  const uint32x4_t weighted_tr_high =
+      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[1]), top_right);
+
+  for (int y = 0; y < height; ++y) {
+    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    const uint16_t left_y = left[y];
+    const uint32x4_t weighted_left_low =
+        vmlal_n_u16(weighted_tr_low, weights_x.val[0], left_y);
+    vst1_u16(dst16, vrshrn_n_u32(weighted_left_low, kSmoothWeightScale));
+
+    const uint32x4_t weighted_left_high =
+        vmlal_n_u16(weighted_tr_high, weights_x.val[1], left_y);
+    vst1_u16(dst16 + 4, vrshrn_n_u32(weighted_left_high, kSmoothWeightScale));
+    dst += stride;
+  }
+}
+
+// For width 16 and above.
+template <int width, int height>
+inline void SmoothHorizontalWxH_NEON(void* const dest, ptrdiff_t stride,
+                                     const void* const top_row,
+                                     const void* const left_column) {
+  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
+  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const uint16_t top_right = top[width - 1];
+
+  uint8_t* dst = static_cast<uint8_t*>(dest);
+
+  const uint16x4_t weight_scaling = vdup_n_u16(256);
+
+  uint16x4_t weights_x_low[width >> 3];
+  uint16x4_t weights_x_high[width >> 3];
+  uint32x4_t weighted_tr_low[width >> 3];
+  uint32x4_t weighted_tr_high[width >> 3];
+  for (int i = 0; i < width >> 3; ++i) {
+    const int x = i << 3;
+    weights_x_low[i] = vld1_u16(kSmoothWeights + width - 4 + x);
+    weighted_tr_low[i] =
+        vmull_n_u16(vsub_u16(weight_scaling, weights_x_low[i]), top_right);
+    weights_x_high[i] = vld1_u16(kSmoothWeights + width + x);
+    weighted_tr_high[i] =
+        vmull_n_u16(vsub_u16(weight_scaling, weights_x_high[i]), top_right);
+  }
+
+  for (int y = 0; y < height; ++y) {
+    uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
+    const uint16_t left_y = left[y];
+    for (int i = 0; i < (width >> 3); ++i) {
+      const uint32x4_t weighted_left_low =
+          vmlal_n_u16(weighted_tr_low[i], weights_x_low[i], left_y);
+      vst1_u16(dst_x, vrshrn_n_u32(weighted_left_low, kSmoothWeightScale));
+
+      const uint32x4_t weighted_left_high =
+          vmlal_n_u16(weighted_tr_high[i], weights_x_high[i], left_y);
+      vst1_u16(dst_x + 4, vrshrn_n_u32(weighted_left_high, kSmoothWeightScale));
+      dst_x += 8;
+    }
+    dst += stride;
+  }
+}
+
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
@@ -884,114 +983,152 @@ void Init10bpp() {
       Smooth4xH_NEON<4>;
   dsp->intra_predictors[kTransformSize4x4][kIntraPredictorSmoothVertical] =
       SmoothVertical4xH_NEON<4>;
+  dsp->intra_predictors[kTransformSize4x4][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontal4xH_NEON<4>;
 
   // 4x8
   dsp->intra_predictors[kTransformSize4x8][kIntraPredictorSmooth] =
       Smooth4xH_NEON<8>;
   dsp->intra_predictors[kTransformSize4x8][kIntraPredictorSmoothVertical] =
       SmoothVertical4xH_NEON<8>;
+  dsp->intra_predictors[kTransformSize4x8][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontal4xH_NEON<8>;
 
   // 4x16
   dsp->intra_predictors[kTransformSize4x16][kIntraPredictorSmooth] =
       Smooth4xH_NEON<16>;
   dsp->intra_predictors[kTransformSize4x16][kIntraPredictorSmoothVertical] =
       SmoothVertical4xH_NEON<16>;
+  dsp->intra_predictors[kTransformSize4x16][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontal4xH_NEON<16>;
 
   // 8x4
   dsp->intra_predictors[kTransformSize8x4][kIntraPredictorSmooth] =
       Smooth8xH_NEON<4>;
   dsp->intra_predictors[kTransformSize8x4][kIntraPredictorSmoothVertical] =
       SmoothVertical8xH_NEON<4>;
+  dsp->intra_predictors[kTransformSize8x4][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontal8xH_NEON<4>;
 
   // 8x8
   dsp->intra_predictors[kTransformSize8x8][kIntraPredictorSmooth] =
       Smooth8xH_NEON<8>;
   dsp->intra_predictors[kTransformSize8x8][kIntraPredictorSmoothVertical] =
       SmoothVertical8xH_NEON<8>;
+  dsp->intra_predictors[kTransformSize8x8][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontal8xH_NEON<8>;
 
   // 8x16
   dsp->intra_predictors[kTransformSize8x16][kIntraPredictorSmooth] =
       Smooth8xH_NEON<16>;
   dsp->intra_predictors[kTransformSize8x16][kIntraPredictorSmoothVertical] =
       SmoothVertical8xH_NEON<16>;
+  dsp->intra_predictors[kTransformSize8x16][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontal8xH_NEON<16>;
 
   // 8x32
   dsp->intra_predictors[kTransformSize8x32][kIntraPredictorSmooth] =
       Smooth8xH_NEON<32>;
   dsp->intra_predictors[kTransformSize8x32][kIntraPredictorSmoothVertical] =
       SmoothVertical8xH_NEON<32>;
+  dsp->intra_predictors[kTransformSize8x32][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontal8xH_NEON<32>;
 
   // 16x4
   dsp->intra_predictors[kTransformSize16x4][kIntraPredictorSmooth] =
       SmoothWxH_NEON<16, 4>;
   dsp->intra_predictors[kTransformSize16x4][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<16, 4>;
+  dsp->intra_predictors[kTransformSize16x4][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<16, 4>;
 
   // 16x8
   dsp->intra_predictors[kTransformSize16x8][kIntraPredictorSmooth] =
       SmoothWxH_NEON<16, 8>;
   dsp->intra_predictors[kTransformSize16x8][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<16, 8>;
+  dsp->intra_predictors[kTransformSize16x8][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<16, 8>;
 
   // 16x16
   dsp->intra_predictors[kTransformSize16x16][kIntraPredictorSmooth] =
       SmoothWxH_NEON<16, 16>;
   dsp->intra_predictors[kTransformSize16x16][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<16, 16>;
+  dsp->intra_predictors[kTransformSize16x16][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<16, 16>;
 
   // 16x32
   dsp->intra_predictors[kTransformSize16x32][kIntraPredictorSmooth] =
       SmoothWxH_NEON<16, 32>;
   dsp->intra_predictors[kTransformSize16x32][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<16, 32>;
+  dsp->intra_predictors[kTransformSize16x32][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<16, 32>;
 
   // 16x64
   dsp->intra_predictors[kTransformSize16x64][kIntraPredictorSmooth] =
       SmoothWxH_NEON<16, 64>;
   dsp->intra_predictors[kTransformSize16x64][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<16, 64>;
+  dsp->intra_predictors[kTransformSize16x64][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<16, 64>;
 
   // 32x8
   dsp->intra_predictors[kTransformSize32x8][kIntraPredictorSmooth] =
       SmoothWxH_NEON<32, 8>;
   dsp->intra_predictors[kTransformSize32x8][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<32, 8>;
+  dsp->intra_predictors[kTransformSize32x8][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<32, 8>;
 
   // 32x16
   dsp->intra_predictors[kTransformSize32x16][kIntraPredictorSmooth] =
       SmoothWxH_NEON<32, 16>;
   dsp->intra_predictors[kTransformSize32x16][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<32, 16>;
+  dsp->intra_predictors[kTransformSize32x16][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<32, 16>;
 
   // 32x32
   dsp->intra_predictors[kTransformSize32x32][kIntraPredictorSmooth] =
       SmoothWxH_NEON<32, 32>;
   dsp->intra_predictors[kTransformSize32x32][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<32, 32>;
+  dsp->intra_predictors[kTransformSize32x32][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<32, 32>;
 
   // 32x64
   dsp->intra_predictors[kTransformSize32x64][kIntraPredictorSmooth] =
       SmoothWxH_NEON<32, 64>;
   dsp->intra_predictors[kTransformSize32x64][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<32, 64>;
+  dsp->intra_predictors[kTransformSize32x64][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<32, 64>;
 
   // 64x16
   dsp->intra_predictors[kTransformSize64x16][kIntraPredictorSmooth] =
       SmoothWxH_NEON<64, 16>;
   dsp->intra_predictors[kTransformSize64x16][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<64, 16>;
+  dsp->intra_predictors[kTransformSize64x16][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<64, 16>;
 
   // 64x32
   dsp->intra_predictors[kTransformSize64x32][kIntraPredictorSmooth] =
       SmoothWxH_NEON<64, 32>;
   dsp->intra_predictors[kTransformSize64x32][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<64, 32>;
+  dsp->intra_predictors[kTransformSize64x32][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<64, 32>;
 
   // 64x64
   dsp->intra_predictors[kTransformSize64x64][kIntraPredictorSmooth] =
       SmoothWxH_NEON<64, 64>;
   dsp->intra_predictors[kTransformSize64x64][kIntraPredictorSmoothVertical] =
       SmoothVerticalWxH_NEON<64, 64>;
+  dsp->intra_predictors[kTransformSize64x64][kIntraPredictorSmoothHorizontal] =
+      SmoothHorizontalWxH_NEON<64, 64>;
 }
 }  // namespace
 }  // namespace high_bitdepth
