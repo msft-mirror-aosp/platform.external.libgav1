@@ -229,6 +229,15 @@ inline uint8x8_t Load4(const void* const buf, uint8x8_t val) {
       vld1_lane_u32(&temp, vreinterpret_u32_u8(val), lane));
 }
 
+// Convenience functions for 16-bit loads from a uint8_t* source.
+inline uint16x4_t Load4U16(const void* const buf) {
+  return vld1_u16(static_cast<const uint16_t*>(buf));
+}
+
+inline uint16x8_t Load8U16(const void* const buf) {
+  return vld1q_u16(static_cast<const uint16_t*>(buf));
+}
+
 //------------------------------------------------------------------------------
 // Store functions.
 
@@ -312,6 +321,17 @@ inline uint8x8_t VQTbl1U8(const uint8x16_t a, const uint8x8_t index) {
 #else
   const uint8x8x2_t b = {vget_low_u8(a), vget_high_u8(a)};
   return vtbl2_u8(b, index);
+#endif
+}
+
+// Shim vqtbl2_u8 for armv7.
+inline uint8x8_t VQTbl2U8(const uint8x16x2_t a, const uint8x8_t index) {
+#if defined(__aarch64__)
+  return vqtbl2_u8(a, index);
+#else
+  const uint8x8x4_t b = {vget_low_u8(a.val[0]), vget_high_u8(a.val[0]),
+                         vget_low_u8(a.val[1]), vget_high_u8(a.val[1])};
+  return vtbl4_u8(b, index);
 #endif
 }
 
