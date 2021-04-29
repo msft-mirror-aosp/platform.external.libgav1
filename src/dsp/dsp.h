@@ -332,6 +332,13 @@ using InverseTransformAddFuncs =
 // Loop filter function signature. Section 7.14.
 // |dst| is an unaligned pointer to the output block. Pixel size is determined
 // by bitdepth with |stride| given in bytes.
+// <threshold param> <spec name> <range>
+// |outer_thresh|    blimit      [7, 193]
+// |inner_thresh|    limit       [1, 63]
+// |hev_thresh|      thresh      [0, 63]
+// These are scaled by the implementation by 'bitdepth - 8' to produce
+// the spec variables blimitBd, limitBd and threshBd.
+// Note these functions are not called when the loop filter level is 0.
 using LoopFilterFunc = void (*)(void* dst, ptrdiff_t stride, int outer_thresh,
                                 int inner_thresh, int hev_thresh);
 using LoopFilterFuncs =

@@ -316,6 +316,7 @@ void PostFilter::HorizontalDeblockFilter(int row4x4_start,
           row4x4_start + row4x4, column4x4_start + column4x4, &level, &row_step,
           &filter_length);
       if (need_filter) {
+        assert(level > 0 && level <= kMaxLoopFilterValue);
         const dsp::LoopFilterSize size = GetLoopFilterSizeY(filter_length);
         dsp_.loop_filters[size][kLoopFilterTypeHorizontal](
             src_row, src_stride, outer_thresh_[level], inner_thresh_[level],
@@ -395,6 +396,7 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
           row4x4_start + row4x4, column4x4_start + column4x4, bp, &level,
           &column_step, &filter_length);
       if (need_filter) {
+        assert(level > 0 && level <= kMaxLoopFilterValue);
         const dsp::LoopFilterSize size = GetLoopFilterSizeY(filter_length);
         dsp_.loop_filters[size][kLoopFilterTypeVertical](
             src_row, src_stride, outer_thresh_[level], inner_thresh_[level],

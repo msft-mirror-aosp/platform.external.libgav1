@@ -46,8 +46,6 @@ constexpr int kBlockStride = 32;
 constexpr int kNumTests = 50000;
 constexpr int kNumSpeedTests = 500000;
 
-constexpr int kMaxLoopFilter = 63;
-
 template <typename Pixel>
 void InitInput(Pixel* dst, const int stride, const int bitdepth,
                libvpx_test::ACMRandom& rnd, const uint8_t inner_thresh,
@@ -172,11 +170,12 @@ void LoopFilterTest<bitdepth, Pixel>::TestRandomValues(
     absl::Duration elapsed_time;
     for (int n = 0; n < num_runs; ++n) {
       Pixel dst[kNumPixels];
-      const auto outer_thresh =
-          static_cast<uint8_t>(rnd(3 * kMaxLoopFilter + 5));
-      const auto inner_thresh = static_cast<uint8_t>(rnd(kMaxLoopFilter + 1));
+      const auto outer_thresh = static_cast<uint8_t>(
+          rnd(3 * kMaxLoopFilterValue - 2) + 7);  // [7, 193].
+      const auto inner_thresh =
+          static_cast<uint8_t>(rnd(kMaxLoopFilterValue) + 1);  // [1, 63].
       const auto hev_thresh =
-          static_cast<uint8_t>(rnd(kMaxLoopFilter + 1) >> 4);
+          static_cast<uint8_t>(rnd(kMaxLoopFilterValue + 1) >> 4);  // [0, 3].
       InitInput(dst, kBlockStride, bitdepth, rnd, inner_thresh, (n & 1) == 0);
 
       const absl::Time start = absl::Now();
@@ -228,20 +227,20 @@ using LoopFilterTest8bpp = LoopFilterTest<8, uint8_t>;
 
 const char* const* GetDigests8bpp(LoopFilterSize size) {
   static const char* const kDigestsSize4[kNumLoopFilterTypes] = {
-      "2e07bdb04b363d4ce69c7d738b1ee01a",
-      "7ff41f2ffa809a2016d342d92afa7f89",
+      "6ba725d697d6209cb36dd199b8ffb47a",
+      "7dbb20e456ed0501fb4e7954f49f5e18",
   };
   static const char* const kDigestsSize6[kNumLoopFilterTypes] = {
-      "2cd4d9ee7497ed67e38fad9cbeb7e278",
-      "75c57a30a927d1aca1ac5c4f175712ca",
+      "89bb757faa44298b7f6e9c1a67f455a5",
+      "be75d5a2fcd83709ff0845f7d83f7006",
   };
   static const char* const kDigestsSize8[kNumLoopFilterTypes] = {
-      "854860a272d58ace223454ea727a6fe4",
-      "4129ee49b047777583c0e9b2006c87bf",
+      "b09137d68c7b4f8a8a15e33b4b69828f",
+      "ef8a7f1aa073805516d3518a82a5cfa4",
   };
   static const char* const kDigestsSize14[kNumLoopFilterTypes] = {
-      "6eb768620b7ccc84b6f88b9193b02ad2",
-      "56e034d9edbe0d5a3cae69b2d9b3486e",
+      "6a7bc061ace0888275af88093f82ca08",
+      "a957ddae005839aa41ba7691788b01e4",
   };
 
   switch (size) {
@@ -290,20 +289,20 @@ using LoopFilterTest10bpp = LoopFilterTest<10, uint16_t>;
 
 const char* const* GetDigests10bpp(LoopFilterSize size) {
   static const char* const kDigestsSize4[kNumLoopFilterTypes] = {
-      "657dd0f612734c9c1fb50a2313567af4",
-      "b1c0a0a0b35bad1589badf3c291c0461",
+      "72e75c478bb130ff1ebfa75f3a70b1a2",
+      "f32d67b611080e0bf1a9d162ff47c133",
   };
   static const char* const kDigestsSize6[kNumLoopFilterTypes] = {
-      "d41906d4830157052d5bde417d9df9fc",
-      "451490def78bd649d16d64db4e665a62",
+      "8aec73c60c87ac7cc6bc9cc5157a2795",
+      "0e4385d3a0cbb2b1551e05ad2b0f07fb",
   };
   static const char* const kDigestsSize8[kNumLoopFilterTypes] = {
-      "a763127680f31db7184f2a63ee140268",
-      "1f413bebacaa2435f0e07963a9095243",
+      "85cb2928fae43e1a27b2fe1b78ba7534",
+      "d044fad9d7c64b93ecb60c88ac48e55f",
   };
   static const char* const kDigestsSize14[kNumLoopFilterTypes] = {
-      "f0e61add3e5856657c4055751a6dd6e2",
-      "44da25d613ea601bf5f6e2a42d329cf0",
+      "ebca95ec0db6efbac7ff7cbeabc0e6d0",
+      "754ffaf0ac26a5953a029653bb5dd275",
   };
 
   switch (size) {
