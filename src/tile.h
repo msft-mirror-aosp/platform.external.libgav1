@@ -600,8 +600,6 @@ class Tile : public Allocable {
   bool read_deltas_;
   const int8_t subsampling_x_[kMaxPlanes];
   const int8_t subsampling_y_[kMaxPlanes];
-  int deblock_row_limit_[kMaxPlanes];
-  int deblock_column_limit_[kMaxPlanes];
 
   // The dimensions (in order) are: segment_id, level_index (based on plane and
   // direction), reference_frame and mode_id.
