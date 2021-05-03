@@ -335,6 +335,10 @@ INSTANTIATE_TEST_SUITE_P(C, LoopFilterTest10bpp,
 INSTANTIATE_TEST_SUITE_P(SSE41, LoopFilterTest10bpp,
                          testing::ValuesIn(kLoopFilterSizes));
 #endif
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, LoopFilterTest10bpp,
+                         testing::ValuesIn(kLoopFilterSizes));
+#endif
 #endif
 
 }  // namespace

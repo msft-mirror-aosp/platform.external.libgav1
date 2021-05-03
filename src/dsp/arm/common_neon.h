@@ -346,6 +346,26 @@ inline int8x8_t VQTbl1S8(const int8x16_t a, const uint8x8_t index) {
 }
 
 //------------------------------------------------------------------------------
+// Saturation helpers.
+
+inline int16x4_t Clip3S16(int16x4_t val, int16x4_t low, int16x4_t high) {
+  return vmin_s16(vmax_s16(val, low), high);
+}
+
+inline int16x8_t Clip3S16(const int16x8_t value, const int16x8_t low,
+                          const int16x8_t high) {
+  const int16x8_t clipped_to_ceiling = vminq_s16(high, value);
+  return vmaxq_s16(low, clipped_to_ceiling);
+}
+
+inline uint16x8_t ConvertToUnsignedPixelU16(int16x8_t val, int bitdepth) {
+  const int16x8_t low = vdupq_n_s16(0);
+  const uint16x8_t high = vdupq_n_u16((1 << bitdepth) - 1);
+
+  return vminq_u16(vreinterpretq_u16_s16(vmaxq_s16(val, low)), high);
+}
+
+//------------------------------------------------------------------------------
 // Interleave.
 
 // vzipN is exclusive to A64.

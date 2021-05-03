@@ -50,7 +50,7 @@ inline uint8x8_t OuterThreshold(const uint8x8_t p0q0, const uint8x8_t p1q1,
 }
 
 // abs(p1 - p0) <= inner_thresh && abs(q1 - q0) <= inner_thresh &&
-//   OuterThreshhold()
+//   OuterThreshold()
 inline uint8x8_t NeedsFilter4(const uint8x8_t abd_p0p1_q0q1,
                               const uint8x8_t p0q0, const uint8x8_t p1q1,
                               const uint8_t inner_thresh,
@@ -65,6 +65,7 @@ inline void Filter4Masks(const uint8x8_t p0q0, const uint8x8_t p1q1,
                          const uint8_t hev_thresh, const uint8_t outer_thresh,
                          const uint8_t inner_thresh, uint8x8_t* const hev_mask,
                          uint8x8_t* const needs_filter4_mask) {
+  // First half is |p0 - p1|, second half is |q0 - q1|.
   const uint8x8_t p0p1_q0q1 = vabd_u8(p0q0, p1q1);
   // This includes cases where NeedsFilter4() is not true and so Filter2() will
   // not be applied.
@@ -256,7 +257,7 @@ inline uint8x8_t IsFlat3(const uint8x8_t abd_p0p1_q0q1,
 
 // abs(p2 - p1) <= inner_thresh && abs(p1 - p0) <= inner_thresh &&
 //   abs(q1 - q0) <= inner_thresh && abs(q2 - q1) <= inner_thresh &&
-//   OuterThreshhold()
+//   OuterThreshold()
 inline uint8x8_t NeedsFilter6(const uint8x8_t abd_p0p1_q0q1,
                               const uint8x8_t abd_p1p2_q1q2,
                               const uint8x8_t p0q0, const uint8x8_t p1q1,
@@ -488,7 +489,7 @@ inline uint8x8_t IsFlat4(const uint8x8_t abd_p0n0_q0n0,
 // abs(p3 - p2) <= inner_thresh && abs(p2 - p1) <= inner_thresh &&
 //   abs(p1 - p0) <= inner_thresh && abs(q1 - q0) <= inner_thresh &&
 //   abs(q2 - q1) <= inner_thresh && abs(q3 - q2) <= inner_thresh
-//   OuterThreshhold()
+//   OuterThreshold()
 inline uint8x8_t NeedsFilter8(const uint8x8_t abd_p0p1_q0q1,
                               const uint8x8_t abd_p1p2_q1q2,
                               const uint8x8_t abd_p2p3_q2q3,
@@ -1174,7 +1175,260 @@ void Init8bpp() {
 }  // namespace
 }  // namespace low_bitdepth
 
-void LoopFilterInit_NEON() { low_bitdepth::Init8bpp(); }
+#if LIBGAV1_MAX_BITDEPTH >= 10
+namespace high_bitdepth {
+namespace {
+
+// (abs(p1 - p0) > thresh) || (abs(q1 - q0) > thresh)
+inline uint16x4_t Hev(const uint16x8_t abd_p0p1_q0q1, const uint16_t thresh) {
+  const uint16x8_t a = vcgtq_u16(abd_p0p1_q0q1, vdupq_n_u16(thresh));
+  return vorr_u16(vget_low_u16(a), vget_high_u16(a));
+}
+
+// abs(p0 - q0) * 2 + abs(p1 - q1) / 2 <= outer_thresh
+inline uint16x4_t OuterThreshold(const uint16x4_t p1, const uint16x4_t p0,
+                                 const uint16x4_t q0, const uint16x4_t q1,
+                                 const uint16_t outer_thresh) {
+  const uint16x4_t abd_p0q0 = vabd_u16(p0, q0);
+  const uint16x4_t abd_p1q1 = vabd_u16(p1, q1);
+  const uint16x4_t p0q0_double = vshl_n_u16(abd_p0q0, 1);
+  const uint16x4_t p1q1_half = vshr_n_u16(abd_p1q1, 1);
+  const uint16x4_t sum = vadd_u16(p0q0_double, p1q1_half);
+  return vcle_u16(sum, vdup_n_u16(outer_thresh));
+}
+
+// abs(p1 - p0) <= inner_thresh && abs(q1 - q0) <= inner_thresh &&
+//   OuterThreshold()
+inline uint16x4_t NeedsFilter4(const uint16x8_t abd_p0p1_q0q1,
+                               const uint16_t inner_thresh,
+                               const uint16x4_t outer_mask) {
+  const uint16x8_t a = vcleq_u16(abd_p0p1_q0q1, vdupq_n_u16(inner_thresh));
+  const uint16x4_t inner_mask = vand_u16(vget_low_u16(a), vget_high_u16(a));
+  return vand_u16(inner_mask, outer_mask);
+}
+
+inline void Filter4Masks(const uint16x8_t p0q0, const uint16x8_t p1q1,
+                         const uint16_t hev_thresh, const uint16x4_t outer_mask,
+                         const uint16_t inner_thresh,
+                         uint16x4_t* const hev_mask,
+                         uint16x4_t* const needs_filter4_mask) {
+  const uint16x8_t p0p1_q0q1 = vabdq_u16(p0q0, p1q1);
+  // This includes cases where NeedsFilter4() is not true and so Filter2() will
+  // not be applied.
+  const uint16x4_t hev_tmp_mask = Hev(p0p1_q0q1, hev_thresh);
+
+  *needs_filter4_mask = NeedsFilter4(p0p1_q0q1, inner_thresh, outer_mask);
+
+  // Filter2() will only be applied if both NeedsFilter4() and Hev() are true.
+  *hev_mask = vand_u16(hev_tmp_mask, *needs_filter4_mask);
+}
+
+// Calculate Filter4() or Filter2() based on |hev_mask|.
+inline void Filter4(const uint16x8_t p0q0, const uint16x8_t p0q1,
+                    const uint16x8_t p1q1, const uint16x4_t hev_mask,
+                    uint16x8_t* const p1q1_result,
+                    uint16x8_t* const p0q0_result) {
+  const uint16x8_t q0p1 = vextq_u16(p0q0, p1q1, 4);
+  // a = 3 * (q0 - p0) + Clip3(p1 - q1, min_signed_val, max_signed_val);
+  // q0mp0 means "q0 minus p0".
+  const int16x8_t q0mp0_p1mq1 = vreinterpretq_s16_u16(vsubq_u16(q0p1, p0q1));
+  const int16x4_t q0mp0_3 = vmul_n_s16(vget_low_s16(q0mp0_p1mq1), 3);
+
+  // If this is for Filter2() then include |p1mq1|. Otherwise zero it.
+  const int16x4_t min_signed_pixel = vdup_n_s16(-(1 << (9 /*bitdepth-1*/)));
+  const int16x4_t max_signed_pixel = vdup_n_s16((1 << (9 /*bitdepth-1*/)) - 1);
+  const int16x4_t p1mq1 = vget_high_s16(q0mp0_p1mq1);
+  const int16x4_t p1mq1_saturated =
+      Clip3S16(p1mq1, min_signed_pixel, max_signed_pixel);
+  const int16x4_t hev_option =
+      vand_s16(vreinterpret_s16_u16(hev_mask), p1mq1_saturated);
+
+  const int16x4_t a = vadd_s16(q0mp0_3, hev_option);
+
+  // Need to figure out what's going on here because there are some unnecessary
+  // tricks to accommodate 8x8 as smallest 8bpp vector
+
+  // We can not shift with rounding because the clamp comes *before* the
+  // shifting. a1 = Clip3(a + 4, min_signed_val, max_signed_val) >> 3; a2 =
+  // Clip3(a + 3, min_signed_val, max_signed_val) >> 3;
+  const int16x4_t plus_four =
+      Clip3S16(vadd_s16(a, vdup_n_s16(4)), min_signed_pixel, max_signed_pixel);
+  const int16x4_t plus_three =
+      Clip3S16(vadd_s16(a, vdup_n_s16(3)), min_signed_pixel, max_signed_pixel);
+  const int16x4_t a1 = vshr_n_s16(plus_four, 3);
+  const int16x4_t a2 = vshr_n_s16(plus_three, 3);
+
+  // a3 = (a1 + 1) >> 1;
+  const int16x4_t a3 = vrshr_n_s16(a1, 1);
+
+  const int16x8_t a3_ma3 = vcombine_s16(a3, vneg_s16(a3));
+  const int16x8_t p1q1_a3 = vaddq_s16(vreinterpretq_s16_u16(p1q1), a3_ma3);
+
+  // Need to shift the second term or we end up with a2_ma2.
+  const int16x8_t a2_ma1 = vcombine_s16(a2, vneg_s16(a1));
+  const int16x8_t p0q0_a = vaddq_s16(vreinterpretq_s16_u16(p0q0), a2_ma1);
+  *p1q1_result = ConvertToUnsignedPixelU16(p1q1_a3, kBitdepth10);
+  *p0q0_result = ConvertToUnsignedPixelU16(p0q0_a, kBitdepth10);
+}
+
+void Horizontal4_NEON(void* const dest, const ptrdiff_t stride,
+                      int outer_thresh, int inner_thresh, int hev_thresh) {
+  uint8_t* dst = static_cast<uint8_t*>(dest);
+  uint16_t* dst_p1 = reinterpret_cast<uint16_t*>(dst - 2 * stride);
+  uint16_t* dst_p0 = reinterpret_cast<uint16_t*>(dst - stride);
+  uint16_t* dst_q0 = reinterpret_cast<uint16_t*>(dst);
+  uint16_t* dst_q1 = reinterpret_cast<uint16_t*>(dst + stride);
+
+  const uint16x4_t src[4] = {vld1_u16(dst_p1), vld1_u16(dst_p0),
+                             vld1_u16(dst_q0), vld1_u16(dst_q1)};
+
+  // Adjust thresholds to bitdepth.
+  outer_thresh <<= 2;
+  inner_thresh <<= 2;
+  hev_thresh <<= 2;
+  const uint16x4_t outer_mask =
+      OuterThreshold(src[0], src[1], src[2], src[3], outer_thresh);
+  uint16x4_t hev_mask;
+  uint16x4_t needs_filter4_mask;
+  const uint16x8_t p0q0 = vcombine_u16(src[1], src[2]);
+  const uint16x8_t p1q1 = vcombine_u16(src[0], src[3]);
+  Filter4Masks(p0q0, p1q1, hev_thresh, outer_mask, inner_thresh, &hev_mask,
+               &needs_filter4_mask);
+
+#if defined(__aarch64__)
+  // This provides a good speedup for the unit test, but may not come up often
+  // enough to warrant it.
+  if (vaddv_u16(needs_filter4_mask) == 0) {
+    // None of the values will be filtered.
+    return;
+  }
+#else   // !defined(__aarch64__)
+  const uint64x1_t needs_filter4_mask64 =
+      vreinterpret_u64_u16(needs_filter4_mask);
+  if (vget_lane_u64(needs_filter4_mask64, 0) == 0) {
+    // None of the values will be filtered.
+    return;
+  }
+#endif  // defined(__aarch64__)
+
+  // Copy the masks to the high bits for packed comparisons later.
+  const uint16x8_t hev_mask_8 = vcombine_u16(hev_mask, hev_mask);
+  const uint16x8_t needs_filter4_mask_8 =
+      vcombine_u16(needs_filter4_mask, needs_filter4_mask);
+
+  uint16x8_t f_p1q1;
+  uint16x8_t f_p0q0;
+  const uint16x8_t p0q1 = vcombine_u16(src[1], src[3]);
+  Filter4(p0q0, p0q1, p1q1, hev_mask, &f_p1q1, &f_p0q0);
+
+  // Already integrated the Hev mask when calculating the filtered values.
+  const uint16x8_t p0q0_output = vbslq_u16(needs_filter4_mask_8, f_p0q0, p0q0);
+
+  // p1/q1 are unmodified if only Hev() is true. This works because it was and'd
+  // with |needs_filter4_mask| previously.
+  const uint16x8_t p1q1_mask = veorq_u16(hev_mask_8, needs_filter4_mask_8);
+  const uint16x8_t p1q1_output = vbslq_u16(p1q1_mask, f_p1q1, p1q1);
+
+  vst1_u16(dst_p1, vget_low_u16(p1q1_output));
+  vst1_u16(dst_p0, vget_low_u16(p0q0_output));
+  vst1_u16(dst_q0, vget_high_u16(p0q0_output));
+  vst1_u16(dst_q1, vget_high_u16(p1q1_output));
+}
+
+void Vertical4_NEON(void* const dest, const ptrdiff_t stride, int outer_thresh,
+                    int inner_thresh, int hev_thresh) {
+  // Offset by 2 uint16_t values to load from first p1 position.
+  uint8_t* dst = static_cast<uint8_t*>(dest) - 4;
+  uint16_t* dst_p1 = reinterpret_cast<uint16_t*>(dst);
+  uint16_t* dst_p0 = reinterpret_cast<uint16_t*>(dst + stride);
+  uint16_t* dst_q0 = reinterpret_cast<uint16_t*>(dst + stride * 2);
+  uint16_t* dst_q1 = reinterpret_cast<uint16_t*>(dst + stride * 3);
+
+  uint16x4_t src[4] = {vld1_u16(dst_p1), vld1_u16(dst_p0), vld1_u16(dst_q0),
+                       vld1_u16(dst_q1)};
+  Transpose4x4(src);
+
+  // Adjust thresholds to bitdepth.
+  outer_thresh <<= 2;
+  inner_thresh <<= 2;
+  hev_thresh <<= 2;
+  const uint16x4_t outer_mask =
+      OuterThreshold(src[0], src[1], src[2], src[3], outer_thresh);
+  uint16x4_t hev_mask;
+  uint16x4_t needs_filter4_mask;
+  const uint16x8_t p0q0 = vcombine_u16(src[1], src[2]);
+  const uint16x8_t p1q1 = vcombine_u16(src[0], src[3]);
+  Filter4Masks(p0q0, p1q1, hev_thresh, outer_mask, inner_thresh, &hev_mask,
+               &needs_filter4_mask);
+
+#if defined(__aarch64__)
+  // This provides a good speedup for the unit test. Not sure how applicable it
+  // is to valid streams though.
+  // Consider doing this on armv7 if there is a quick way to check if a vector
+  // is zero.
+  if (vaddv_u16(needs_filter4_mask) == 0) {
+    // None of the values will be filtered.
+    return;
+  }
+#else   // !defined(__aarch64__)
+  const uint64x1_t needs_filter4_mask64 =
+      vreinterpret_u64_u16(needs_filter4_mask);
+  if (vget_lane_u64(needs_filter4_mask64, 0) == 0) {
+    // None of the values will be filtered.
+    return;
+  }
+#endif  // defined(__aarch64__)
+
+  // Copy the masks to the high bits for packed comparisons later.
+  const uint16x8_t hev_mask_8 = vcombine_u16(hev_mask, hev_mask);
+  const uint16x8_t needs_filter4_mask_8 =
+      vcombine_u16(needs_filter4_mask, needs_filter4_mask);
+
+  uint16x8_t f_p1q1;
+  uint16x8_t f_p0q0;
+  const uint16x8_t p0q1 = vcombine_u16(src[1], src[3]);
+  Filter4(p0q0, p0q1, p1q1, hev_mask, &f_p1q1, &f_p0q0);
+
+  // Already integrated the Hev mask when calculating the filtered values.
+  const uint16x8_t p0q0_output = vbslq_u16(needs_filter4_mask_8, f_p0q0, p0q0);
+
+  // p1/q1 are unmodified if only Hev() is true. This works because it was and'd
+  // with |needs_filter4_mask| previously.
+  const uint16x8_t p1q1_mask = veorq_u16(hev_mask_8, needs_filter4_mask_8);
+  const uint16x8_t p1q1_output = vbslq_u16(p1q1_mask, f_p1q1, p1q1);
+
+  uint16x4_t output[4] = {
+      vget_low_u16(p1q1_output),
+      vget_low_u16(p0q0_output),
+      vget_high_u16(p0q0_output),
+      vget_high_u16(p1q1_output),
+  };
+  Transpose4x4(output);
+
+  vst1_u16(dst_p1, output[0]);
+  vst1_u16(dst_p0, output[1]);
+  vst1_u16(dst_q0, output[2]);
+  vst1_u16(dst_q1, output[3]);
+}
+
+void Init10bpp() {
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
+  assert(dsp != nullptr);
+  dsp->loop_filters[kLoopFilterSize4][kLoopFilterTypeHorizontal] =
+      Horizontal4_NEON;
+  dsp->loop_filters[kLoopFilterSize4][kLoopFilterTypeVertical] = Vertical4_NEON;
+}
+
+}  // namespace
+}  // namespace high_bitdepth
+#endif  // LIBGAV1_MAX_BITDEPTH >= 10
+
+void LoopFilterInit_NEON() {
+  low_bitdepth::Init8bpp();
+#if LIBGAV1_MAX_BITDEPTH >= 10
+  high_bitdepth::Init10bpp();
+#endif
+}
 
 }  // namespace dsp
 }  // namespace libgav1
