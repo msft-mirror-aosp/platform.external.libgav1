@@ -101,9 +101,9 @@ void PostFilter::ComputeDeblockFilterLevels(
     uint8_t deblock_filter_levels[kMaxSegments][kFrameLfCount]
                                  [kNumReferenceFrameTypes][2]) const {
   if (!DoDeblock()) return;
-  for (int segment_id = 0;
-       segment_id < (frame_header_.segmentation.enabled ? kMaxSegments : 1);
-       ++segment_id) {
+  const int num_segments =
+      frame_header_.segmentation.enabled ? kMaxSegments : 1;
+  for (int segment_id = 0; segment_id < num_segments; ++segment_id) {
     int level_index = 0;
     for (; level_index < 2; ++level_index) {
       ComputeDeblockFilterLevelsHelper(
@@ -305,12 +305,14 @@ void PostFilter::HorizontalDeblockFilter(int row4x4_start,
   uint8_t level;
   int filter_length;
 
+  const int width = width_;
+  const int height = height_;
   for (int column4x4 = 0; column4x4 < kNum4x4InLoopFilterUnit &&
-                          MultiplyBy4(column4x4_start + column4x4) < width_;
+                          MultiplyBy4(column4x4_start + column4x4) < width;
        column4x4 += column_step, src += src_step) {
     uint8_t* src_row = src;
     for (int row4x4 = 0; row4x4 < kNum4x4InLoopFilterUnit &&
-                         MultiplyBy4(row4x4_start + row4x4) < height_;
+                         MultiplyBy4(row4x4_start + row4x4) < height;
          row4x4 += row_step) {
       const bool need_filter = GetHorizontalDeblockFilterEdgeInfo(
           row4x4_start + row4x4, column4x4_start + column4x4, &level, &row_step,
@@ -342,12 +344,12 @@ void PostFilter::HorizontalDeblockFilter(int row4x4_start,
     int filter_length;
 
     for (int column4x4 = 0; column4x4 < kNum4x4InLoopFilterUnit &&
-                            MultiplyBy4(column4x4_start + column4x4) < width_;
+                            MultiplyBy4(column4x4_start + column4x4) < width;
          column4x4 += column_step, src_u += src_step, src_v += src_step) {
       uint8_t* src_row_u = src_u;
       uint8_t* src_row_v = src_v;
       for (int row4x4 = 0; row4x4 < kNum4x4InLoopFilterUnit &&
-                           MultiplyBy4(row4x4_start + row4x4) < height_;
+                           MultiplyBy4(row4x4_start + row4x4) < height;
            row4x4 += row_step) {
         GetHorizontalDeblockFilterEdgeInfoUV(
             row4x4_start + row4x4, column4x4_start + column4x4, &level_u,
@@ -384,13 +386,15 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
       block_parameters_.Address(row4x4_start, column4x4_start);
   const int bp_stride = block_parameters_.columns4x4();
   const int column_step_shift = pixel_size_log2_;
+  const int width = width_;
+  const int height = height_;
   for (int row4x4 = 0; row4x4 < kNum4x4InLoopFilterUnit &&
-                       MultiplyBy4(row4x4_start + row4x4) < height_;
+                       MultiplyBy4(row4x4_start + row4x4) < height;
        ++row4x4, src += row_stride, bp_row_base += bp_stride) {
     uint8_t* src_row = src;
     BlockParameters* const* bp = bp_row_base;
     for (int column4x4 = 0; column4x4 < kNum4x4InLoopFilterUnit &&
-                            MultiplyBy4(column4x4_start + column4x4) < width_;
+                            MultiplyBy4(column4x4_start + column4x4) < width;
          column4x4 += column_step, bp += column_step) {
       const bool need_filter = GetVerticalDeblockFilterEdgeInfo(
           row4x4_start + row4x4, column4x4_start + column4x4, bp, &level,
@@ -428,14 +432,14 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
         GetDeblockPosition(column4x4_start, subsampling_x));
     const int bp_stride = block_parameters_.columns4x4() << subsampling_y;
     for (int row4x4 = 0; row4x4 < kNum4x4InLoopFilterUnit &&
-                         MultiplyBy4(row4x4_start + row4x4) < height_;
+                         MultiplyBy4(row4x4_start + row4x4) < height;
          row4x4 += row_step, src_u += row_stride_u, src_v += row_stride_v,
              bp_row_base += bp_stride) {
       uint8_t* src_row_u = src_u;
       uint8_t* src_row_v = src_v;
       BlockParameters* const* bp = bp_row_base;
       for (int column4x4 = 0; column4x4 < kNum4x4InLoopFilterUnit &&
-                              MultiplyBy4(column4x4_start + column4x4) < width_;
+                              MultiplyBy4(column4x4_start + column4x4) < width;
            column4x4 += column_step, bp += column_step) {
         GetVerticalDeblockFilterEdgeInfoUV(column4x4_start + column4x4, bp,
                                            &level_u, &level_v, &column_step,
@@ -464,11 +468,13 @@ void PostFilter::ApplyDeblockFilterForOneSuperBlockRow(int row4x4_start,
                                                        int sb4x4) {
   assert(row4x4_start >= 0);
   assert(DoDeblock());
+  const int rows4x4 = frame_header_.rows4x4;
+  const int columns4x4 = frame_header_.columns4x4;
   for (int y = 0; y < sb4x4; y += 16) {
     const int row4x4 = row4x4_start + y;
-    if (row4x4 >= frame_header_.rows4x4) break;
+    if (row4x4 >= rows4x4) break;
     int column4x4;
-    for (column4x4 = 0; column4x4 < frame_header_.columns4x4;
+    for (column4x4 = 0; column4x4 < columns4x4;
          column4x4 += kNum4x4InLoopFilterUnit) {
       // First apply vertical filtering
       VerticalDeblockFilter(row4x4, column4x4);
@@ -485,11 +491,12 @@ void PostFilter::ApplyDeblockFilterForOneSuperBlockRow(int row4x4_start,
 
 template <LoopFilterType loop_filter_type>
 void PostFilter::DeblockFilterWorker(std::atomic<int>* row4x4_atomic) {
+  const int rows4x4 = frame_header_.rows4x4;
+  const int columns4x4 = frame_header_.columns4x4;
   int row4x4;
-  while ((row4x4 = row4x4_atomic->fetch_add(kNum4x4InLoopFilterUnit,
-                                            std::memory_order_relaxed)) <
-         frame_header_.rows4x4) {
-    for (int column4x4 = 0; column4x4 < frame_header_.columns4x4;
+  while ((row4x4 = row4x4_atomic->fetch_add(
+              kNum4x4InLoopFilterUnit, std::memory_order_relaxed)) < rows4x4) {
+    for (int column4x4 = 0; column4x4 < columns4x4;
          column4x4 += kNum4x4InLoopFilterUnit) {
       (this->*deblock_filter_func_[loop_filter_type])(row4x4, column4x4);
     }
