@@ -308,13 +308,6 @@ class PostFilter {
 
   // Functions for the Deblocking filter.
 
-  static int GetIndex(int row4x4) { return DivideBy4(row4x4); }
-  static int GetShift(int row4x4, int column4x4) {
-    return ((row4x4 & 3) << 4) | column4x4;
-  }
-  int GetDeblockUnitId(int row_unit, int column_unit) const {
-    return row_unit * num_64x64_blocks_per_row_ + column_unit;
-  }
   bool GetHorizontalDeblockFilterEdgeInfo(int row4x4, int column4x4,
                                           uint8_t* level, int* step,
                                           int* filter_length) const;
@@ -468,7 +461,6 @@ class PostFilter {
   const ObuFrameHeader& frame_header_;
   const LoopRestoration& loop_restoration_;
   const dsp::Dsp& dsp_;
-  const int num_64x64_blocks_per_row_;
   const int upscaled_width_;
   const int width_;
   const int height_;

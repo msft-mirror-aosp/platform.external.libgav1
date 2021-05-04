@@ -146,8 +146,6 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
     : frame_header_(frame_header),
       loop_restoration_(frame_header.loop_restoration),
       dsp_(*dsp),
-      // Deblocking filter always uses 64x64 as step size.
-      num_64x64_blocks_per_row_(DivideBy64(frame_header.width + 63)),
       upscaled_width_(frame_header.upscaled_width),
       width_(frame_header.width),
       height_(frame_header.height),
