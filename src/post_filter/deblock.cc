@@ -467,15 +467,16 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
 void PostFilter::ApplyDeblockFilterForOneSuperBlockRow(int row4x4_start,
                                                        int sb4x4) {
   assert(row4x4_start >= 0);
+  assert(sb4x4 == 16 || sb4x4 == 32);
   assert(DoDeblock());
   const int rows4x4 = frame_header_.rows4x4;
   const int columns4x4 = frame_header_.columns4x4;
-  for (int y = 0; y < sb4x4; y += 16) {
+  int y = 0;
+  do {
     const int row4x4 = row4x4_start + y;
     if (row4x4 >= rows4x4) break;
-    int column4x4;
-    for (column4x4 = 0; column4x4 < columns4x4;
-         column4x4 += kNum4x4InLoopFilterUnit) {
+    int column4x4 = 0;
+    do {
       // First apply vertical filtering
       VerticalDeblockFilter(row4x4, column4x4);
 
@@ -483,10 +484,12 @@ void PostFilter::ApplyDeblockFilterForOneSuperBlockRow(int row4x4_start,
       if (column4x4 != 0) {
         HorizontalDeblockFilter(row4x4, column4x4 - kNum4x4InLoopFilterUnit);
       }
-    }
+      column4x4 += kNum4x4InLoopFilterUnit;
+    } while (column4x4 < columns4x4);
     // Horizontal filtering for the last 64x64 block.
     HorizontalDeblockFilter(row4x4, column4x4 - kNum4x4InLoopFilterUnit);
-  }
+    y += kNum4x4InLoopFilterUnit;
+  } while (y < sb4x4);
 }
 
 template <LoopFilterType loop_filter_type>
