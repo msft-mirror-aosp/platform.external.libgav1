@@ -178,7 +178,6 @@ struct BlockParameters : public Allocable {
   bool is_inter;
   bool is_explicit_compound_type;  // comp_group_idx in the spec.
   bool is_compound_type_average;   // compound_idx in the spec.
-  bool use_predicted_segment_id;   // only valid with temporal update enabled.
   int8_t segment_id;               // segment_id is in the range [0, 7].
   PredictionMode y_mode;
   PredictionMode uv_mode;
@@ -200,6 +199,12 @@ struct BlockParameters : public Allocable {
   // block is *being* decoded. The lifetime and usage of this field can be
   // better understood by following its flow in tile.cc.
   std::unique_ptr<PredictionParameters> prediction_parameters;
+};
+
+// Used to store the left and top block parameters that are used for computing
+// the cdf context of the subsequent blocks.
+struct BlockCdfContext {
+  bool use_predicted_segment_id[32];
 };
 
 // A five dimensional array used to store the wedge masks. The dimensions are:

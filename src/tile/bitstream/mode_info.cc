@@ -608,6 +608,14 @@ int8_t Tile::ComputePredictedSegmentId(const Block& block) const {
   return id;
 }
 
+void Tile::SetCdfContextUsePredictedSegmentId(const Block& block,
+                                              bool use_predicted_segment_id) {
+  memset(left_context_.use_predicted_segment_id + block.left_context_index,
+         static_cast<int>(use_predicted_segment_id), block.height4x4);
+  memset(block.top_context->use_predicted_segment_id + block.top_context_index,
+         static_cast<int>(use_predicted_segment_id), block.width4x4);
+}
+
 bool Tile::ReadInterSegmentId(const Block& block, bool pre_skip) {
   BlockParameters& bp = *block.bp;
   if (!frame_header_.segmentation.enabled) {
@@ -624,20 +632,25 @@ bool Tile::ReadInterSegmentId(const Block& block, bool pre_skip) {
       return true;
     }
   } else if (bp.skip) {
-    bp.use_predicted_segment_id = false;
+    SetCdfContextUsePredictedSegmentId(block, false);
     return ReadSegmentId(block);
   }
   if (frame_header_.segmentation.temporal_update) {
     const int context =
         (block.left_available[kPlaneY]
-             ? static_cast<int>(block.bp_left->use_predicted_segment_id)
+             ? static_cast<int>(
+                   left_context_
+                       .use_predicted_segment_id[block.left_context_index])
              : 0) +
         (block.top_available[kPlaneY]
-             ? static_cast<int>(block.bp_top->use_predicted_segment_id)
+             ? static_cast<int>(
+                   block.top_context
+                       ->use_predicted_segment_id[block.top_context_index])
              : 0);
-    bp.use_predicted_segment_id = reader_.ReadSymbol(
+    const bool use_predicted_segment_id = reader_.ReadSymbol(
         symbol_decoder_context_.use_predicted_segment_id_cdf[context]);
-    if (bp.use_predicted_segment_id) {
+    SetCdfContextUsePredictedSegmentId(block, use_predicted_segment_id);
+    if (use_predicted_segment_id) {
       bp.segment_id = ComputePredictedSegmentId(block);
       return true;
     }

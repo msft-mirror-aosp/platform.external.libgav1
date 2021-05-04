@@ -563,6 +563,11 @@ class Tile : public Allocable {
   // for the given |block| and stores them into |current_frame_|.
   void StoreMotionFieldMvsIntoCurrentFrame(const Block& block);
 
+  // SetCdfContext*() functions will populate the |left_context_| and
+  // |top_context_| for the |block|.
+  void SetCdfContextUsePredictedSegmentId(const Block& block,
+                                          bool use_predicted_segment_id);
+
   // Returns the zero-based index of the super block that contains |row4x4|
   // relative to the start of this tile.
   int SuperBlockRowIndex(int row4x4) const {
@@ -575,6 +580,24 @@ class Tile : public Allocable {
   int SuperBlockColumnIndex(int column4x4) const {
     return (column4x4 - column4x4_start_) >>
            (sequence_header_.use_128x128_superblock ? 5 : 4);
+  }
+
+  // Returns the zero-based index of the block that starts at |row4x4|
+  // relative to the start of the superblock that contains this block. This is
+  // used to index into the members of |left_context_|.
+  int BlockRowIndex(int row4x4) const {
+    const int sb_row4x4 =
+        row4x4 & (sequence_header_.use_128x128_superblock ? ~31 : ~15);
+    return row4x4 - sb_row4x4;
+  }
+
+  // Returns the zero-based index of the block that starts at |column4x4|
+  // relative to the start of the superblock that contains this block. This is
+  // used to index into the members of |top_context_|.
+  int BlockColumnIndex(int column4x4) const {
+    const int sb_column4x4 =
+        column4x4 & (sequence_header_.use_128x128_superblock ? ~31 : ~15);
+    return column4x4 - sb_column4x4;
   }
 
   BlockSize SuperBlockSize() const {
@@ -744,12 +767,19 @@ class Tile : public Allocable {
   // Stores the progress of the reference frames. This will be used to avoid
   // unnecessary calls into RefCountedBuffer::WaitUntil().
   std::array<int, kNumReferenceFrameTypes> reference_frame_progress_cache_;
+  // Stores the CDF contexts necessary for the "left" block.
+  BlockCdfContext left_context_;
+  // Stores the CDF contexts necessary for the "top" block. The size of this
+  // buffer is the number of superblock columns in this tile. For each block,
+  // the access index will be the corresponding SuperBlockColumnIndex()'th
+  // entry.
+  DynamicBuffer<BlockCdfContext> top_context_;
 };
 
 struct Tile::Block {
-  Block(const Tile& tile, BlockSize size, int row4x4, int column4x4,
+  Block(Tile* tile_ptr, BlockSize size, int row4x4, int column4x4,
         TileScratchBuffer* const scratch_buffer, ResidualPtr* residual)
-      : tile(tile),
+      : tile(*tile_ptr),
         size(size),
         row4x4(row4x4),
         column4x4(column4x4),
@@ -758,7 +788,11 @@ struct Tile::Block {
         width4x4(width >> 2),
         height4x4(height >> 2),
         scratch_buffer(scratch_buffer),
-        residual(residual) {
+        residual(residual),
+        top_context(tile.top_context_.get() +
+                    tile.SuperBlockColumnIndex(column4x4)),
+        top_context_index(tile.BlockColumnIndex(column4x4)),
+        left_context_index(tile.BlockRowIndex(row4x4)) {
     assert(size != kBlockInvalid);
     residual_size[kPlaneY] = kPlaneResidualSize[size][0][0];
     residual_size[kPlaneU] = residual_size[kPlaneV] =
@@ -879,7 +913,7 @@ struct Tile::Block {
     return false;
   }
 
-  const Tile& tile;
+  Tile& tile;
   bool has_chroma;
   const BlockSize size;
   bool top_available[kMaxPlanes];
@@ -896,6 +930,9 @@ struct Tile::Block {
   BlockParameters* bp;
   TileScratchBuffer* const scratch_buffer;
   ResidualPtr* const residual;
+  BlockCdfContext* const top_context;
+  const int top_context_index;
+  const int left_context_index;
 };
 
 extern template bool

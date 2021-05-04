@@ -588,6 +588,10 @@ bool Tile::Init() {
                      column4x4_end_, &motion_field_);
   }
   ResetLoopRestorationParams();
+  if (!top_context_.Resize(superblock_columns_)) {
+    LIBGAV1_DLOG(ERROR, "Allocation of top_context_ failed.");
+    return false;
+  }
   return true;
 }
 
@@ -2140,7 +2144,7 @@ bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
     return false;
   }
   BlockParameters& bp = *bp_ptr;
-  Block block(*this, block_size, row4x4, column4x4, scratch_buffer, residual);
+  Block block(this, block_size, row4x4, column4x4, scratch_buffer, residual);
   bp.size = block_size;
   bp.prediction_parameters =
       split_parse_and_decode_ ? std::unique_ptr<PredictionParameters>(
@@ -2195,7 +2199,7 @@ bool Tile::DecodeBlock(int row4x4, int column4x4, BlockSize block_size,
       column4x4 >= frame_header_.columns4x4) {
     return true;
   }
-  Block block(*this, block_size, row4x4, column4x4, scratch_buffer, residual);
+  Block block(this, block_size, row4x4, column4x4, scratch_buffer, residual);
   if (!ComputePrediction(block) ||
       !Residual(block, kProcessingModeDecodeOnly)) {
     return false;
