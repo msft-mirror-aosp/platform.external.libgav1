@@ -184,11 +184,13 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
   ComputeDeblockFilterLevels(zero_delta_lf, deblock_filter_levels_);
   if (DoSuperRes()) {
     int plane = kPlaneY;
+    const int width = frame_header_.width;
+    const int upscaled_width_fh = frame_header_.upscaled_width;
     do {
       const int downscaled_width =
-          SubsampledValue(frame_header_.width, subsampling_x_[plane]);
+          SubsampledValue(width, subsampling_x_[plane]);
       const int upscaled_width =
-          SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
+          SubsampledValue(upscaled_width_fh, subsampling_x_[plane]);
       const int superres_width = downscaled_width << kSuperResScaleBits;
       super_res_info_[plane].step =
           (superres_width + upscaled_width / 2) / upscaled_width;
@@ -209,11 +211,10 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
                                    ? kMaxPlanesMonochrome
                                    : static_cast<int>(kNumPlaneTypes);
       do {
-        dsp->super_res_coefficients(
-            SubsampledValue(frame_header_.upscaled_width,
-                            subsampling_x_[plane]),
-            super_res_info_[plane].initial_subpixel_x,
-            super_res_info_[plane].step, superres_coefficients_[plane]);
+        dsp->super_res_coefficients(super_res_info_[plane].upscaled_width,
+                                    super_res_info_[plane].initial_subpixel_x,
+                                    super_res_info_[plane].step,
+                                    superres_coefficients_[plane]);
       } while (++plane < number_loops);
     }
   }
@@ -276,12 +277,13 @@ void PostFilter::ExtendFrameBoundary(uint8_t* const frame_start,
 
 void PostFilter::ExtendBordersForReferenceFrame() {
   if (frame_header_.refresh_frame_flags == 0) return;
+  const int upscaled_width = frame_header_.upscaled_width;
+  const int height = frame_header_.height;
   int plane = kPlaneY;
   do {
     const int plane_width =
-        SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
-    const int plane_height =
-        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
+        SubsampledValue(upscaled_width, subsampling_x_[plane]);
+    const int plane_height = SubsampledValue(height, subsampling_y_[plane]);
     assert(frame_buffer_.left_border(plane) >= kMinLeftBorderPixels &&
            frame_buffer_.right_border(plane) >= kMinRightBorderPixels &&
            frame_buffer_.top_border(plane) >= kMinTopBorderPixels &&
@@ -340,12 +342,13 @@ void PostFilter::CopyBordersForOneSuperBlockRow(int row4x4, int sb4x4,
   // needs 2 extra rows for the bottom border in each plane.
   const int extra_rows =
       (for_loop_restoration && thread_pool_ == nullptr && !DoCdef()) ? 2 : 0;
+  const int upscaled_width = frame_header_.upscaled_width;
+  const int height = frame_header_.height;
   int plane = kPlaneY;
   do {
     const int plane_width =
-        SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
-    const int plane_height =
-        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
+        SubsampledValue(upscaled_width, subsampling_x_[plane]);
+    const int plane_height = SubsampledValue(height, subsampling_y_[plane]);
     const int row = (MultiplyBy4(row4x4) - row_offset) >> subsampling_y_[plane];
     assert(row >= 0);
     if (row >= plane_height) break;
@@ -388,6 +391,8 @@ void PostFilter::SetupLoopRestorationBorder(const int row4x4) {
   assert(row4x4 >= 0);
   assert(!DoCdef());
   assert(DoRestoration());
+  const int upscaled_width = frame_header_.upscaled_width;
+  const int height = frame_header_.height;
   int plane = kPlaneY;
   do {
     if (loop_restoration_.type[plane] == kLoopRestorationTypeNone) {
@@ -395,10 +400,9 @@ void PostFilter::SetupLoopRestorationBorder(const int row4x4) {
     }
     const int row_offset = DivideBy4(row4x4);
     const int num_pixels =
-        SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
+        SubsampledValue(upscaled_width, subsampling_x_[plane]);
     const int row_width = num_pixels << pixel_size_log2_;
-    const int plane_height =
-        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
+    const int plane_height = SubsampledValue(height, subsampling_y_[plane]);
     const int row = kLoopRestorationBorderRows[subsampling_y_[plane]];
     const int absolute_row =
         (MultiplyBy4(row4x4) >> subsampling_y_[plane]) + row;
@@ -447,14 +451,14 @@ void PostFilter::SetupLoopRestorationBorder(int row4x4_start, int sb4x4) {
     if (DoSuperRes()) {
       std::array<uint8_t*, kMaxPlanes> src;
       std::array<int, kMaxPlanes> rows;
+      const int height = frame_header_.height;
       int plane = kPlaneY;
       do {
         if (loop_restoration_.type[plane] == kLoopRestorationTypeNone) {
           rows[plane] = 0;
           continue;
         }
-        const int plane_height =
-            SubsampledValue(frame_header_.height, subsampling_y_[plane]);
+        const int plane_height = SubsampledValue(height, subsampling_y_[plane]);
         const int row = kLoopRestorationBorderRows[subsampling_y_[plane]];
         const int absolute_row =
             (MultiplyBy4(row4x4) >> subsampling_y_[plane]) + row;
@@ -486,6 +490,7 @@ void PostFilter::SetupLoopRestorationBorder(int row4x4_start, int sb4x4) {
       } while (++plane < planes_);
     }
     // Extend the left and right boundaries needed for loop restoration.
+    const int upscaled_width = frame_header_.upscaled_width;
     int plane = kPlaneY;
     do {
       if (loop_restoration_.type[plane] == kLoopRestorationTypeNone) {
@@ -493,7 +498,7 @@ void PostFilter::SetupLoopRestorationBorder(int row4x4_start, int sb4x4) {
       }
       uint8_t* dst_line = dst[plane];
       const int plane_width =
-          SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
+          SubsampledValue(upscaled_width, subsampling_x_[plane]);
       for (int i = 0; i < 4; ++i) {
 #if LIBGAV1_MAX_BITDEPTH >= 10
         if (bitdepth_ >= 10) {
