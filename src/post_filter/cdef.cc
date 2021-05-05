@@ -319,8 +319,7 @@ void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
   }
 
   const bool is_frame_right =
-      MultiplyBy4(column4x4_start) + MultiplyBy4(block_width4x4) >=
-      frame_header_.width;
+      MultiplyBy4(column4x4_start + block_width4x4) >= frame_header_.width;
   if (!is_frame_right && thread_pool_ != nullptr) {
     // Backup the last 2 columns for use in the next iteration.
     use_border_columns[border_columns_dst_index][0] = true;
