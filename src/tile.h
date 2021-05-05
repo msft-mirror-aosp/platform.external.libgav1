@@ -320,7 +320,7 @@ class Tile : public Allocable {
   bool ReadSegmentId(const Block& block);       // 5.11.9.
   bool ReadIntraSegmentId(const Block& block);  // 5.11.8.
   void ReadSkip(const Block& block);            // 5.11.11.
-  void ReadSkipMode(const Block& block);        // 5.11.10.
+  bool ReadSkipMode(const Block& block);        // 5.11.10.
   void ReadCdef(const Block& block);            // 5.11.56.
   // Returns the new value. |cdf| is an array of size kDeltaSymbolCount + 1.
   int ReadAndClipDelta(uint16_t* cdf, int delta_small, int scale, int min_value,
@@ -346,38 +346,41 @@ class Tile : public Allocable {
   bool DecodeIntraModeInfo(const Block& block);                // 5.11.7.
   int8_t ComputePredictedSegmentId(const Block& block) const;  // 5.11.21.
   bool ReadInterSegmentId(const Block& block, bool pre_skip);  // 5.11.19.
-  void ReadIsInter(const Block& block);                        // 5.11.20.
+  void ReadIsInter(const Block& block, bool skip_mode);        // 5.11.20.
   bool ReadIntraBlockModeInfo(const Block& block,
                               bool intra_y_mode);  // 5.11.22.
   CompoundReferenceType ReadCompoundReferenceType(const Block& block);
   template <bool is_single, bool is_backward, int index>
   uint16_t* GetReferenceCdf(const Block& block, CompoundReferenceType type =
                                                     kNumCompoundReferenceTypes);
-  void ReadReferenceFrames(const Block& block);  // 5.11.25.
+  void ReadReferenceFrames(const Block& block, bool skip_mode);  // 5.11.25.
   void ReadInterPredictionModeY(const Block& block,
-                                const MvContexts& mode_contexts);
+                                const MvContexts& mode_contexts,
+                                bool skip_mode);
   void ReadRefMvIndex(const Block& block);
-  void ReadInterIntraMode(const Block& block, bool is_compound);  // 5.11.28.
+  void ReadInterIntraMode(const Block& block, bool is_compound,
+                          bool skip_mode);        // 5.11.28.
   bool IsScaled(ReferenceFrameType type) const {  // Part of 5.11.27.
     const int index =
         frame_header_.reference_frame_index[type - kReferenceFrameLast];
     return reference_frames_[index]->upscaled_width() != frame_header_.width ||
            reference_frames_[index]->frame_height() != frame_header_.height;
   }
-  void ReadMotionMode(const Block& block, bool is_compound);  // 5.11.27.
+  void ReadMotionMode(const Block& block, bool is_compound,
+                      bool skip_mode);  // 5.11.27.
   uint16_t* GetIsExplicitCompoundTypeCdf(const Block& block);
   uint16_t* GetIsCompoundTypeAverageCdf(const Block& block);
-  void ReadCompoundType(const Block& block, bool is_compound,
+  void ReadCompoundType(const Block& block, bool is_compound, bool skip_mode,
                         bool* is_explicit_compound_type,
                         bool* is_compound_type_average);  // 5.11.29.
   uint16_t* GetInterpolationFilterCdf(const Block& block, int direction);
-  void ReadInterpolationFilter(const Block& block);
-  bool ReadInterBlockModeInfo(const Block& block);             // 5.11.23.
-  bool DecodeInterModeInfo(const Block& block);                // 5.11.18.
-  bool DecodeModeInfo(const Block& block);                     // 5.11.6.
-  bool IsMvValid(const Block& block, bool is_compound) const;  // 6.10.25.
-  bool AssignInterMv(const Block& block, bool is_compound);    // 5.11.26.
-  bool AssignIntraMv(const Block& block);                      // 5.11.26.
+  void ReadInterpolationFilter(const Block& block, bool skip_mode);
+  bool ReadInterBlockModeInfo(const Block& block, bool skip_mode);  // 5.11.23.
+  bool DecodeInterModeInfo(const Block& block);                     // 5.11.18.
+  bool DecodeModeInfo(const Block& block);                          // 5.11.6.
+  bool IsMvValid(const Block& block, bool is_compound) const;       // 6.10.25.
+  bool AssignInterMv(const Block& block, bool is_compound);         // 5.11.26.
+  bool AssignIntraMv(const Block& block);                           // 5.11.26.
   int GetTopTransformWidth(const Block& block, int row4x4, int column4x4,
                            bool ignore_skip);
   int GetLeftTransformHeight(const Block& block, int row4x4, int column4x4,
@@ -572,6 +575,7 @@ class Tile : public Allocable {
   void SetCdfContextCompoundType(const Block& block,
                                  bool is_explicit_compound_type,
                                  bool is_compound_type_average);
+  void SetCdfContextSkipMode(const Block& block, bool skip_mode);
 
   // Returns the zero-based index of the super block that contains |row4x4|
   // relative to the start of this tile.

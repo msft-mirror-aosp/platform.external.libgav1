@@ -268,7 +268,7 @@ void Tile::ReadSkip(const Block& block) {
   bp.skip = reader_.ReadSymbol(skip_cdf);
 }
 
-void Tile::ReadSkipMode(const Block& block) {
+bool Tile::ReadSkipMode(const Block& block) {
   BlockParameters& bp = *block.bp;
   if (!frame_header_.skip_mode_present ||
       frame_header_.segmentation.FeatureActive(bp.segment_id,
@@ -278,17 +278,17 @@ void Tile::ReadSkipMode(const Block& block) {
       frame_header_.segmentation.FeatureActive(bp.segment_id,
                                                kSegmentFeatureGlobalMv) ||
       IsBlockDimension4(block.size)) {
-    bp.skip_mode = false;
-    return;
+    return false;
   }
   const int context =
       (block.left_available[kPlaneY]
-           ? static_cast<int>(block.bp_left->skip_mode)
+           ? static_cast<int>(left_context_.skip_mode[block.left_context_index])
            : 0) +
-      (block.top_available[kPlaneY] ? static_cast<int>(block.bp_top->skip_mode)
-                                    : 0);
-  bp.skip_mode =
-      reader_.ReadSymbol(symbol_decoder_context_.skip_mode_cdf[context]);
+      (block.top_available[kPlaneY]
+           ? static_cast<int>(
+                 block.top_context->skip_mode[block.top_context_index])
+           : 0);
+  return reader_.ReadSymbol(symbol_decoder_context_.skip_mode_cdf[context]);
 }
 
 void Tile::ReadCdef(const Block& block) {
@@ -548,7 +548,7 @@ bool Tile::DecodeIntraModeInfo(const Block& block) {
       !ReadIntraSegmentId(block)) {
     return false;
   }
-  bp.skip_mode = false;
+  SetCdfContextSkipMode(block, false);
   ReadSkip(block);
   if (!frame_header_.segmentation.segment_id_pre_skip &&
       !ReadIntraSegmentId(block)) {
@@ -658,9 +658,9 @@ bool Tile::ReadInterSegmentId(const Block& block, bool pre_skip) {
   return ReadSegmentId(block);
 }
 
-void Tile::ReadIsInter(const Block& block) {
+void Tile::ReadIsInter(const Block& block, bool skip_mode) {
   BlockParameters& bp = *block.bp;
-  if (bp.skip_mode) {
+  if (skip_mode) {
     bp.is_inter = true;
     return;
   }
@@ -821,9 +821,9 @@ uint16_t* Tile::GetReferenceCdf(
   return symbol_decoder_context_.compound_reference_cdf[type][context][index];
 }
 
-void Tile::ReadReferenceFrames(const Block& block) {
+void Tile::ReadReferenceFrames(const Block& block, bool skip_mode) {
   BlockParameters& bp = *block.bp;
-  if (bp.skip_mode) {
+  if (skip_mode) {
     bp.reference_frame[0] = frame_header_.skip_mode_frame[0];
     bp.reference_frame[1] = frame_header_.skip_mode_frame[1];
     return;
@@ -940,9 +940,10 @@ void Tile::ReadReferenceFrames(const Block& block) {
 }
 
 void Tile::ReadInterPredictionModeY(const Block& block,
-                                    const MvContexts& mode_contexts) {
+                                    const MvContexts& mode_contexts,
+                                    bool skip_mode) {
   BlockParameters& bp = *block.bp;
-  if (bp.skip_mode) {
+  if (skip_mode) {
     bp.y_mode = kPredictionModeNearestNearestMv;
     return;
   }
@@ -1008,13 +1009,14 @@ void Tile::ReadRefMvIndex(const Block& block) {
   }
 }
 
-void Tile::ReadInterIntraMode(const Block& block, bool is_compound) {
+void Tile::ReadInterIntraMode(const Block& block, bool is_compound,
+                              bool skip_mode) {
   BlockParameters& bp = *block.bp;
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
   prediction_parameters.inter_intra_mode = kNumInterIntraModes;
   prediction_parameters.is_wedge_inter_intra = false;
-  if (bp.skip_mode || !sequence_header_.enable_interintra_compound ||
+  if (skip_mode || !sequence_header_.enable_interintra_compound ||
       is_compound || !kIsInterIntraModeAllowedMask.Contains(block.size)) {
     return;
   }
@@ -1044,13 +1046,14 @@ void Tile::ReadInterIntraMode(const Block& block, bool is_compound) {
   prediction_parameters.wedge_sign = 0;
 }
 
-void Tile::ReadMotionMode(const Block& block, bool is_compound) {
+void Tile::ReadMotionMode(const Block& block, bool is_compound,
+                          bool skip_mode) {
   BlockParameters& bp = *block.bp;
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
   const auto global_motion_type =
       frame_header_.global_motion[bp.reference_frame[0]].type;
-  if (bp.skip_mode || !frame_header_.is_motion_mode_switchable ||
+  if (skip_mode || !frame_header_.is_motion_mode_switchable ||
       IsBlockDimension4(block.size) ||
       (frame_header_.force_integer_mv == 0 &&
        (bp.y_mode == kPredictionModeGlobalMv ||
@@ -1133,14 +1136,14 @@ uint16_t* Tile::GetIsCompoundTypeAverageCdf(const Block& block) {
 }
 
 void Tile::ReadCompoundType(const Block& block, bool is_compound,
+                            bool skip_mode,
                             bool* const is_explicit_compound_type,
                             bool* const is_compound_type_average) {
-  BlockParameters& bp = *block.bp;
   *is_explicit_compound_type = false;
   *is_compound_type_average = true;
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
-  if (bp.skip_mode) {
+  if (skip_mode) {
     prediction_parameters.compound_prediction_type =
         kCompoundPredictionTypeAverage;
     return;
@@ -1229,7 +1232,7 @@ uint16_t* Tile::GetInterpolationFilterCdf(const Block& block, int direction) {
   return symbol_decoder_context_.interpolation_filter_cdf[context];
 }
 
-void Tile::ReadInterpolationFilter(const Block& block) {
+void Tile::ReadInterpolationFilter(const Block& block, bool skip_mode) {
   BlockParameters& bp = *block.bp;
   if (frame_header_.interpolation_filter != kInterpolationFilterSwitchable) {
     static_assert(
@@ -1242,7 +1245,7 @@ void Tile::ReadInterpolationFilter(const Block& block) {
     return;
   }
   bool interpolation_filter_present = true;
-  if (bp.skip_mode ||
+  if (skip_mode ||
       block.bp->prediction_parameters->motion_mode == kMotionModeLocalWarp) {
     interpolation_filter_present = false;
   } else if (!IsBlockDimension4(block.size) &&
@@ -1284,27 +1287,34 @@ void Tile::SetCdfContextCompoundType(const Block& block,
          static_cast<int>(is_compound_type_average), block.width4x4);
 }
 
-bool Tile::ReadInterBlockModeInfo(const Block& block) {
+bool Tile::ReadInterBlockModeInfo(const Block& block, bool skip_mode) {
   BlockParameters& bp = *block.bp;
   bp.palette_mode_info.size[kPlaneTypeY] = 0;
   bp.palette_mode_info.size[kPlaneTypeUV] = 0;
-  ReadReferenceFrames(block);
+  ReadReferenceFrames(block, skip_mode);
   const bool is_compound = bp.reference_frame[1] > kReferenceFrameIntra;
   MvContexts mode_contexts;
   FindMvStack(block, is_compound, &mode_contexts);
-  ReadInterPredictionModeY(block, mode_contexts);
+  ReadInterPredictionModeY(block, mode_contexts, skip_mode);
   ReadRefMvIndex(block);
   if (!AssignInterMv(block, is_compound)) return false;
-  ReadInterIntraMode(block, is_compound);
-  ReadMotionMode(block, is_compound);
+  ReadInterIntraMode(block, is_compound, skip_mode);
+  ReadMotionMode(block, is_compound, skip_mode);
   bool is_explicit_compound_type;
   bool is_compound_type_average;
-  ReadCompoundType(block, is_compound, &is_explicit_compound_type,
+  ReadCompoundType(block, is_compound, skip_mode, &is_explicit_compound_type,
                    &is_compound_type_average);
   SetCdfContextCompoundType(block, is_explicit_compound_type,
                             is_compound_type_average);
-  ReadInterpolationFilter(block);
+  ReadInterpolationFilter(block, skip_mode);
   return true;
+}
+
+void Tile::SetCdfContextSkipMode(const Block& block, bool skip_mode) {
+  memset(left_context_.skip_mode + block.left_context_index,
+         static_cast<int>(skip_mode), block.height4x4);
+  memset(block.top_context->skip_mode + block.top_context_index,
+         static_cast<int>(skip_mode), block.width4x4);
 }
 
 bool Tile::DecodeInterModeInfo(const Block& block) {
@@ -1312,8 +1322,9 @@ bool Tile::DecodeInterModeInfo(const Block& block) {
   block.bp->prediction_parameters->use_intra_block_copy = false;
   bp.skip = false;
   if (!ReadInterSegmentId(block, /*pre_skip=*/true)) return false;
-  ReadSkipMode(block);
-  if (bp.skip_mode) {
+  bool skip_mode = ReadSkipMode(block);
+  SetCdfContextSkipMode(block, skip_mode);
+  if (skip_mode) {
     bp.skip = true;
   } else {
     ReadSkip(block);
@@ -1328,8 +1339,8 @@ bool Tile::DecodeInterModeInfo(const Block& block) {
     ReadLoopFilterDelta(block);
     read_deltas_ = false;
   }
-  ReadIsInter(block);
-  return bp.is_inter ? ReadInterBlockModeInfo(block)
+  ReadIsInter(block, skip_mode);
+  return bp.is_inter ? ReadInterBlockModeInfo(block, skip_mode)
                      : ReadIntraBlockModeInfo(block, /*intra_y_mode=*/false);
 }
 

@@ -171,10 +171,6 @@ struct PredictionParameters : public Allocable {
 struct BlockParameters : public Allocable {
   BlockSize size;
   bool skip;
-  // True means that this block will use some default settings (that
-  // correspond to compound prediction) and so most of the mode info is
-  // skipped. False means that the mode info is not skipped.
-  bool skip_mode;
   bool is_inter;
   int8_t segment_id;  // segment_id is in the range [0, 7].
   PredictionMode y_mode;
@@ -205,6 +201,7 @@ struct BlockCdfContext {
   bool use_predicted_segment_id[32];
   bool is_explicit_compound_type[32];  // comp_group_idx in the spec.
   bool is_compound_type_average[32];   // compound_idx in the spec.
+  bool skip_mode[32];
 };
 
 // A five dimensional array used to store the wedge masks. The dimensions are:
