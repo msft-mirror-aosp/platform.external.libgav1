@@ -305,8 +305,8 @@ void PostFilter::HorizontalDeblockFilter(int row4x4_start,
   uint8_t level;
   int filter_length;
 
-  const int width = width_;
-  const int height = height_;
+  const int width = frame_header_.width;
+  const int height = frame_header_.height;
   for (int column4x4 = 0; column4x4 < kNum4x4InLoopFilterUnit &&
                           MultiplyBy4(column4x4_start + column4x4) < width;
        column4x4 += column_step, src += src_step) {
@@ -386,8 +386,8 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
       block_parameters_.Address(row4x4_start, column4x4_start);
   const int bp_stride = block_parameters_.columns4x4();
   const int column_step_shift = pixel_size_log2_;
-  const int width = width_;
-  const int height = height_;
+  const int width = frame_header_.width;
+  const int height = frame_header_.height;
   for (int row4x4 = 0; row4x4 < kNum4x4InLoopFilterUnit &&
                        MultiplyBy4(row4x4_start + row4x4) < height;
        ++row4x4, src += row_stride, bp_row_base += bp_stride) {

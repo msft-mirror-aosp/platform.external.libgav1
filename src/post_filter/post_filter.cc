@@ -146,9 +146,6 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
     : frame_header_(frame_header),
       loop_restoration_(frame_header.loop_restoration),
       dsp_(*dsp),
-      upscaled_width_(frame_header.upscaled_width),
-      width_(frame_header.width),
-      height_(frame_header.height),
       bitdepth_(sequence_header.color_config.bitdepth),
       subsampling_x_{0, sequence_header.color_config.subsampling_x,
                      sequence_header.color_config.subsampling_x},
@@ -189,9 +186,9 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
     int plane = kPlaneY;
     do {
       const int downscaled_width =
-          SubsampledValue(width_, subsampling_x_[plane]);
+          SubsampledValue(frame_header_.width, subsampling_x_[plane]);
       const int upscaled_width =
-          SubsampledValue(upscaled_width_, subsampling_x_[plane]);
+          SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
       const int superres_width = downscaled_width << kSuperResScaleBits;
       super_res_info_[plane].step =
           (superres_width + upscaled_width / 2) / upscaled_width;
@@ -213,7 +210,8 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
                                    : static_cast<int>(kNumPlaneTypes);
       do {
         dsp->super_res_coefficients(
-            SubsampledValue(upscaled_width_, subsampling_x_[plane]),
+            SubsampledValue(frame_header_.upscaled_width,
+                            subsampling_x_[plane]),
             super_res_info_[plane].initial_subpixel_x,
             super_res_info_[plane].step, superres_coefficients_[plane]);
       } while (++plane < number_loops);
@@ -281,8 +279,9 @@ void PostFilter::ExtendBordersForReferenceFrame() {
   int plane = kPlaneY;
   do {
     const int plane_width =
-        SubsampledValue(upscaled_width_, subsampling_x_[plane]);
-    const int plane_height = SubsampledValue(height_, subsampling_y_[plane]);
+        SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
+    const int plane_height =
+        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
     assert(frame_buffer_.left_border(plane) >= kMinLeftBorderPixels &&
            frame_buffer_.right_border(plane) >= kMinRightBorderPixels &&
            frame_buffer_.top_border(plane) >= kMinTopBorderPixels &&
@@ -344,8 +343,9 @@ void PostFilter::CopyBordersForOneSuperBlockRow(int row4x4, int sb4x4,
   int plane = kPlaneY;
   do {
     const int plane_width =
-        SubsampledValue(upscaled_width_, subsampling_x_[plane]);
-    const int plane_height = SubsampledValue(height_, subsampling_y_[plane]);
+        SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
+    const int plane_height =
+        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
     const int row = (MultiplyBy4(row4x4) - row_offset) >> subsampling_y_[plane];
     assert(row >= 0);
     if (row >= plane_height) break;
@@ -395,9 +395,10 @@ void PostFilter::SetupLoopRestorationBorder(const int row4x4) {
     }
     const int row_offset = DivideBy4(row4x4);
     const int num_pixels =
-        SubsampledValue(upscaled_width_, subsampling_x_[plane]);
+        SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
     const int row_width = num_pixels << pixel_size_log2_;
-    const int plane_height = SubsampledValue(height_, subsampling_y_[plane]);
+    const int plane_height =
+        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
     const int row = kLoopRestorationBorderRows[subsampling_y_[plane]];
     const int absolute_row =
         (MultiplyBy4(row4x4) >> subsampling_y_[plane]) + row;
@@ -492,7 +493,7 @@ void PostFilter::SetupLoopRestorationBorder(int row4x4_start, int sb4x4) {
       }
       uint8_t* dst_line = dst[plane];
       const int plane_width =
-          SubsampledValue(upscaled_width_, subsampling_x_[plane]);
+          SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
       for (int i = 0; i < 4; ++i) {
 #if LIBGAV1_MAX_BITDEPTH >= 10
         if (bitdepth_ >= 10) {
@@ -595,7 +596,7 @@ int PostFilter::ApplyFilteringForOneSuperBlockRow(int row4x4, int sb4x4,
   if (is_last_row && !DoBorderExtensionInLoop()) {
     ExtendBordersForReferenceFrame();
   }
-  return is_last_row ? height_ : progress_row_;
+  return is_last_row ? frame_header_.height : progress_row_;
 }
 
 }  // namespace libgav1

@@ -461,9 +461,6 @@ class PostFilter {
   const ObuFrameHeader& frame_header_;
   const LoopRestoration& loop_restoration_;
   const dsp::Dsp& dsp_;
-  const int upscaled_width_;
-  const int width_;
-  const int height_;
   const int8_t bitdepth_;
   const int8_t subsampling_x_[kMaxPlanes];
   const int8_t subsampling_y_[kMaxPlanes];

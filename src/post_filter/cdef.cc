@@ -126,8 +126,8 @@ void PostFilter::PrepareCdefBlock(int block_width4x4, int block_height4x4,
   const int8_t subsampling_y = y_plane ? 0 : subsampling_y_[kPlaneU];
   const int start_x = MultiplyBy4(column4x4) >> subsampling_x;
   const int start_y = MultiplyBy4(row4x4) >> subsampling_y;
-  const int plane_width = SubsampledValue(width_, subsampling_x);
-  const int plane_height = SubsampledValue(height_, subsampling_y);
+  const int plane_width = SubsampledValue(frame_header_.width, subsampling_x);
+  const int plane_height = SubsampledValue(frame_header_.height, subsampling_y);
   const int block_width = MultiplyBy4(block_width4x4) >> subsampling_x;
   const int block_height = MultiplyBy4(block_height4x4) >> subsampling_y;
   // unit_width, unit_height are the same as block_width, block_height unless
@@ -319,7 +319,8 @@ void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
   }
 
   const bool is_frame_right =
-      MultiplyBy4(column4x4_start) + MultiplyBy4(block_width4x4) >= width_;
+      MultiplyBy4(column4x4_start) + MultiplyBy4(block_width4x4) >=
+      frame_header_.width;
   if (!is_frame_right && thread_pool_ != nullptr) {
     // Backup the last 2 columns for use in the next iteration.
     use_border_columns[border_columns_dst_index][0] = true;

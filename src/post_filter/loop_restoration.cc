@@ -108,9 +108,10 @@ void PostFilter::ApplyLoopRestorationForOneSuperBlockRow(const int row4x4_start,
     const ptrdiff_t stride = frame_buffer_.stride(plane) / sizeof(Pixel);
     const int unit_height_offset =
         kRestorationUnitOffset >> subsampling_y_[plane];
-    const int plane_height = SubsampledValue(height_, subsampling_y_[plane]);
+    const int plane_height =
+        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
     const int plane_width =
-        SubsampledValue(upscaled_width_, subsampling_x_[plane]);
+        SubsampledValue(frame_header_.upscaled_width, subsampling_x_[plane]);
     const int plane_unit_size = 1 << loop_restoration_.unit_size_log2[plane];
     const int plane_process_unit_height =
         kRestorationUnitHeight >> subsampling_y_[plane];
