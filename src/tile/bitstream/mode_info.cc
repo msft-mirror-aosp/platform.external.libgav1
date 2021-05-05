@@ -1086,14 +1086,17 @@ uint16_t* Tile::GetIsExplicitCompoundTypeCdf(const Block& block) {
   int context = 0;
   if (block.top_available[kPlaneY]) {
     if (!block.IsTopSingle()) {
-      context += static_cast<int>(block.bp_top->is_explicit_compound_type);
+      context += static_cast<int>(
+          block.top_context
+              ->is_explicit_compound_type[block.top_context_index]);
     } else if (block.TopReference(0) == kReferenceFrameAlternate) {
       context += 3;
     }
   }
   if (block.left_available[kPlaneY]) {
     if (!block.IsLeftSingle()) {
-      context += static_cast<int>(block.bp_left->is_explicit_compound_type);
+      context += static_cast<int>(
+          left_context_.is_explicit_compound_type[block.left_context_index]);
     } else if (block.LeftReference(0) == kReferenceFrameAlternate) {
       context += 3;
     }
@@ -1112,14 +1115,16 @@ uint16_t* Tile::GetIsCompoundTypeAverageCdf(const Block& block) {
   int context = (forward == backward) ? 3 : 0;
   if (block.top_available[kPlaneY]) {
     if (!block.IsTopSingle()) {
-      context += static_cast<int>(block.bp_top->is_compound_type_average);
+      context += static_cast<int>(
+          block.top_context->is_compound_type_average[block.top_context_index]);
     } else if (block.TopReference(0) == kReferenceFrameAlternate) {
       ++context;
     }
   }
   if (block.left_available[kPlaneY]) {
     if (!block.IsLeftSingle()) {
-      context += static_cast<int>(block.bp_left->is_compound_type_average);
+      context += static_cast<int>(
+          left_context_.is_compound_type_average[block.left_context_index]);
     } else if (block.LeftReference(0) == kReferenceFrameAlternate) {
       ++context;
     }
@@ -1127,10 +1132,12 @@ uint16_t* Tile::GetIsCompoundTypeAverageCdf(const Block& block) {
   return symbol_decoder_context_.is_compound_type_average_cdf[context];
 }
 
-void Tile::ReadCompoundType(const Block& block, bool is_compound) {
+void Tile::ReadCompoundType(const Block& block, bool is_compound,
+                            bool* const is_explicit_compound_type,
+                            bool* const is_compound_type_average) {
   BlockParameters& bp = *block.bp;
-  bp.is_explicit_compound_type = false;
-  bp.is_compound_type_average = true;
+  *is_explicit_compound_type = false;
+  *is_compound_type_average = true;
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
   if (bp.skip_mode) {
@@ -1140,10 +1147,10 @@ void Tile::ReadCompoundType(const Block& block, bool is_compound) {
   }
   if (is_compound) {
     if (sequence_header_.enable_masked_compound) {
-      bp.is_explicit_compound_type =
+      *is_explicit_compound_type =
           reader_.ReadSymbol(GetIsExplicitCompoundTypeCdf(block));
     }
-    if (bp.is_explicit_compound_type) {
+    if (*is_explicit_compound_type) {
       if (kIsWedgeCompoundModeAllowed.Contains(block.size)) {
         // Only kCompoundPredictionTypeWedge and
         // kCompoundPredictionTypeDiffWeighted are signaled explicitly.
@@ -1156,11 +1163,11 @@ void Tile::ReadCompoundType(const Block& block, bool is_compound) {
       }
     } else {
       if (sequence_header_.enable_jnt_comp) {
-        bp.is_compound_type_average =
+        *is_compound_type_average =
             reader_.ReadSymbol(GetIsCompoundTypeAverageCdf(block));
         prediction_parameters.compound_prediction_type =
-            bp.is_compound_type_average ? kCompoundPredictionTypeAverage
-                                        : kCompoundPredictionTypeDistance;
+            *is_compound_type_average ? kCompoundPredictionTypeAverage
+                                      : kCompoundPredictionTypeDistance;
       } else {
         prediction_parameters.compound_prediction_type =
             kCompoundPredictionTypeAverage;
@@ -1264,6 +1271,19 @@ void Tile::ReadInterpolationFilter(const Block& block) {
   }
 }
 
+void Tile::SetCdfContextCompoundType(const Block& block,
+                                     bool is_explicit_compound_type,
+                                     bool is_compound_type_average) {
+  memset(left_context_.is_explicit_compound_type + block.left_context_index,
+         static_cast<int>(is_explicit_compound_type), block.height4x4);
+  memset(left_context_.is_compound_type_average + block.left_context_index,
+         static_cast<int>(is_compound_type_average), block.height4x4);
+  memset(block.top_context->is_explicit_compound_type + block.top_context_index,
+         static_cast<int>(is_explicit_compound_type), block.width4x4);
+  memset(block.top_context->is_compound_type_average + block.top_context_index,
+         static_cast<int>(is_compound_type_average), block.width4x4);
+}
+
 bool Tile::ReadInterBlockModeInfo(const Block& block) {
   BlockParameters& bp = *block.bp;
   bp.palette_mode_info.size[kPlaneTypeY] = 0;
@@ -1277,7 +1297,12 @@ bool Tile::ReadInterBlockModeInfo(const Block& block) {
   if (!AssignInterMv(block, is_compound)) return false;
   ReadInterIntraMode(block, is_compound);
   ReadMotionMode(block, is_compound);
-  ReadCompoundType(block, is_compound);
+  bool is_explicit_compound_type;
+  bool is_compound_type_average;
+  ReadCompoundType(block, is_compound, &is_explicit_compound_type,
+                   &is_compound_type_average);
+  SetCdfContextCompoundType(block, is_explicit_compound_type,
+                            is_compound_type_average);
   ReadInterpolationFilter(block);
   return true;
 }

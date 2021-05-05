@@ -367,7 +367,9 @@ class Tile : public Allocable {
   void ReadMotionMode(const Block& block, bool is_compound);  // 5.11.27.
   uint16_t* GetIsExplicitCompoundTypeCdf(const Block& block);
   uint16_t* GetIsCompoundTypeAverageCdf(const Block& block);
-  void ReadCompoundType(const Block& block, bool is_compound);  // 5.11.29.
+  void ReadCompoundType(const Block& block, bool is_compound,
+                        bool* is_explicit_compound_type,
+                        bool* is_compound_type_average);  // 5.11.29.
   uint16_t* GetInterpolationFilterCdf(const Block& block, int direction);
   void ReadInterpolationFilter(const Block& block);
   bool ReadInterBlockModeInfo(const Block& block);             // 5.11.23.
@@ -567,6 +569,9 @@ class Tile : public Allocable {
   // |top_context_| for the |block|.
   void SetCdfContextUsePredictedSegmentId(const Block& block,
                                           bool use_predicted_segment_id);
+  void SetCdfContextCompoundType(const Block& block,
+                                 bool is_explicit_compound_type,
+                                 bool is_compound_type_average);
 
   // Returns the zero-based index of the super block that contains |row4x4|
   // relative to the start of this tile.

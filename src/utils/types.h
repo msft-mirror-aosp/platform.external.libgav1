@@ -176,9 +176,7 @@ struct BlockParameters : public Allocable {
   // skipped. False means that the mode info is not skipped.
   bool skip_mode;
   bool is_inter;
-  bool is_explicit_compound_type;  // comp_group_idx in the spec.
-  bool is_compound_type_average;   // compound_idx in the spec.
-  int8_t segment_id;               // segment_id is in the range [0, 7].
+  int8_t segment_id;  // segment_id is in the range [0, 7].
   PredictionMode y_mode;
   PredictionMode uv_mode;
   TransformSize transform_size;
@@ -205,6 +203,8 @@ struct BlockParameters : public Allocable {
 // the cdf context of the subsequent blocks.
 struct BlockCdfContext {
   bool use_predicted_segment_id[32];
+  bool is_explicit_compound_type[32];  // comp_group_idx in the spec.
+  bool is_compound_type_average[32];   // compound_idx in the spec.
 };
 
 // A five dimensional array used to store the wedge masks. The dimensions are:
