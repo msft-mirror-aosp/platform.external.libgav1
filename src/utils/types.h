@@ -164,6 +164,9 @@ struct PredictionParameters : public Allocable {
   int num_warp_samples;
   int warp_estimate_candidates[kMaxLeastSquaresSamples][4];
   PaletteModeInfo palette_mode_info;
+  PredictionMode uv_mode;
+  bool chroma_top_uses_smooth_prediction;
+  bool chroma_left_uses_smooth_prediction;
 };
 
 // A lot of BlockParameters objects are created, so the smallest type is used
@@ -175,7 +178,6 @@ struct BlockParameters : public Allocable {
   bool is_inter;
   int8_t segment_id;  // segment_id is in the range [0, 7].
   PredictionMode y_mode;
-  PredictionMode uv_mode;
   TransformSize transform_size;
   TransformSize uv_transform_size;
   InterpolationFilter interpolation_filter[2];
@@ -204,6 +206,7 @@ struct BlockCdfContext {
   bool skip_mode[32];
   uint8_t palette_size[kNumPlaneTypes][32];
   uint16_t palette_color[32][kNumPlaneTypes][kMaxPaletteSize];
+  PredictionMode uv_mode[32];
 };
 
 // A five dimensional array used to store the wedge masks. The dimensions are:

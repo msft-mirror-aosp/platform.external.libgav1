@@ -404,8 +404,9 @@ void Tile::ReadIntraAngleInfo(const Block& block, PlaneType plane_type) {
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
   prediction_parameters.angle_delta[plane_type] = 0;
-  const PredictionMode mode =
-      (plane_type == kPlaneTypeY) ? bp.y_mode : bp.uv_mode;
+  const PredictionMode mode = (plane_type == kPlaneTypeY)
+                                  ? bp.y_mode
+                                  : bp.prediction_parameters->uv_mode;
   if (IsBlockSmallerThan8x8(block.size) || !IsDirectionalMode(mode)) return;
   uint16_t* const cdf =
       symbol_decoder_context_.angle_delta_cdf[mode - kPredictionModeVertical];
@@ -454,10 +455,10 @@ void Tile::ReadPredictionModeUV(const Block& block) {
       symbol_decoder_context_
           .uv_mode_cdf[static_cast<int>(chroma_from_luma_allowed)][bp.y_mode];
   if (chroma_from_luma_allowed) {
-    bp.uv_mode = static_cast<PredictionMode>(
+    bp.prediction_parameters->uv_mode = static_cast<PredictionMode>(
         reader_.ReadSymbol<kIntraPredictionModesUV>(cdf));
   } else {
-    bp.uv_mode = static_cast<PredictionMode>(
+    bp.prediction_parameters->uv_mode = static_cast<PredictionMode>(
         reader_.ReadSymbol<kIntraPredictionModesUV - 1>(cdf));
   }
 }
@@ -572,7 +573,8 @@ bool Tile::DecodeIntraModeInfo(const Block& block) {
     bp.reference_frame[0] = kReferenceFrameIntra;
     bp.reference_frame[1] = kReferenceFrameNone;
     bp.y_mode = kPredictionModeDc;
-    bp.uv_mode = kPredictionModeDc;
+    bp.prediction_parameters->uv_mode = kPredictionModeDc;
+    SetCdfContextUVMode(block);
     prediction_parameters.motion_mode = kMotionModeSimple;
     prediction_parameters.compound_prediction_type =
         kCompoundPredictionTypeAverage;
@@ -717,6 +719,24 @@ void Tile::SetCdfContextPaletteSize(const Block& block) {
   }
 }
 
+void Tile::SetCdfContextUVMode(const Block& block) {
+  // BlockCdfContext.uv_mode is only used to compute is_smooth_prediction for
+  // the intra edge upsamplers in the subsequent blocks. They have some special
+  // rules for subsampled UV planes. For subsampled UV planes, update left
+  // context only if current block contains the last odd column and update top
+  // context only if current block contains the last odd row.
+  if (subsampling_x_[kPlaneU] == 0 || (block.column4x4 & 1) == 1 ||
+      block.width4x4 > 1) {
+    memset(left_context_.uv_mode + block.left_context_index,
+           block.bp->prediction_parameters->uv_mode, block.height4x4);
+  }
+  if (subsampling_y_[kPlaneU] == 0 || (block.row4x4 & 1) == 1 ||
+      block.height4x4 > 1) {
+    memset(block.top_context->uv_mode + block.top_context_index,
+           block.bp->prediction_parameters->uv_mode, block.width4x4);
+  }
+}
+
 bool Tile::ReadIntraBlockModeInfo(const Block& block, bool intra_y_mode) {
   BlockParameters& bp = *block.bp;
   bp.reference_frame[0] = kReferenceFrameIntra;
@@ -725,9 +745,35 @@ bool Tile::ReadIntraBlockModeInfo(const Block& block, bool intra_y_mode) {
   ReadIntraAngleInfo(block, kPlaneTypeY);
   if (block.HasChroma()) {
     ReadPredictionModeUV(block);
-    if (bp.uv_mode == kPredictionModeChromaFromLuma) {
+    if (bp.prediction_parameters->uv_mode == kPredictionModeChromaFromLuma) {
       ReadCflAlpha(block);
     }
+    if (block.left_available[kPlaneU]) {
+      const int smooth_row =
+          block.row4x4 + (~block.row4x4 & subsampling_y_[kPlaneU]);
+      const int smooth_column =
+          block.column4x4 - 1 - (block.column4x4 & subsampling_x_[kPlaneU]);
+      const BlockParameters& bp_left =
+          *block_parameters_holder_.Find(smooth_row, smooth_column);
+      bp.prediction_parameters->chroma_left_uses_smooth_prediction =
+          (bp_left.reference_frame[0] <= kReferenceFrameIntra) &&
+          kPredictionModeSmoothMask.Contains(
+              left_context_.uv_mode[BlockRowIndex(smooth_row)]);
+    }
+    if (block.top_available[kPlaneU]) {
+      const int smooth_row =
+          block.row4x4 - 1 - (block.row4x4 & subsampling_y_[kPlaneU]);
+      const int smooth_column =
+          block.column4x4 + (~block.column4x4 & subsampling_x_[kPlaneU]);
+      const BlockParameters& bp_top =
+          *block_parameters_holder_.Find(smooth_row, smooth_column);
+      bp.prediction_parameters->chroma_top_uses_smooth_prediction =
+          (bp_top.reference_frame[0] <= kReferenceFrameIntra) &&
+          kPredictionModeSmoothMask.Contains(
+              top_context_.get()[SuperBlockColumnIndex(smooth_column)]
+                  .uv_mode[BlockColumnIndex(smooth_column)]);
+    }
+    SetCdfContextUVMode(block);
     ReadIntraAngleInfo(block, kPlaneTypeUV);
   }
   ReadPaletteModeInfo(block);

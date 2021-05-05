@@ -546,7 +546,6 @@ class Tile : public Allocable {
                        bool has_left, bool has_top, bool has_top_right,
                        bool has_bottom_left, PredictionMode mode,
                        TransformSize tx_size);
-  bool IsSmoothPrediction(int row, int column, Plane plane) const;
   int GetIntraEdgeFilterType(const Block& block,
                              Plane plane) const;  // 7.11.2.8.
   template <typename Pixel>
@@ -577,6 +576,7 @@ class Tile : public Allocable {
                                  bool is_compound_type_average);
   void SetCdfContextSkipMode(const Block& block, bool skip_mode);
   void SetCdfContextPaletteSize(const Block& block);
+  void SetCdfContextUVMode(const Block& block);
 
   // Returns the zero-based index of the super block that contains |row4x4|
   // relative to the start of this tile.

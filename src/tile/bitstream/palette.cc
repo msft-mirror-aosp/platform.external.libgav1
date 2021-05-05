@@ -164,7 +164,8 @@ void Tile::ReadPaletteModeInfo(const Block& block) {
       ReadPaletteColors(block, kPlaneY);
     }
   }
-  if (block.HasChroma() && bp.uv_mode == kPredictionModeDc) {
+  if (block.HasChroma() &&
+      bp.prediction_parameters->uv_mode == kPredictionModeDc) {
     const int context = static_cast<int>(
         bp.prediction_parameters->palette_mode_info.size[kPlaneTypeY] > 0);
     const bool has_palette_uv =

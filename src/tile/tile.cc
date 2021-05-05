@@ -1028,7 +1028,7 @@ TransformType Tile::ComputeTransformType(const Block& block, Plane plane,
     const int y4 = std::max(block.row4x4, block_y << subsampling_y_[kPlaneU]);
     tx_type = transform_types_[y4 - block.row4x4][x4 - block.column4x4];
   } else {
-    tx_type = kModeToTransformType[bp.uv_mode];
+    tx_type = kModeToTransformType[bp.prediction_parameters->uv_mode];
   }
   return kTransformTypeInSetMask[tx_set].Contains(tx_type)
              ? tx_type
@@ -1587,10 +1587,11 @@ bool Tile::TransformBlock(const Block& block, Plane plane, int base_x,
                              x, y, tx_size);
     } else {
       const PredictionMode mode =
-          (plane == kPlaneY)
-              ? bp.y_mode
-              : (bp.uv_mode == kPredictionModeChromaFromLuma ? kPredictionModeDc
-                                                             : bp.uv_mode);
+          (plane == kPlaneY) ? bp.y_mode
+                             : (bp.prediction_parameters->uv_mode ==
+                                        kPredictionModeChromaFromLuma
+                                    ? kPredictionModeDc
+                                    : bp.prediction_parameters->uv_mode);
       const int tr_row4x4 = (sub_block_row4x4 >> subsampling_y);
       const int tr_column4x4 =
           (sub_block_column4x4 >> subsampling_x) + step_x + 1;
@@ -1604,7 +1605,8 @@ bool Tile::TransformBlock(const Block& block, Plane plane, int base_x,
           block.scratch_buffer->block_decoded[plane][tr_row4x4][tr_column4x4],
           block.scratch_buffer->block_decoded[plane][bl_row4x4][bl_column4x4],
           mode, tx_size);
-      if (plane != kPlaneY && bp.uv_mode == kPredictionModeChromaFromLuma) {
+      if (plane != kPlaneY &&
+          bp.prediction_parameters->uv_mode == kPredictionModeChromaFromLuma) {
         CALL_BITDEPTH_FUNCTION(ChromaFromLumaPrediction, block, plane, start_x,
                                start_y, tx_size);
       }

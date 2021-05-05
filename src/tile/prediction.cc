@@ -386,36 +386,21 @@ template void Tile::IntraPrediction<uint16_t>(const Block& block, Plane plane,
                                               TransformSize tx_size);
 #endif
 
-constexpr BitMaskSet kPredictionModeSmoothMask(kPredictionModeSmooth,
-                                               kPredictionModeSmoothHorizontal,
-                                               kPredictionModeSmoothVertical);
-
-bool Tile::IsSmoothPrediction(int row, int column, Plane plane) const {
-  const BlockParameters& bp = *block_parameters_holder_.Find(row, column);
-  PredictionMode mode;
-  if (plane == kPlaneY) {
-    mode = bp.y_mode;
-  } else {
-    if (bp.reference_frame[0] > kReferenceFrameIntra) return false;
-    mode = bp.uv_mode;
-  }
-  return kPredictionModeSmoothMask.Contains(mode);
-}
-
 int Tile::GetIntraEdgeFilterType(const Block& block, Plane plane) const {
-  const int subsampling_x = subsampling_x_[plane];
-  const int subsampling_y = subsampling_y_[plane];
-  if (block.top_available[plane]) {
-    const int row = block.row4x4 - 1 - (block.row4x4 & subsampling_y);
-    const int column = block.column4x4 + (~block.column4x4 & subsampling_x);
-    if (IsSmoothPrediction(row, column, plane)) return 1;
+  bool top;
+  bool left;
+  if (plane == kPlaneY) {
+    top = block.top_available[kPlaneY] &&
+          kPredictionModeSmoothMask.Contains(block.bp_top->y_mode);
+    left = block.left_available[kPlaneY] &&
+           kPredictionModeSmoothMask.Contains(block.bp_left->y_mode);
+  } else {
+    top = block.top_available[plane] &&
+          block.bp->prediction_parameters->chroma_top_uses_smooth_prediction;
+    left = block.left_available[plane] &&
+           block.bp->prediction_parameters->chroma_left_uses_smooth_prediction;
   }
-  if (block.left_available[plane]) {
-    const int row = block.row4x4 + (~block.row4x4 & subsampling_y);
-    const int column = block.column4x4 - 1 - (block.column4x4 & subsampling_x);
-    if (IsSmoothPrediction(row, column, plane)) return 1;
-  }
-  return 0;
+  return static_cast<int>(top || left);
 }
 
 template <typename Pixel>
