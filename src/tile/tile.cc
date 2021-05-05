@@ -1581,7 +1581,8 @@ bool Tile::TransformBlock(const Block& block, Plane plane, int base_x,
   const bool do_decode = mode == kProcessingModeDecodeOnly ||
                          mode == kProcessingModeParseAndDecode;
   if (do_decode && !bp.is_inter) {
-    if (bp.palette_mode_info.size[GetPlaneType(plane)] > 0) {
+    if (bp.prediction_parameters->palette_mode_info.size[GetPlaneType(plane)] >
+        0) {
       CALL_BITDEPTH_FUNCTION(PalettePrediction, block, plane, start_x, start_y,
                              x, y, tx_size);
     } else {

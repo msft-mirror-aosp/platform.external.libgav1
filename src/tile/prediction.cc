@@ -510,7 +510,8 @@ void Tile::PalettePrediction(const Block& block, const Plane plane,
                              const int y, const TransformSize tx_size) {
   const int tx_width = kTransformWidth[tx_size];
   const int tx_height = kTransformHeight[tx_size];
-  const uint16_t* const palette = block.bp->palette_mode_info.color[plane];
+  const uint16_t* const palette =
+      block.bp->prediction_parameters->palette_mode_info.color[plane];
   const PlaneType plane_type = GetPlaneType(plane);
   const int x4 = MultiplyBy4(x);
   const int y4 = MultiplyBy4(y);

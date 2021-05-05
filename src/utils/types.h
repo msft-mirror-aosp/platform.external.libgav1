@@ -163,6 +163,7 @@ struct PredictionParameters : public Allocable {
   MotionVector global_mv[2];
   int num_warp_samples;
   int warp_estimate_candidates[kMaxLeastSquaresSamples][4];
+  PaletteModeInfo palette_mode_info;
 };
 
 // A lot of BlockParameters objects are created, so the smallest type is used
@@ -186,7 +187,6 @@ struct BlockParameters : public Allocable {
   //  3 - V plane (both directions).
   uint8_t deblock_filter_level[kFrameLfCount];
   CompoundMotionVector mv;
-  PaletteModeInfo palette_mode_info;
   // When |Tile::split_parse_and_decode_| is true, each block gets its own
   // instance of |prediction_parameters|. When it is false, all the blocks point
   // to |Tile::prediction_parameters_|. This field is valid only as long as the
@@ -202,6 +202,8 @@ struct BlockCdfContext {
   bool is_explicit_compound_type[32];  // comp_group_idx in the spec.
   bool is_compound_type_average[32];   // compound_idx in the spec.
   bool skip_mode[32];
+  uint8_t palette_size[kNumPlaneTypes][32];
+  uint16_t palette_color[32][kNumPlaneTypes][kMaxPaletteSize];
 };
 
 // A five dimensional array used to store the wedge masks. The dimensions are:

@@ -528,7 +528,7 @@ void Tile::ReadFilterIntraModeInfo(const Block& block) {
       *block.bp->prediction_parameters;
   prediction_parameters.use_filter_intra = false;
   if (!sequence_header_.enable_filter_intra || bp.y_mode != kPredictionModeDc ||
-      bp.palette_mode_info.size[kPlaneTypeY] != 0 ||
+      bp.prediction_parameters->palette_mode_info.size[kPlaneTypeY] != 0 ||
       !IsBlockDimensionLessThan64(block.size)) {
     return;
   }
@@ -576,8 +576,9 @@ bool Tile::DecodeIntraModeInfo(const Block& block) {
     prediction_parameters.motion_mode = kMotionModeSimple;
     prediction_parameters.compound_prediction_type =
         kCompoundPredictionTypeAverage;
-    bp.palette_mode_info.size[kPlaneTypeY] = 0;
-    bp.palette_mode_info.size[kPlaneTypeUV] = 0;
+    bp.prediction_parameters->palette_mode_info.size[kPlaneTypeY] = 0;
+    bp.prediction_parameters->palette_mode_info.size[kPlaneTypeUV] = 0;
+    SetCdfContextPaletteSize(block);
     bp.interpolation_filter[0] = kInterpolationFilterBilinear;
     bp.interpolation_filter[1] = kInterpolationFilterBilinear;
     MvContexts dummy_mode_contexts;
@@ -691,6 +692,31 @@ void Tile::ReadIsInter(const Block& block, bool skip_mode) {
       reader_.ReadSymbol(symbol_decoder_context_.is_inter_cdf[context]);
 }
 
+void Tile::SetCdfContextPaletteSize(const Block& block) {
+  const PaletteModeInfo& palette_mode_info =
+      block.bp->prediction_parameters->palette_mode_info;
+  for (int plane_type = kPlaneTypeY; plane_type <= kPlaneTypeUV; ++plane_type) {
+    memset(left_context_.palette_size[plane_type] + block.left_context_index,
+           palette_mode_info.size[plane_type], block.height4x4);
+    memset(
+        block.top_context->palette_size[plane_type] + block.top_context_index,
+        palette_mode_info.size[plane_type], block.width4x4);
+    if (palette_mode_info.size[plane_type] == 0) continue;
+    for (int i = block.left_context_index;
+         i < block.left_context_index + block.height4x4; ++i) {
+      memcpy(left_context_.palette_color[i][plane_type],
+             palette_mode_info.color[plane_type],
+             kMaxPaletteSize * sizeof(palette_mode_info.color[0][0]));
+    }
+    for (int i = block.top_context_index;
+         i < block.top_context_index + block.width4x4; ++i) {
+      memcpy(block.top_context->palette_color[i][plane_type],
+             palette_mode_info.color[plane_type],
+             kMaxPaletteSize * sizeof(palette_mode_info.color[0][0]));
+    }
+  }
+}
+
 bool Tile::ReadIntraBlockModeInfo(const Block& block, bool intra_y_mode) {
   BlockParameters& bp = *block.bp;
   bp.reference_frame[0] = kReferenceFrameIntra;
@@ -705,6 +731,7 @@ bool Tile::ReadIntraBlockModeInfo(const Block& block, bool intra_y_mode) {
     ReadIntraAngleInfo(block, kPlaneTypeUV);
   }
   ReadPaletteModeInfo(block);
+  SetCdfContextPaletteSize(block);
   ReadFilterIntraModeInfo(block);
   return true;
 }
@@ -1289,8 +1316,9 @@ void Tile::SetCdfContextCompoundType(const Block& block,
 
 bool Tile::ReadInterBlockModeInfo(const Block& block, bool skip_mode) {
   BlockParameters& bp = *block.bp;
-  bp.palette_mode_info.size[kPlaneTypeY] = 0;
-  bp.palette_mode_info.size[kPlaneTypeUV] = 0;
+  bp.prediction_parameters->palette_mode_info.size[kPlaneTypeY] = 0;
+  bp.prediction_parameters->palette_mode_info.size[kPlaneTypeUV] = 0;
+  SetCdfContextPaletteSize(block);
   ReadReferenceFrames(block, skip_mode);
   const bool is_compound = bp.reference_frame[1] > kReferenceFrameIntra;
   MvContexts mode_contexts;

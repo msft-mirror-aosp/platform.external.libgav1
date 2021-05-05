@@ -576,6 +576,7 @@ class Tile : public Allocable {
                                  bool is_explicit_compound_type,
                                  bool is_compound_type_average);
   void SetCdfContextSkipMode(const Block& block, bool skip_mode);
+  void SetCdfContextPaletteSize(const Block& block);
 
   // Returns the zero-based index of the super block that contains |row4x4|
   // relative to the start of this tile.
