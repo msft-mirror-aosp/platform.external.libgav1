@@ -43,101 +43,6 @@ constexpr int kLoopRestorationBorderRows[2] = {54, 26};
 
 }  // namespace
 
-// The following example illustrates how ExtendFrame() extends a frame.
-// Suppose the frame width is 8 and height is 4, and left, right, top, and
-// bottom are all equal to 3.
-//
-// Before:
-//
-//       ABCDEFGH
-//       IJKLMNOP
-//       QRSTUVWX
-//       YZabcdef
-//
-// After:
-//
-//   AAA|ABCDEFGH|HHH  [3]
-//   AAA|ABCDEFGH|HHH
-//   AAA|ABCDEFGH|HHH
-//   ---+--------+---
-//   AAA|ABCDEFGH|HHH  [1]
-//   III|IJKLMNOP|PPP
-//   QQQ|QRSTUVWX|XXX
-//   YYY|YZabcdef|fff
-//   ---+--------+---
-//   YYY|YZabcdef|fff  [2]
-//   YYY|YZabcdef|fff
-//   YYY|YZabcdef|fff
-//
-// ExtendFrame() first extends the rows to the left and to the right[1]. Then
-// it copies the extended last row to the bottom borders[2]. Finally it copies
-// the extended first row to the top borders[3].
-// static
-template <typename Pixel>
-void PostFilter::ExtendFrame(Pixel* const frame_start, const int width,
-                             const int height, const ptrdiff_t stride,
-                             const int left, const int right, const int top,
-                             const int bottom) {
-  Pixel* src = frame_start;
-  // Copy to left and right borders.
-  int y = height;
-  do {
-    ExtendLine<Pixel>(src, width, left, right);
-    src += stride;
-  } while (--y != 0);
-  // Copy to bottom borders. For performance we copy |stride| pixels
-  // (including some padding pixels potentially) in each row, ending at the
-  // bottom right border pixel. In the diagram the asterisks indicate padding
-  // pixels.
-  //
-  // |<--- stride --->|
-  // **YYY|YZabcdef|fff <-- Copy from the extended last row.
-  // -----+--------+---
-  // **YYY|YZabcdef|fff
-  // **YYY|YZabcdef|fff
-  // **YYY|YZabcdef|fff <-- bottom right border pixel
-  assert(src == frame_start + height * stride);
-  Pixel* dst = src - left;
-  src = dst - stride;
-  for (int y = 0; y < bottom; ++y) {
-    memcpy(dst, src, sizeof(Pixel) * stride);
-    dst += stride;
-  }
-  // Copy to top borders. For performance we copy |stride| pixels (including
-  // some padding pixels potentially) in each row, starting from the top left
-  // border pixel. In the diagram the asterisks indicate padding pixels.
-  //
-  // +-- top left border pixel
-  // |
-  // v
-  // AAA|ABCDEFGH|HHH**
-  // AAA|ABCDEFGH|HHH**
-  // AAA|ABCDEFGH|HHH**
-  // ---+--------+-----
-  // AAA|ABCDEFGH|HHH** <-- Copy from the extended first row.
-  // |<--- stride --->|
-  src = frame_start - left;
-  dst = frame_start - left - top * stride;
-  for (int y = 0; y < top; ++y) {
-    memcpy(dst, src, sizeof(Pixel) * stride);
-    dst += stride;
-  }
-}
-
-template void PostFilter::ExtendFrame<uint8_t>(uint8_t* const frame_start,
-                                               const int width,
-                                               const int height,
-                                               const ptrdiff_t stride,
-                                               const int left, const int right,
-                                               const int top, const int bottom);
-
-#if LIBGAV1_MAX_BITDEPTH >= 10
-template void PostFilter::ExtendFrame<uint16_t>(
-    uint16_t* const frame_start, const int width, const int height,
-    const ptrdiff_t stride, const int left, const int right, const int top,
-    const int bottom);
-#endif
-
 PostFilter::PostFilter(const ObuFrameHeader& frame_header,
                        const ObuSequenceHeader& sequence_header,
                        FrameScratchBuffer* const frame_scratch_buffer,
@@ -257,6 +162,101 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
     } while (++plane < planes_);
   }
 }
+
+// The following example illustrates how ExtendFrame() extends a frame.
+// Suppose the frame width is 8 and height is 4, and left, right, top, and
+// bottom are all equal to 3.
+//
+// Before:
+//
+//       ABCDEFGH
+//       IJKLMNOP
+//       QRSTUVWX
+//       YZabcdef
+//
+// After:
+//
+//   AAA|ABCDEFGH|HHH  [3]
+//   AAA|ABCDEFGH|HHH
+//   AAA|ABCDEFGH|HHH
+//   ---+--------+---
+//   AAA|ABCDEFGH|HHH  [1]
+//   III|IJKLMNOP|PPP
+//   QQQ|QRSTUVWX|XXX
+//   YYY|YZabcdef|fff
+//   ---+--------+---
+//   YYY|YZabcdef|fff  [2]
+//   YYY|YZabcdef|fff
+//   YYY|YZabcdef|fff
+//
+// ExtendFrame() first extends the rows to the left and to the right[1]. Then
+// it copies the extended last row to the bottom borders[2]. Finally it copies
+// the extended first row to the top borders[3].
+// static
+template <typename Pixel>
+void PostFilter::ExtendFrame(Pixel* const frame_start, const int width,
+                             const int height, const ptrdiff_t stride,
+                             const int left, const int right, const int top,
+                             const int bottom) {
+  Pixel* src = frame_start;
+  // Copy to left and right borders.
+  int y = height;
+  do {
+    ExtendLine<Pixel>(src, width, left, right);
+    src += stride;
+  } while (--y != 0);
+  // Copy to bottom borders. For performance we copy |stride| pixels
+  // (including some padding pixels potentially) in each row, ending at the
+  // bottom right border pixel. In the diagram the asterisks indicate padding
+  // pixels.
+  //
+  // |<--- stride --->|
+  // **YYY|YZabcdef|fff <-- Copy from the extended last row.
+  // -----+--------+---
+  // **YYY|YZabcdef|fff
+  // **YYY|YZabcdef|fff
+  // **YYY|YZabcdef|fff <-- bottom right border pixel
+  assert(src == frame_start + height * stride);
+  Pixel* dst = src - left;
+  src = dst - stride;
+  for (int y = 0; y < bottom; ++y) {
+    memcpy(dst, src, sizeof(Pixel) * stride);
+    dst += stride;
+  }
+  // Copy to top borders. For performance we copy |stride| pixels (including
+  // some padding pixels potentially) in each row, starting from the top left
+  // border pixel. In the diagram the asterisks indicate padding pixels.
+  //
+  // +-- top left border pixel
+  // |
+  // v
+  // AAA|ABCDEFGH|HHH**
+  // AAA|ABCDEFGH|HHH**
+  // AAA|ABCDEFGH|HHH**
+  // ---+--------+-----
+  // AAA|ABCDEFGH|HHH** <-- Copy from the extended first row.
+  // |<--- stride --->|
+  src = frame_start - left;
+  dst = frame_start - left - top * stride;
+  for (int y = 0; y < top; ++y) {
+    memcpy(dst, src, sizeof(Pixel) * stride);
+    dst += stride;
+  }
+}
+
+template void PostFilter::ExtendFrame<uint8_t>(uint8_t* const frame_start,
+                                               const int width,
+                                               const int height,
+                                               const ptrdiff_t stride,
+                                               const int left, const int right,
+                                               const int top, const int bottom);
+
+#if LIBGAV1_MAX_BITDEPTH >= 10
+template void PostFilter::ExtendFrame<uint16_t>(
+    uint16_t* const frame_start, const int width, const int height,
+    const ptrdiff_t stride, const int left, const int right, const int top,
+    const int bottom);
+#endif
 
 void PostFilter::ExtendFrameBoundary(uint8_t* const frame_start,
                                      const int width, const int height,
