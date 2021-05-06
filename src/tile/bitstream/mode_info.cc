@@ -758,7 +758,7 @@ bool Tile::ReadIntraBlockModeInfo(const Block& block, bool intra_y_mode) {
       bp.prediction_parameters->chroma_left_uses_smooth_prediction =
           (bp_left.reference_frame[0] <= kReferenceFrameIntra) &&
           kPredictionModeSmoothMask.Contains(
-              left_context_.uv_mode[BlockRowIndex(smooth_row)]);
+              left_context_.uv_mode[CdfContextIndex(smooth_row)]);
     }
     if (block.top_available[kPlaneU]) {
       const int smooth_row =
@@ -771,7 +771,7 @@ bool Tile::ReadIntraBlockModeInfo(const Block& block, bool intra_y_mode) {
           (bp_top.reference_frame[0] <= kReferenceFrameIntra) &&
           kPredictionModeSmoothMask.Contains(
               top_context_.get()[SuperBlockColumnIndex(smooth_column)]
-                  .uv_mode[BlockColumnIndex(smooth_column)]);
+                  .uv_mode[CdfContextIndex(smooth_column)]);
     }
     SetCdfContextUVMode(block);
     ReadIntraAngleInfo(block, kPlaneTypeUV);

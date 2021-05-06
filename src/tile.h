@@ -592,22 +592,14 @@ class Tile : public Allocable {
            (sequence_header_.use_128x128_superblock ? 5 : 4);
   }
 
-  // Returns the zero-based index of the block that starts at |row4x4|
-  // relative to the start of the superblock that contains this block. This is
-  // used to index into the members of |left_context_|.
-  int BlockRowIndex(int row4x4) const {
-    const int sb_row4x4 =
-        row4x4 & (sequence_header_.use_128x128_superblock ? ~31 : ~15);
-    return row4x4 - sb_row4x4;
-  }
-
-  // Returns the zero-based index of the block that starts at |column4x4|
-  // relative to the start of the superblock that contains this block. This is
-  // used to index into the members of |top_context_|.
-  int BlockColumnIndex(int column4x4) const {
-    const int sb_column4x4 =
-        column4x4 & (sequence_header_.use_128x128_superblock ? ~31 : ~15);
-    return column4x4 - sb_column4x4;
+  // Returns the zero-based index of the block that starts at row4x4 or
+  // column4x4 relative to the start of the superblock that contains the block.
+  // This is used to index into the members of |left_context_| and
+  // |top_context_|.
+  int CdfContextIndex(int row_or_column4x4) const {
+    return row_or_column4x4 -
+           (row_or_column4x4 &
+            (sequence_header_.use_128x128_superblock ? ~31 : ~15));
   }
 
   BlockSize SuperBlockSize() const {
@@ -801,8 +793,8 @@ struct Tile::Block {
         residual(residual),
         top_context(tile.top_context_.get() +
                     tile.SuperBlockColumnIndex(column4x4)),
-        top_context_index(tile.BlockColumnIndex(column4x4)),
-        left_context_index(tile.BlockRowIndex(row4x4)) {
+        top_context_index(tile.CdfContextIndex(column4x4)),
+        left_context_index(tile.CdfContextIndex(row4x4)) {
     assert(size != kBlockInvalid);
     residual_size[kPlaneY] = kPlaneResidualSize[size][0][0];
     residual_size[kPlaneU] = residual_size[kPlaneV] =
