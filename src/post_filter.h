@@ -246,11 +246,6 @@ class PostFilter {
   // functions.
   using DeblockFilter = void (PostFilter::*)(int row4x4_start,
                                              int column4x4_start);
-  // The lookup table for picking the deblock filter, according to deblock
-  // filter type.
-  const DeblockFilter deblock_filter_func_[2] = {
-      &PostFilter::VerticalDeblockFilter, &PostFilter::HorizontalDeblockFilter};
-
   // Functions common to all post filters.
 
   // Extends the frame by setting the border pixel values to the one from its
@@ -458,6 +453,10 @@ class PostFilter {
                              WorkerFunction>::value,
                 "");
 
+  // The lookup table for picking the deblock filter, according to deblock
+  // filter type.
+  const DeblockFilter deblock_filter_func_[2] = {
+      &PostFilter::VerticalDeblockFilter, &PostFilter::HorizontalDeblockFilter};
   const ObuFrameHeader& frame_header_;
   const LoopRestoration& loop_restoration_;
   const dsp::Dsp& dsp_;
