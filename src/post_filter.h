@@ -160,7 +160,7 @@ class PostFilter {
             frame_header.cdef.uv_secondary_strength[0] > 0) &&
            (do_post_filter_mask & 0x02) != 0;
   }
-  bool DoCdef() const { return DoCdef(frame_header_, do_post_filter_mask_); }
+  bool DoCdef() const { return do_cdef_; }
   // If filter levels for Y plane (0 for vertical, 1 for horizontal),
   // are all zero, deblock filter will not be applied.
   static bool DoDeblock(const ObuFrameHeader& frame_header,
@@ -169,9 +169,7 @@ class PostFilter {
             frame_header.loop_filter.level[1] > 0) &&
            (do_post_filter_mask & 0x01) != 0;
   }
-  bool DoDeblock() const {
-    return DoDeblock(frame_header_, do_post_filter_mask_);
-  }
+  bool DoDeblock() const { return do_deblock_; }
 
   uint8_t GetZeroDeltaDeblockFilterLevel(int segment_id, int level_index,
                                          ReferenceFrameType type,
@@ -197,9 +195,7 @@ class PostFilter {
             loop_restoration.type[kPlaneV] != kLoopRestorationTypeNone) &&
            (do_post_filter_mask & 0x08) != 0;
   }
-  bool DoRestoration() const {
-    return DoRestoration(loop_restoration_, do_post_filter_mask_, planes_);
-  }
+  bool DoRestoration() const { return do_restoration_; }
 
   // Returns a pointer to the unfiltered buffer. This is used by the Tile class
   // to determine where to write the output of the tile decoding process taking
@@ -214,9 +210,7 @@ class PostFilter {
     return frame_header.width != frame_header.upscaled_width &&
            (do_post_filter_mask & 0x04) != 0;
   }
-  bool DoSuperRes() const {
-    return DoSuperRes(frame_header_, do_post_filter_mask_);
-  }
+  bool DoSuperRes() const { return do_superres_; }
   LoopRestorationInfo* restoration_info() const { return restoration_info_; }
   uint8_t* GetBufferOffset(uint8_t* base_buffer, int stride, Plane plane,
                            int row, int column) const {
@@ -468,6 +462,10 @@ class PostFilter {
   const uint8_t* const inner_thresh_;
   const uint8_t* const outer_thresh_;
   const bool needs_chroma_deblock_;
+  const bool do_cdef_;
+  const bool do_deblock_;
+  const bool do_restoration_;
+  const bool do_superres_;
   // This stores the deblocking filter levels assuming that the delta is zero.
   // This will be used by all superblocks whose delta is zero (without having to
   // recompute them). The dimensions (in order) are: segment_id, level_index
@@ -516,7 +514,6 @@ class PostFilter {
   //   (1). Loop Restoration is on.
   //   (2). Cdef is on, or multi-threading is enabled for post filter.
   YuvBuffer& loop_restoration_border_;
-  const uint8_t do_post_filter_mask_;
   ThreadPool* const thread_pool_;
 
   // Tracks the progress of the post filters.

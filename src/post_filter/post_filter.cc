@@ -65,6 +65,11 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
       outer_thresh_(kOuterThresh[frame_header.loop_filter.sharpness]),
       needs_chroma_deblock_(frame_header.loop_filter.level[kPlaneU + 1] != 0 ||
                             frame_header.loop_filter.level[kPlaneV + 1] != 0),
+      do_cdef_(DoCdef(frame_header, do_post_filter_mask)),
+      do_deblock_(DoDeblock(frame_header, do_post_filter_mask)),
+      do_restoration_(
+          DoRestoration(loop_restoration_, do_post_filter_mask, planes_)),
+      do_superres_(DoSuperRes(frame_header, do_post_filter_mask)),
       cdef_index_(frame_scratch_buffer->cdef_index),
       inter_transform_sizes_(frame_scratch_buffer->inter_transform_sizes),
       restoration_info_(&frame_scratch_buffer->loop_restoration_info),
@@ -82,7 +87,6 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
       frame_buffer_(*frame_buffer),
       cdef_border_(frame_scratch_buffer->cdef_border),
       loop_restoration_border_(frame_scratch_buffer->loop_restoration_border),
-      do_post_filter_mask_(do_post_filter_mask),
       thread_pool_(
           frame_scratch_buffer->threading_strategy.post_filter_thread_pool()) {
   const int8_t zero_delta_lf[kFrameLfCount] = {};
