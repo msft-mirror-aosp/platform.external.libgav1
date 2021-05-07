@@ -270,8 +270,7 @@ void PostFilter::ExtendFrameBoundary(uint8_t* const frame_start,
 #if LIBGAV1_MAX_BITDEPTH >= 10
   if (bitdepth_ >= 10) {
     ExtendFrame<uint16_t>(reinterpret_cast<uint16_t*>(frame_start), width,
-                          height, stride / sizeof(uint16_t), left, right, top,
-                          bottom);
+                          height, stride >> 1, left, right, top, bottom);
     return;
   }
 #endif
@@ -367,7 +366,7 @@ void PostFilter::CopyBordersForOneSuperBlockRow(int row4x4, int sb4x4,
       progress_row_ = row + num_rows;
     }
     const bool copy_bottom = row + num_rows == plane_height;
-    const int stride = frame_buffer_.stride(plane);
+    const ptrdiff_t stride = frame_buffer_.stride(plane);
     uint8_t* const start = (for_loop_restoration ? superres_buffer_[plane]
                                                  : frame_buffer_.data(plane)) +
                            row * stride;
@@ -444,11 +443,14 @@ void PostFilter::SetupLoopRestorationBorder(int row4x4_start, int sb4x4) {
     const int row_offset_start = DivideBy4(row4x4);
     const std::array<uint8_t*, kMaxPlanes> dst = {
         loop_restoration_border_.data(kPlaneY) +
-            row_offset_start * loop_restoration_border_.stride(kPlaneY),
+            row_offset_start * static_cast<ptrdiff_t>(
+                                   loop_restoration_border_.stride(kPlaneY)),
         loop_restoration_border_.data(kPlaneU) +
-            row_offset_start * loop_restoration_border_.stride(kPlaneU),
+            row_offset_start * static_cast<ptrdiff_t>(
+                                   loop_restoration_border_.stride(kPlaneU)),
         loop_restoration_border_.data(kPlaneV) +
-            row_offset_start * loop_restoration_border_.stride(kPlaneV)};
+            row_offset_start * static_cast<ptrdiff_t>(
+                                   loop_restoration_border_.stride(kPlaneV))};
     // If SuperRes is enabled, then we apply SuperRes for the rows to be copied
     // directly with |loop_restoration_border_| as the destination. Otherwise,
     // we simply copy the rows.
@@ -467,7 +469,7 @@ void PostFilter::SetupLoopRestorationBorder(int row4x4_start, int sb4x4) {
         const int absolute_row =
             (MultiplyBy4(row4x4) >> subsampling_y_[plane]) + row;
         src[plane] = GetSourceBuffer(static_cast<Plane>(plane), row4x4, 0) +
-                     row * frame_buffer_.stride(plane);
+                     row * static_cast<ptrdiff_t>(frame_buffer_.stride(plane));
         rows[plane] = Clip3(plane_height - absolute_row, 0, 4);
       } while (++plane < planes_);
       ApplySuperRes(src, rows, /*line_buffer_row=*/-1, dst,
