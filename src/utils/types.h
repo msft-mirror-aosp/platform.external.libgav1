@@ -178,7 +178,6 @@ struct BlockParameters : public Allocable {
   bool is_inter;
   int8_t segment_id;  // segment_id is in the range [0, 7].
   PredictionMode y_mode;
-  TransformSize transform_size;
   TransformSize uv_transform_size;
   InterpolationFilter interpolation_filter[2];
   ReferenceFrameType reference_frame[2];

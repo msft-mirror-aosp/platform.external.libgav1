@@ -1769,7 +1769,9 @@ bool Tile::Residual(const Block& block, ProcessingMode mode) {
         // kTransformSize4x4. So we can simply use |bp.transform_size| here as
         // the Y plane's transform size (part of Section 5.11.37 in the spec).
         const TransformSize tx_size =
-            (plane == kPlaneY) ? bp.transform_size : bp.uv_transform_size;
+            (plane == kPlaneY)
+                ? inter_transform_sizes_[block.row4x4][block.column4x4]
+                : bp.uv_transform_size;
         const BlockSize plane_size =
             kPlaneResidualSize[size_chunk4x4][subsampling_x][subsampling_y];
         assert(plane_size != kBlockInvalid);

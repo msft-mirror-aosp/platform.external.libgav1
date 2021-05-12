@@ -189,8 +189,6 @@ void Tile::ReadVariableTransformTree(const Block& block, int row4x4,
       memset(&inter_transform_sizes_[node.y + i][node.x], node.tx_size,
              tx_width4x4);
     }
-    block_parameters_holder_.Find(node.y, node.x)->transform_size =
-        node.tx_size;
   } while (!stack.Empty());
 }
 
@@ -210,10 +208,10 @@ void Tile::DecodeTransformSize(const Block& block) {
       }
     }
   } else {
-    bp.transform_size = ReadFixedTransformSize(block);
+    const TransformSize transform_size = ReadFixedTransformSize(block);
     for (int row = block.row4x4; row < block.row4x4 + block.height4x4; ++row) {
       static_assert(sizeof(TransformSize) == 1, "");
-      memset(&inter_transform_sizes_[row][block.column4x4], bp.transform_size,
+      memset(&inter_transform_sizes_[row][block.column4x4], transform_size,
              block.width4x4);
     }
   }
