@@ -313,6 +313,10 @@ INSTANTIATE_TEST_SUITE_P(AVX2, SelfGuidedFilterTest10bpp,
 INSTANTIATE_TEST_SUITE_P(SSE41, SelfGuidedFilterTest10bpp,
                          testing::ValuesIn(kUnitWidths));
 #endif
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, SelfGuidedFilterTest10bpp,
+                         testing::ValuesIn(kUnitWidths));
+#endif
 
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
