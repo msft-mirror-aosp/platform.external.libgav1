@@ -741,7 +741,7 @@ inline void SmoothWxH_NEON(void* const dest, ptrdiff_t stride,
   // Precompute weighted values that don't vary with |y|.
   uint32x4_t weighted_tr_low[width >> 3];
   uint32x4_t weighted_tr_high[width >> 3];
-  for (int i = 0; i < (width >> 3); ++i) {
+  for (int i = 0; i < width >> 3; ++i) {
     const int x = i << 3;
     const uint16x4_t weights_x_low = vld1_u16(kSmoothWeights + width - 4 + x);
     weighted_tr_low[i] =
@@ -757,11 +757,9 @@ inline void SmoothWxH_NEON(void* const dest, ptrdiff_t stride,
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
     uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
-    for (int i = 0; i < (width >> 3); ++i) {
+    for (int i = 0; i < width >> 3; ++i) {
       const int x = i << 3;
       const uint16x4x2_t top_vals = {vld1_u16(top + x), vld1_u16(top + x + 4)};
-      // This doesn't depend on |y|, so it's a good candidate to precompute
-      // before the loops.
       const uint32x4_t weighted_corners_low =
           vaddq_u32(weighted_bl, weighted_tr_low[i]);
       const uint32x4_t weighted_corners_high =
@@ -860,9 +858,7 @@ inline void SmoothVerticalWxH_NEON(void* const dest, const ptrdiff_t stride,
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
 
     uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
-    for (int i = 0; i < (width >> 3); ++i) {
-      // Could pre-load these at 16xH and 32xH.
-
+    for (int i = 0; i < width >> 3; ++i) {
       const uint32x4_t weighted_top_low =
           vmlal_n_u16(weighted_bl, top_vals[i].val[0], weights_y[y]);
       vst1_u16(dst_x, vrshrn_n_u32(weighted_top_low, kSmoothWeightScale));
@@ -961,7 +957,7 @@ inline void SmoothHorizontalWxH_NEON(void* const dest, ptrdiff_t stride,
   for (int y = 0; y < height; ++y) {
     uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
     const uint16_t left_y = left[y];
-    for (int i = 0; i < (width >> 3); ++i) {
+    for (int i = 0; i < width >> 3; ++i) {
       const uint32x4_t weighted_left_low =
           vmlal_n_u16(weighted_tr_low[i], weights_x_low[i], left_y);
       vst1_u16(dst_x, vrshrn_n_u32(weighted_left_low, kSmoothWeightScale));
