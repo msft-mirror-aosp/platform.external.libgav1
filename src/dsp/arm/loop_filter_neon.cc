@@ -289,26 +289,26 @@ inline void Filter6(const uint8x8_t p2q2, const uint8x8_t p1q1,
   // Sum p1 and q1 output from opposite directions
   // p1 = (3 * p2) + (2 * p1) + (2 * p0) + q0
   //      ^^^^^^^^
-  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q3)
+  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q2)
   //                                 ^^^^^^^^
   const uint16x8_t p2q2_double = vaddl_u8(p2q2, p2q2);
   uint16x8_t sum = vaddw_u8(p2q2_double, p2q2);
 
   // p1 = (3 * p2) + (2 * p1) + (2 * p0) + q0
   //                 ^^^^^^^^
-  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q3)
+  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q2)
   //                      ^^^^^^^^
   sum = vaddq_u16(vaddl_u8(p1q1, p1q1), sum);
 
   // p1 = (3 * p2) + (2 * p1) + (2 * p0) + q0
   //                            ^^^^^^^^
-  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q3)
+  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q2)
   //           ^^^^^^^^
   sum = vaddq_u16(vaddl_u8(p0q0, p0q0), sum);
 
   // p1 = (3 * p2) + (2 * p1) + (2 * p0) + q0
   //                                       ^^
-  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q3)
+  // q1 = p0 + (2 * q0) + (2 * q1) + (3 * q2)
   //      ^^
   const uint8x8_t q0p0 = Transpose32(p0q0);
   sum = vaddw_u8(sum, q0p0);
