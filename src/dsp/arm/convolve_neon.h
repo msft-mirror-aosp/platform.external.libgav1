@@ -25,6 +25,7 @@ namespace dsp {
 
 // Initializes Dsp::convolve. This function is not thread-safe.
 void ConvolveInit_NEON();
+void ConvolveInit10bpp_NEON();
 
 }  // namespace dsp
 }  // namespace libgav1

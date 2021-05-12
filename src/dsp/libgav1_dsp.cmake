@@ -90,6 +90,7 @@ list(APPEND libgav1_dsp_sources_neon
             "${libgav1_source}/dsp/arm/cdef_neon.cc"
             "${libgav1_source}/dsp/arm/cdef_neon.h"
             "${libgav1_source}/dsp/arm/common_neon.h"
+            "${libgav1_source}/dsp/arm/convolve_10bit_neon.cc"
             "${libgav1_source}/dsp/arm/convolve_neon.cc"
             "${libgav1_source}/dsp/arm/convolve_neon.h"
             "${libgav1_source}/dsp/arm/distance_weighted_blend_neon.cc"
