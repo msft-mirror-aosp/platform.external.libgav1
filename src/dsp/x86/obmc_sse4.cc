@@ -37,8 +37,9 @@ namespace {
 #include "src/dsp/obmc.inc"
 
 inline void OverlapBlendFromLeft2xH_SSE4_1(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -68,8 +69,9 @@ inline void OverlapBlendFromLeft2xH_SSE4_1(
 }
 
 inline void OverlapBlendFromLeft4xH_SSE4_1(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -106,8 +108,9 @@ inline void OverlapBlendFromLeft4xH_SSE4_1(
 }
 
 inline void OverlapBlendFromLeft8xH_SSE4_1(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -130,11 +133,11 @@ inline void OverlapBlendFromLeft8xH_SSE4_1(
   } while (--y != 0);
 }
 
-void OverlapBlendFromLeft_SSE4_1(void* const prediction,
-                                 const ptrdiff_t prediction_stride,
-                                 const int width, const int height,
-                                 const void* const obmc_prediction,
-                                 const ptrdiff_t obmc_prediction_stride) {
+void OverlapBlendFromLeft_SSE4_1(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<uint8_t*>(prediction);
   const auto* obmc_pred = static_cast<const uint8_t*>(obmc_prediction);
 
@@ -185,8 +188,9 @@ void OverlapBlendFromLeft_SSE4_1(void* const prediction,
 }
 
 inline void OverlapBlendFromTop4xH_SSE4_1(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -227,8 +231,9 @@ inline void OverlapBlendFromTop4xH_SSE4_1(
 }
 
 inline void OverlapBlendFromTop8xH_SSE4_1(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -253,11 +258,11 @@ inline void OverlapBlendFromTop8xH_SSE4_1(
   } while (--y != 0);
 }
 
-void OverlapBlendFromTop_SSE4_1(void* const prediction,
-                                const ptrdiff_t prediction_stride,
-                                const int width, const int height,
-                                const void* const obmc_prediction,
-                                const ptrdiff_t obmc_prediction_stride) {
+void OverlapBlendFromTop_SSE4_1(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<uint8_t*>(prediction);
   const auto* obmc_pred = static_cast<const uint8_t*>(obmc_prediction);
 
@@ -323,8 +328,9 @@ namespace {
 constexpr int kRoundBitsObmcBlend = 6;
 
 inline void OverlapBlendFromLeft2xH_SSE4_1(
-    uint16_t* const prediction, const ptrdiff_t pred_stride, const int height,
-    const uint16_t* const obmc_prediction, const ptrdiff_t obmc_pred_stride) {
+    uint16_t* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride,
+    const int height, const uint16_t* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_pred_stride) {
   uint16_t* pred = prediction;
   const uint16_t* obmc_pred = obmc_prediction;
   const ptrdiff_t pred_stride2 = pred_stride << 1;
@@ -353,8 +359,9 @@ inline void OverlapBlendFromLeft2xH_SSE4_1(
 }
 
 inline void OverlapBlendFromLeft4xH_SSE4_1(
-    uint16_t* const prediction, const ptrdiff_t pred_stride, const int height,
-    const uint16_t* const obmc_prediction, const ptrdiff_t obmc_pred_stride) {
+    uint16_t* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride,
+    const int height, const uint16_t* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_pred_stride) {
   uint16_t* pred = prediction;
   const uint16_t* obmc_pred = obmc_prediction;
   const ptrdiff_t pred_stride2 = pred_stride << 1;
@@ -385,11 +392,11 @@ inline void OverlapBlendFromLeft4xH_SSE4_1(
   } while (y != 0);
 }
 
-void OverlapBlendFromLeft10bpp_SSE4_1(void* const prediction,
-                                      const ptrdiff_t prediction_stride,
-                                      const int width, const int height,
-                                      const void* const obmc_prediction,
-                                      const ptrdiff_t obmc_prediction_stride) {
+void OverlapBlendFromLeft10bpp_SSE4_1(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<uint16_t*>(prediction);
   const auto* obmc_pred = static_cast<const uint16_t*>(obmc_prediction);
   const ptrdiff_t pred_stride = prediction_stride / sizeof(pred[0]);
@@ -437,11 +444,10 @@ void OverlapBlendFromLeft10bpp_SSE4_1(void* const prediction,
   } while (x < width);
 }
 
-inline void OverlapBlendFromTop2xH_SSE4_1(uint16_t* const prediction,
-                                          const ptrdiff_t pred_stride,
-                                          const int height,
-                                          const uint16_t* const obmc_prediction,
-                                          const ptrdiff_t obmc_pred_stride) {
+inline void OverlapBlendFromTop2xH_SSE4_1(
+    uint16_t* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride,
+    const int height, const uint16_t* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_pred_stride) {
   uint16_t* pred = prediction;
   const uint16_t* obmc_pred = obmc_prediction;
   const __m128i mask_inverter = _mm_set1_epi16(64);
@@ -480,11 +486,10 @@ inline void OverlapBlendFromTop2xH_SSE4_1(uint16_t* const prediction,
   } while (y < compute_height);
 }
 
-inline void OverlapBlendFromTop4xH_SSE4_1(uint16_t* const prediction,
-                                          const ptrdiff_t pred_stride,
-                                          const int height,
-                                          const uint16_t* const obmc_prediction,
-                                          const ptrdiff_t obmc_pred_stride) {
+inline void OverlapBlendFromTop4xH_SSE4_1(
+    uint16_t* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride,
+    const int height, const uint16_t* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_pred_stride) {
   uint16_t* pred = prediction;
   const uint16_t* obmc_pred = obmc_prediction;
   const __m128i mask_inverter = _mm_set1_epi16(64);
@@ -522,11 +527,11 @@ inline void OverlapBlendFromTop4xH_SSE4_1(uint16_t* const prediction,
   } while (y < compute_height);
 }
 
-void OverlapBlendFromTop10bpp_SSE4_1(void* const prediction,
-                                     const ptrdiff_t prediction_stride,
-                                     const int width, const int height,
-                                     const void* const obmc_prediction,
-                                     const ptrdiff_t obmc_prediction_stride) {
+void OverlapBlendFromTop10bpp_SSE4_1(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<uint16_t*>(prediction);
   const auto* obmc_pred = static_cast<const uint16_t*>(obmc_prediction);
   const ptrdiff_t pred_stride = prediction_stride / sizeof(pred[0]);

@@ -36,7 +36,8 @@ namespace {
 
 #include "src/dsp/obmc.inc"
 
-inline void WriteObmcLine4(uint8_t* const pred, const uint8_t* const obmc_pred,
+inline void WriteObmcLine4(uint8_t* LIBGAV1_RESTRICT const pred,
+                           const uint8_t* LIBGAV1_RESTRICT const obmc_pred,
                            const uint8x8_t pred_mask,
                            const uint8x8_t obmc_pred_mask) {
   const uint8x8_t pred_val = Load4(pred);
@@ -48,11 +49,11 @@ inline void WriteObmcLine4(uint8_t* const pred, const uint8_t* const obmc_pred,
 }
 
 template <bool from_left>
-inline void OverlapBlend2xH_NEON(uint8_t* const prediction,
-                                 const ptrdiff_t prediction_stride,
-                                 const int height,
-                                 const uint8_t* const obmc_prediction,
-                                 const ptrdiff_t obmc_prediction_stride) {
+inline void OverlapBlend2xH_NEON(
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8x8_t mask_inverter = vdup_n_u8(64);
   const uint8_t* obmc_pred = obmc_prediction;
@@ -89,8 +90,9 @@ inline void OverlapBlend2xH_NEON(uint8_t* const prediction,
 }
 
 inline void OverlapBlendFromLeft4xH_NEON(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -114,8 +116,9 @@ inline void OverlapBlendFromLeft4xH_NEON(
 }
 
 inline void OverlapBlendFromLeft8xH_NEON(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -137,11 +140,11 @@ inline void OverlapBlendFromLeft8xH_NEON(
   } while (++y != height);
 }
 
-void OverlapBlendFromLeft_NEON(void* const prediction,
-                               const ptrdiff_t prediction_stride,
-                               const int width, const int height,
-                               const void* const obmc_prediction,
-                               const ptrdiff_t obmc_prediction_stride) {
+void OverlapBlendFromLeft_NEON(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<uint8_t*>(prediction);
   const auto* obmc_pred = static_cast<const uint8_t*>(obmc_prediction);
 
@@ -194,11 +197,11 @@ void OverlapBlendFromLeft_NEON(void* const prediction,
   } while (x < width);
 }
 
-inline void OverlapBlendFromTop4x4_NEON(uint8_t* const prediction,
-                                        const ptrdiff_t prediction_stride,
-                                        const uint8_t* const obmc_prediction,
-                                        const ptrdiff_t obmc_prediction_stride,
-                                        const int height) {
+inline void OverlapBlendFromTop4x4_NEON(
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride, const int height) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
   uint8x8_t pred_mask = vdup_n_u8(kObmcMask[height - 2]);
@@ -224,8 +227,9 @@ inline void OverlapBlendFromTop4x4_NEON(uint8_t* const prediction,
 }
 
 inline void OverlapBlendFromTop4xH_NEON(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   if (height < 8) {
     OverlapBlendFromTop4x4_NEON(prediction, prediction_stride, obmc_prediction,
@@ -282,8 +286,9 @@ inline void OverlapBlendFromTop4xH_NEON(
 }
 
 inline void OverlapBlendFromTop8xH_NEON(
-    uint8_t* const prediction, const ptrdiff_t prediction_stride,
-    const int height, const uint8_t* const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT const prediction,
+    const ptrdiff_t prediction_stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
     const ptrdiff_t obmc_prediction_stride) {
   uint8_t* pred = prediction;
   const uint8_t* obmc_pred = obmc_prediction;
@@ -307,11 +312,11 @@ inline void OverlapBlendFromTop8xH_NEON(
   } while (++y != compute_height);
 }
 
-void OverlapBlendFromTop_NEON(void* const prediction,
-                              const ptrdiff_t prediction_stride,
-                              const int width, const int height,
-                              const void* const obmc_prediction,
-                              const ptrdiff_t obmc_prediction_stride) {
+void OverlapBlendFromTop_NEON(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<uint8_t*>(prediction);
   const auto* obmc_pred = static_cast<const uint8_t*>(obmc_prediction);
 

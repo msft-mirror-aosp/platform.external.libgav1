@@ -30,9 +30,10 @@ namespace {
 
 // 7.11.3.10 (from top samples).
 template <typename Pixel>
-void OverlapBlendVertical_C(void* const prediction,
+void OverlapBlendVertical_C(void* LIBGAV1_RESTRICT const prediction,
                             const ptrdiff_t prediction_stride, const int width,
-                            const int height, const void* const obmc_prediction,
+                            const int height,
+                            const void* LIBGAV1_RESTRICT const obmc_prediction,
                             const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<Pixel*>(prediction);
   const ptrdiff_t pred_stride = prediction_stride / sizeof(Pixel);
@@ -53,11 +54,11 @@ void OverlapBlendVertical_C(void* const prediction,
 
 // 7.11.3.10 (from left samples).
 template <typename Pixel>
-void OverlapBlendHorizontal_C(void* const prediction,
-                              const ptrdiff_t prediction_stride,
-                              const int width, const int height,
-                              const void* const obmc_prediction,
-                              const ptrdiff_t obmc_prediction_stride) {
+void OverlapBlendHorizontal_C(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
   auto* pred = static_cast<Pixel*>(prediction);
   const ptrdiff_t pred_stride = prediction_stride / sizeof(Pixel);
   const auto* obmc_pred = static_cast<const Pixel*>(obmc_prediction);
