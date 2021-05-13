@@ -185,19 +185,22 @@ int GetReferenceContext(const Tile::Block& block,
 }  // namespace
 
 bool Tile::ReadSegmentId(const Block& block) {
+  // These two asserts ensure that current_frame_.segmentation_map() is not
+  // nullptr.
+  assert(frame_header_.segmentation.enabled);
+  assert(frame_header_.segmentation.update_map);
+  const SegmentationMap& map = *current_frame_.segmentation_map();
   int top_left = -1;
   if (block.top_available[kPlaneY] && block.left_available[kPlaneY]) {
-    top_left =
-        block_parameters_holder_.Find(block.row4x4 - 1, block.column4x4 - 1)
-            ->segment_id;
+    top_left = map.segment_id(block.row4x4 - 1, block.column4x4 - 1);
   }
   int top = -1;
   if (block.top_available[kPlaneY]) {
-    top = block.bp_top->segment_id;
+    top = map.segment_id(block.row4x4 - 1, block.column4x4);
   }
   int left = -1;
   if (block.left_available[kPlaneY]) {
-    left = block.bp_left->segment_id;
+    left = map.segment_id(block.row4x4, block.column4x4 - 1);
   }
   int pred;
   if (top == -1) {
@@ -209,7 +212,7 @@ bool Tile::ReadSegmentId(const Block& block) {
   }
   BlockParameters& bp = *block.bp;
   if (bp.skip) {
-    bp.segment_id = pred;
+    bp.prediction_parameters->segment_id = pred;
     return true;
   }
   int context = 0;
@@ -224,17 +227,18 @@ bool Tile::ReadSegmentId(const Block& block) {
       symbol_decoder_context_.segment_id_cdf[context];
   const int encoded_segment_id =
       reader_.ReadSymbol<kMaxSegments>(segment_id_cdf);
-  bp.segment_id =
+  bp.prediction_parameters->segment_id =
       DecodeSegmentId(encoded_segment_id, pred,
                       frame_header_.segmentation.last_active_segment_id + 1);
   // Check the bitstream conformance requirement in Section 6.10.8 of the spec.
-  if (bp.segment_id < 0 ||
-      bp.segment_id > frame_header_.segmentation.last_active_segment_id) {
+  if (bp.prediction_parameters->segment_id < 0 ||
+      bp.prediction_parameters->segment_id >
+          frame_header_.segmentation.last_active_segment_id) {
     LIBGAV1_DLOG(
         ERROR,
         "Corrupted segment_ids: encoded %d, last active %d, postprocessed %d",
         encoded_segment_id, frame_header_.segmentation.last_active_segment_id,
-        bp.segment_id);
+        bp.prediction_parameters->segment_id);
     return false;
   }
   return true;
@@ -243,7 +247,7 @@ bool Tile::ReadSegmentId(const Block& block) {
 bool Tile::ReadIntraSegmentId(const Block& block) {
   BlockParameters& bp = *block.bp;
   if (!frame_header_.segmentation.enabled) {
-    bp.segment_id = 0;
+    bp.prediction_parameters->segment_id = 0;
     return true;
   }
   return ReadSegmentId(block);
@@ -252,8 +256,8 @@ bool Tile::ReadIntraSegmentId(const Block& block) {
 void Tile::ReadSkip(const Block& block) {
   BlockParameters& bp = *block.bp;
   if (frame_header_.segmentation.segment_id_pre_skip &&
-      frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureSkip)) {
+      frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureSkip)) {
     bp.skip = true;
     return;
   }
@@ -271,12 +275,13 @@ void Tile::ReadSkip(const Block& block) {
 bool Tile::ReadSkipMode(const Block& block) {
   BlockParameters& bp = *block.bp;
   if (!frame_header_.skip_mode_present ||
-      frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureSkip) ||
-      frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureReferenceFrame) ||
-      frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureGlobalMv) ||
+      frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureSkip) ||
+      frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id,
+          kSegmentFeatureReferenceFrame) ||
+      frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureGlobalMv) ||
       IsBlockDimension4(block.size)) {
     return false;
   }
@@ -446,7 +451,8 @@ void Tile::ReadCflAlpha(const Block& block) {
 void Tile::ReadPredictionModeUV(const Block& block) {
   BlockParameters& bp = *block.bp;
   bool chroma_from_luma_allowed;
-  if (frame_header_.segmentation.lossless[bp.segment_id]) {
+  if (frame_header_.segmentation
+          .lossless[bp.prediction_parameters->segment_id]) {
     chroma_from_luma_allowed = block.residual_size[kPlaneU] == kBlock4x4;
   } else {
     chroma_from_luma_allowed = IsBlockDimensionLessThan64(block.size);
@@ -622,16 +628,16 @@ void Tile::SetCdfContextUsePredictedSegmentId(const Block& block,
 bool Tile::ReadInterSegmentId(const Block& block, bool pre_skip) {
   BlockParameters& bp = *block.bp;
   if (!frame_header_.segmentation.enabled) {
-    bp.segment_id = 0;
+    bp.prediction_parameters->segment_id = 0;
     return true;
   }
   if (!frame_header_.segmentation.update_map) {
-    bp.segment_id = ComputePredictedSegmentId(block);
+    bp.prediction_parameters->segment_id = ComputePredictedSegmentId(block);
     return true;
   }
   if (pre_skip) {
     if (!frame_header_.segmentation.segment_id_pre_skip) {
-      bp.segment_id = 0;
+      bp.prediction_parameters->segment_id = 0;
       return true;
     }
   } else if (bp.skip) {
@@ -654,7 +660,7 @@ bool Tile::ReadInterSegmentId(const Block& block, bool pre_skip) {
         symbol_decoder_context_.use_predicted_segment_id_cdf[context]);
     SetCdfContextUsePredictedSegmentId(block, use_predicted_segment_id);
     if (use_predicted_segment_id) {
-      bp.segment_id = ComputePredictedSegmentId(block);
+      bp.prediction_parameters->segment_id = ComputePredictedSegmentId(block);
       return true;
     }
   }
@@ -667,16 +673,17 @@ void Tile::ReadIsInter(const Block& block, bool skip_mode) {
     bp.is_inter = true;
     return;
   }
-  if (frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureReferenceFrame)) {
-    bp.is_inter =
-        frame_header_.segmentation
-            .feature_data[bp.segment_id][kSegmentFeatureReferenceFrame] !=
-        kReferenceFrameIntra;
+  if (frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id,
+          kSegmentFeatureReferenceFrame)) {
+    bp.is_inter = frame_header_.segmentation
+                      .feature_data[bp.prediction_parameters->segment_id]
+                                   [kSegmentFeatureReferenceFrame] !=
+                  kReferenceFrameIntra;
     return;
   }
-  if (frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureGlobalMv)) {
+  if (frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureGlobalMv)) {
     bp.is_inter = true;
     return;
   }
@@ -901,18 +908,20 @@ void Tile::ReadReferenceFrames(const Block& block, bool skip_mode) {
     bp.reference_frame[1] = frame_header_.skip_mode_frame[1];
     return;
   }
-  if (frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureReferenceFrame)) {
+  if (frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id,
+          kSegmentFeatureReferenceFrame)) {
     bp.reference_frame[0] = static_cast<ReferenceFrameType>(
         frame_header_.segmentation
-            .feature_data[bp.segment_id][kSegmentFeatureReferenceFrame]);
+            .feature_data[bp.prediction_parameters->segment_id]
+                         [kSegmentFeatureReferenceFrame]);
     bp.reference_frame[1] = kReferenceFrameNone;
     return;
   }
-  if (frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureSkip) ||
-      frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureGlobalMv)) {
+  if (frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureSkip) ||
+      frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureGlobalMv)) {
     bp.reference_frame[0] = kReferenceFrameLast;
     bp.reference_frame[1] = kReferenceFrameNone;
     return;
@@ -1020,10 +1029,10 @@ void Tile::ReadInterPredictionModeY(const Block& block,
     bp.y_mode = kPredictionModeNearestNearestMv;
     return;
   }
-  if (frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureSkip) ||
-      frame_header_.segmentation.FeatureActive(bp.segment_id,
-                                               kSegmentFeatureGlobalMv)) {
+  if (frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureSkip) ||
+      frame_header_.segmentation.FeatureActive(
+          bp.prediction_parameters->segment_id, kSegmentFeatureGlobalMv)) {
     bp.y_mode = kPredictionModeGlobalMv;
     return;
   }

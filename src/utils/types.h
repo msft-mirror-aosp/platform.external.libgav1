@@ -164,6 +164,7 @@ struct PredictionParameters : public Allocable {
   int num_warp_samples;
   int warp_estimate_candidates[kMaxLeastSquaresSamples][4];
   PaletteModeInfo palette_mode_info;
+  int8_t segment_id;  // segment_id is in the range [0, 7].
   PredictionMode uv_mode;
   bool chroma_top_uses_smooth_prediction;
   bool chroma_left_uses_smooth_prediction;
@@ -176,7 +177,6 @@ struct BlockParameters : public Allocable {
   BlockSize size;
   bool skip;
   bool is_inter;
-  int8_t segment_id;  // segment_id is in the range [0, 7].
   PredictionMode y_mode;
   TransformSize uv_transform_size;
   InterpolationFilter interpolation_filter[2];

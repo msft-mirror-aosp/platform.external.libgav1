@@ -95,7 +95,8 @@ int Tile::GetLeftTransformHeight(const Block& block, int row4x4, int column4x4,
 
 TransformSize Tile::ReadFixedTransformSize(const Block& block) {
   BlockParameters& bp = *block.bp;
-  if (frame_header_.segmentation.lossless[bp.segment_id]) {
+  if (frame_header_.segmentation
+          .lossless[bp.prediction_parameters->segment_id]) {
     return kTransformSize4x4;
   }
   const TransformSize max_rect_tx_size = kMaxTransformSizeRectangle[block.size];
@@ -196,7 +197,8 @@ void Tile::DecodeTransformSize(const Block& block) {
   BlockParameters& bp = *block.bp;
   if (frame_header_.tx_mode == kTxModeSelect && block.size > kBlock4x4 &&
       bp.is_inter && !bp.skip &&
-      !frame_header_.segmentation.lossless[bp.segment_id]) {
+      !frame_header_.segmentation
+           .lossless[bp.prediction_parameters->segment_id]) {
     const TransformSize max_tx_size = kMaxTransformSizeRectangle[block.size];
     const int tx_width4x4 = kTransformWidth4x4[max_tx_size];
     const int tx_height4x4 = kTransformHeight4x4[max_tx_size];

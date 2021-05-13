@@ -1013,7 +1013,8 @@ TransformType Tile::ComputeTransformType(const Block& block, Plane plane,
                                          int block_y) {
   const BlockParameters& bp = *block.bp;
   const TransformSize tx_size_square_max = kTransformSizeSquareMax[tx_size];
-  if (frame_header_.segmentation.lossless[bp.segment_id] ||
+  if (frame_header_.segmentation
+          .lossless[bp.prediction_parameters->segment_id] ||
       tx_size_square_max == kTransformSize64x64) {
     return kTransformTypeDctDct;
   }
@@ -1042,7 +1043,8 @@ void Tile::ReadTransformType(const Block& block, int x4, int y4,
 
   TransformType tx_type = kTransformTypeDctDct;
   if (tx_set != kTransformSetDctOnly &&
-      frame_header_.segmentation.qindex[bp.segment_id] > 0) {
+      frame_header_.segmentation.qindex[bp.prediction_parameters->segment_id] >
+          0) {
     const int cdf_index = SymbolDecoderContext::TxTypeIndex(tx_set);
     const int cdf_tx_size_index =
         TransformSizeToSquareTransformIndex(kTransformSizeSquareMin[tx_size]);
@@ -1494,15 +1496,17 @@ int Tile::ReadTransformCoefficients(const Block& block, Plane plane,
         coeff_base_range_cdf, residual, level_buffer);
   }
   const int max_value = (1 << (7 + sequence_header_.color_config.bitdepth)) - 1;
-  const int current_quantizer_index = GetQIndex(
-      frame_header_.segmentation, bp.segment_id, current_quantizer_index_);
+  const int current_quantizer_index =
+      GetQIndex(frame_header_.segmentation,
+                bp.prediction_parameters->segment_id, current_quantizer_index_);
   const int dc_q_value = quantizer_.GetDcValue(plane, current_quantizer_index);
   const int ac_q_value = quantizer_.GetAcValue(plane, current_quantizer_index);
   const int shift = kQuantizationShift[tx_size];
   const uint8_t* const quantizer_matrix =
       (frame_header_.quantizer.use_matrix &&
        *tx_type < kTransformTypeIdentityIdentity &&
-       !frame_header_.segmentation.lossless[bp.segment_id] &&
+       !frame_header_.segmentation
+            .lossless[bp.prediction_parameters->segment_id] &&
        frame_header_.quantizer.matrix_level[plane] < 15)
           ? quantizer_matrix_[frame_header_.quantizer.matrix_level[plane]]
                              [plane_type][adjusted_tx_size]
@@ -1735,14 +1739,16 @@ void Tile::ReconstructBlock(const Block& block, Plane plane, int start_x,
         buffer_[plane].rows(), buffer_[plane].columns() / sizeof(uint16_t),
         reinterpret_cast<uint16_t*>(&buffer_[plane][0][0]));
     Reconstruct(dsp_, tx_type, tx_size,
-                frame_header_.segmentation.lossless[block.bp->segment_id],
+                frame_header_.segmentation
+                    .lossless[block.bp->prediction_parameters->segment_id],
                 reinterpret_cast<int32_t*>(*block.residual), start_x, start_y,
                 &buffer, non_zero_coeff_count);
   } else  // NOLINT
 #endif
   {
     Reconstruct(dsp_, tx_type, tx_size,
-                frame_header_.segmentation.lossless[block.bp->segment_id],
+                frame_header_.segmentation
+                    .lossless[block.bp->prediction_parameters->segment_id],
                 reinterpret_cast<int16_t*>(*block.residual), start_x, start_y,
                 &buffer_[plane], non_zero_coeff_count);
   }
@@ -1776,7 +1782,8 @@ bool Tile::Residual(const Block& block, ProcessingMode mode) {
             kPlaneResidualSize[size_chunk4x4][subsampling_x][subsampling_y];
         assert(plane_size != kBlockInvalid);
         if (bp.is_inter &&
-            !frame_header_.segmentation.lossless[bp.segment_id] &&
+            !frame_header_.segmentation
+                 .lossless[bp.prediction_parameters->segment_id] &&
             plane == kPlaneY) {
           const int row_chunk4x4 = block.row4x4 + MultiplyBy16(chunk_y);
           const int column_chunk4x4 = block.column4x4 + MultiplyBy16(chunk_x);
@@ -2111,11 +2118,12 @@ void Tile::PopulateDeblockFilterLevel(const Block& block) {
   for (int i = 0; i < kFrameLfCount; ++i) {
     if (delta_lf_all_zero_) {
       bp.deblock_filter_level[i] = post_filter_.GetZeroDeltaDeblockFilterLevel(
-          bp.segment_id, i, bp.reference_frame[0], mode_id);
+          bp.prediction_parameters->segment_id, i, bp.reference_frame[0],
+          mode_id);
     } else {
       bp.deblock_filter_level[i] =
-          deblock_filter_levels_[bp.segment_id][i][bp.reference_frame[0]]
-                                [mode_id];
+          deblock_filter_levels_[bp.prediction_parameters->segment_id][i]
+                                [bp.reference_frame[0]][mode_id];
     }
   }
 }
@@ -2161,9 +2169,10 @@ bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
   if (!ReadPaletteTokens(block)) return false;
   DecodeTransformSize(block);
   // Part of Section 5.11.37 in the spec (implemented as a simple lookup).
-  bp.uv_transform_size = frame_header_.segmentation.lossless[bp.segment_id]
-                             ? kTransformSize4x4
-                             : kUVTransformSize[block.residual_size[kPlaneU]];
+  bp.uv_transform_size =
+      frame_header_.segmentation.lossless[bp.prediction_parameters->segment_id]
+          ? kTransformSize4x4
+          : kUVTransformSize[block.residual_size[kPlaneU]];
   if (bp.skip) ResetEntropyContext(block);
   if (split_parse_and_decode_) {
     if (!Residual(block, kProcessingModeParseOnly)) return false;
@@ -2173,22 +2182,24 @@ bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
       return false;
     }
   }
-  // If frame_header_.segmentation.enabled is false, bp.segment_id is 0 for all
-  // blocks. We don't need to call save bp.segment_id in the current frame
-  // because the current frame's segmentation map will be cleared to all 0s.
+  // If frame_header_.segmentation.enabled is false,
+  // bp.prediction_parameters->segment_id is 0 for all blocks. We don't need to
+  // call save bp.prediction_parameters->segment_id in the current frame because
+  // the current frame's segmentation map will be cleared to all 0s.
   //
   // If frame_header_.segmentation.enabled is true and
   // frame_header_.segmentation.update_map is false, we will copy the previous
   // frame's segmentation map to the current frame. So we don't need to call
-  // save bp.segment_id in the current frame.
+  // save bp.prediction_parameters->segment_id in the current frame.
   if (frame_header_.segmentation.enabled &&
       frame_header_.segmentation.update_map) {
     const int x_limit = std::min(frame_header_.columns4x4 - column4x4,
                                  static_cast<int>(block.width4x4));
     const int y_limit = std::min(frame_header_.rows4x4 - row4x4,
                                  static_cast<int>(block.height4x4));
-    current_frame_.segmentation_map()->FillBlock(row4x4, column4x4, x_limit,
-                                                 y_limit, bp.segment_id);
+    current_frame_.segmentation_map()->FillBlock(
+        row4x4, column4x4, x_limit, y_limit,
+        bp.prediction_parameters->segment_id);
   }
   StoreMotionFieldMvsIntoCurrentFrame(block);
   if (!split_parse_and_decode_) {
