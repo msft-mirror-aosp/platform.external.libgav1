@@ -33,10 +33,10 @@ cc_library_static {
         "libgav1",
     ],
 
-    // Note: if optimizations are required for x86 the sse4 files should be
-    // split to their own target to receive the correct flagging. All files in
-    // the library can be built for any target without producing empty object
-    // files.
+    // Note: if optimizations are required for x86 the avx2 & sse4 files should
+    // be split to their own targets to receive the correct flagging. All files
+    // in the library can be built for any target without producing empty
+    // object files.
     srcs: [
         "libgav1/src/buffer_pool.cc",
         "libgav1/src/decoder.cc",
@@ -50,9 +50,10 @@ cc_library_static {
         "libgav1/src/dsp/arm/intra_edge_neon.cc",
         "libgav1/src/dsp/arm/intrapred_cfl_neon.cc",
         "libgav1/src/dsp/arm/intrapred_directional_neon.cc",
-        "libgav1/src/dsp/arm/intrapred_filter_intra_neon.cc",
+        "libgav1/src/dsp/arm/intrapred_filter_neon.cc",
         "libgav1/src/dsp/arm/intrapred_neon.cc",
         "libgav1/src/dsp/arm/intrapred_smooth_neon.cc",
+        "libgav1/src/dsp/arm/inverse_transform_10bit_neon.cc",
         "libgav1/src/dsp/arm/inverse_transform_neon.cc",
         "libgav1/src/dsp/arm/loop_filter_neon.cc",
         "libgav1/src/dsp/arm/loop_restoration_neon.cc",
@@ -72,6 +73,10 @@ cc_library_static {
         "libgav1/src/dsp/film_grain.cc",
         "libgav1/src/dsp/intra_edge.cc",
         "libgav1/src/dsp/intrapred.cc",
+        "libgav1/src/dsp/intrapred_cfl.cc",
+        "libgav1/src/dsp/intrapred_directional.cc",
+        "libgav1/src/dsp/intrapred_filter.cc",
+        "libgav1/src/dsp/intrapred_smooth.cc",
         "libgav1/src/dsp/inverse_transform.cc",
         "libgav1/src/dsp/loop_filter.cc",
         "libgav1/src/dsp/loop_restoration.cc",
@@ -83,15 +88,23 @@ cc_library_static {
         "libgav1/src/dsp/warp.cc",
         "libgav1/src/dsp/weight_mask.cc",
         "libgav1/src/dsp/x86/average_blend_sse4.cc",
+        "libgav1/src/dsp/x86/cdef_avx2.cc",
         "libgav1/src/dsp/x86/cdef_sse4.cc",
+        "libgav1/src/dsp/x86/convolve_avx2.cc",
         "libgav1/src/dsp/x86/convolve_sse4.cc",
         "libgav1/src/dsp/x86/distance_weighted_blend_sse4.cc",
+        "libgav1/src/dsp/x86/film_grain_sse4.cc",
         "libgav1/src/dsp/x86/intra_edge_sse4.cc",
         "libgav1/src/dsp/x86/intrapred_cfl_sse4.cc",
+        "libgav1/src/dsp/x86/intrapred_directional_sse4.cc",
+        "libgav1/src/dsp/x86/intrapred_filter_sse4.cc",
         "libgav1/src/dsp/x86/intrapred_smooth_sse4.cc",
         "libgav1/src/dsp/x86/intrapred_sse4.cc",
         "libgav1/src/dsp/x86/inverse_transform_sse4.cc",
         "libgav1/src/dsp/x86/loop_filter_sse4.cc",
+        "libgav1/src/dsp/x86/loop_restoration_10bit_avx2.cc",
+        "libgav1/src/dsp/x86/loop_restoration_10bit_sse4.cc",
+        "libgav1/src/dsp/x86/loop_restoration_avx2.cc",
         "libgav1/src/dsp/x86/loop_restoration_sse4.cc",
         "libgav1/src/dsp/x86/mask_blend_sse4.cc",
         "libgav1/src/dsp/x86/motion_field_projection_sse4.cc",
@@ -123,8 +136,8 @@ cc_library_static {
         "libgav1/src/tile/bitstream/partition.cc",
         "libgav1/src/tile/bitstream/transform_size.cc",
         "libgav1/src/tile/prediction.cc",
-        "libgav1/src/tile_scratch_buffer.cc",
         "libgav1/src/tile/tile.cc",
+        "libgav1/src/tile_scratch_buffer.cc",
         "libgav1/src/utils/bit_reader.cc",
         "libgav1/src/utils/block_parameters_holder.cc",
         "libgav1/src/utils/constants.cc",
@@ -132,7 +145,6 @@ cc_library_static {
         "libgav1/src/utils/entropy_decoder.cc",
         "libgav1/src/utils/executor.cc",
         "libgav1/src/utils/logging.cc",
-        "libgav1/src/utils/parameter_tree.cc",
         "libgav1/src/utils/raw_bit_reader.cc",
         "libgav1/src/utils/segmentation.cc",
         "libgav1/src/utils/segmentation_map.cc",
