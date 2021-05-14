@@ -26,6 +26,7 @@
 #include "src/dsp/arm/common_neon.h"
 #include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
+#include "src/utils/common.h"
 #include "src/utils/constants.h"
 
 namespace libgav1 {
@@ -56,10 +57,10 @@ struct DcPredFuncs_NEON {
 
 template <int block_width_log2, int block_height_log2, DcSumFunc sumfn,
           DcStoreFunc storefn>
-void DcPredFuncs_NEON<block_width_log2, block_height_log2, sumfn,
-                      storefn>::DcTop(void* const dest, ptrdiff_t stride,
-                                      const void* const top_row,
-                                      const void* /*left_column*/) {
+void DcPredFuncs_NEON<block_width_log2, block_height_log2, sumfn, storefn>::
+    DcTop(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+          const void* LIBGAV1_RESTRICT const top_row,
+          const void* /*left_column*/) {
   const uint32x2_t sum = sumfn(top_row, block_width_log2, false, nullptr, 0);
   const uint32x2_t dc = vrshr_n_u32(sum, block_width_log2);
   storefn(dest, stride, dc);
@@ -67,10 +68,10 @@ void DcPredFuncs_NEON<block_width_log2, block_height_log2, sumfn,
 
 template <int block_width_log2, int block_height_log2, DcSumFunc sumfn,
           DcStoreFunc storefn>
-void DcPredFuncs_NEON<block_width_log2, block_height_log2, sumfn,
-                      storefn>::DcLeft(void* const dest, ptrdiff_t stride,
-                                       const void* /*top_row*/,
-                                       const void* const left_column) {
+void DcPredFuncs_NEON<block_width_log2, block_height_log2, sumfn, storefn>::
+    DcLeft(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+           const void* /*top_row*/,
+           const void* LIBGAV1_RESTRICT const left_column) {
   const uint32x2_t sum =
       sumfn(left_column, block_height_log2, false, nullptr, 0);
   const uint32x2_t dc = vrshr_n_u32(sum, block_height_log2);
@@ -80,8 +81,9 @@ void DcPredFuncs_NEON<block_width_log2, block_height_log2, sumfn,
 template <int block_width_log2, int block_height_log2, DcSumFunc sumfn,
           DcStoreFunc storefn>
 void DcPredFuncs_NEON<block_width_log2, block_height_log2, sumfn, storefn>::Dc(
-    void* const dest, ptrdiff_t stride, const void* const top_row,
-    const void* const left_column) {
+    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row,
+    const void* LIBGAV1_RESTRICT const left_column) {
   const uint32x2_t sum =
       sumfn(top_row, block_width_log2, true, left_column, block_height_log2);
   if (block_width_log2 == block_height_log2) {
@@ -154,8 +156,9 @@ inline uint16x8_t LoadAndAdd64(const uint8_t* buf) {
 // If |use_ref_1| is false then only sum |ref_0|.
 // For |ref[01]_size_log2| == 4 this relies on |ref_[01]| being aligned to
 // uint32_t.
-inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
-                             const bool use_ref_1, const void* ref_1,
+inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
+                             const int ref_0_size_log2, const bool use_ref_1,
+                             const void* LIBGAV1_RESTRICT ref_1,
                              const int ref_1_size_log2) {
   const auto* const ref_0_u8 = static_cast<const uint8_t*>(ref_0);
   const auto* const ref_1_u8 = static_cast<const uint8_t*>(ref_1);
@@ -318,9 +321,10 @@ inline void DcStore_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int width, int height>
-inline void Paeth4Or8xN_NEON(void* const dest, ptrdiff_t stride,
-                             const void* const top_row,
-                             const void* const left_column) {
+inline void Paeth4Or8xN_NEON(void* LIBGAV1_RESTRICT const dest,
+                             ptrdiff_t stride,
+                             const void* LIBGAV1_RESTRICT const top_row,
+                             const void* LIBGAV1_RESTRICT const left_column) {
   auto* dest_u8 = static_cast<uint8_t*>(dest);
   const auto* const top_row_u8 = static_cast<const uint8_t*>(top_row);
   const auto* const left_col_u8 = static_cast<const uint8_t*>(left_column);
@@ -425,9 +429,10 @@ inline uint8x16_t SelectPaeth(const uint8x16_t top, const uint8x16_t left,
       top_dist, top_left_##num##_dist_low, top_left_##num##_dist_high)
 
 template <int width, int height>
-inline void Paeth16PlusxN_NEON(void* const dest, ptrdiff_t stride,
-                               const void* const top_row,
-                               const void* const left_column) {
+inline void Paeth16PlusxN_NEON(void* LIBGAV1_RESTRICT const dest,
+                               ptrdiff_t stride,
+                               const void* LIBGAV1_RESTRICT const top_row,
+                               const void* LIBGAV1_RESTRICT const left_column) {
   auto* dest_u8 = static_cast<uint8_t*>(dest);
   const auto* const top_row_u8 = static_cast<const uint8_t*>(top_row);
   const auto* const left_col_u8 = static_cast<const uint8_t*>(left_column);
@@ -769,8 +774,9 @@ inline uint16x8_t LoadAndAdd64(const uint16_t* buf) {
 
 // |ref_[01]| each point to 1 << |ref[01]_size_log2| packed uint16_t values.
 // If |use_ref_1| is false then only sum |ref_0|.
-inline uint32x2_t DcSum_NEON(const void* ref_0, const int ref_0_size_log2,
-                             const bool use_ref_1, const void* ref_1,
+inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
+                             const int ref_0_size_log2, const bool use_ref_1,
+                             const void* LIBGAV1_RESTRICT ref_1,
                              const int ref_1_size_log2) {
   const auto* ref_0_u16 = static_cast<const uint16_t*>(ref_0);
   const auto* ref_1_u16 = static_cast<const uint16_t*>(ref_1);
@@ -968,9 +974,9 @@ struct DcDefs {
 // IntraPredFuncs_NEON::Horizontal -- duplicate left column across all rows
 
 template <int block_height>
-void Horizontal4xH_NEON(void* const dest, ptrdiff_t stride,
+void Horizontal4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                         const void* /*top_row*/,
-                        const void* const left_column) {
+                        const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const left = static_cast<const uint16_t*>(left_column);
   auto* dst = static_cast<uint8_t*>(dest);
   int y = 0;
@@ -983,9 +989,9 @@ void Horizontal4xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int block_height>
-void Horizontal8xH_NEON(void* const dest, ptrdiff_t stride,
+void Horizontal8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                         const void* /*top_row*/,
-                        const void* const left_column) {
+                        const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const left = static_cast<const uint16_t*>(left_column);
   auto* dst = static_cast<uint8_t*>(dest);
   int y = 0;
@@ -998,9 +1004,9 @@ void Horizontal8xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int block_height>
-void Horizontal16xH_NEON(void* const dest, ptrdiff_t stride,
+void Horizontal16xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                          const void* /*top_row*/,
-                         const void* const left_column) {
+                         const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const left = static_cast<const uint16_t*>(left_column);
   auto* dst = static_cast<uint8_t*>(dest);
   int y = 0;
@@ -1020,9 +1026,9 @@ void Horizontal16xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int block_height>
-void Horizontal32xH_NEON(void* const dest, ptrdiff_t stride,
+void Horizontal32xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                          const void* /*top_row*/,
-                         const void* const left_column) {
+                         const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const left = static_cast<const uint16_t*>(left_column);
   auto* dst = static_cast<uint8_t*>(dest);
   int y = 0;
@@ -1048,8 +1054,8 @@ void Horizontal32xH_NEON(void* const dest, ptrdiff_t stride,
 // IntraPredFuncs_NEON::Vertical -- copy top row to all rows
 
 template <int block_height>
-void Vertical4xH_NEON(void* const dest, ptrdiff_t stride,
-                      const void* const top_row,
+void Vertical4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                      const void* LIBGAV1_RESTRICT const top_row,
                       const void* const /*left_column*/) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
   auto* dst = static_cast<uint8_t*>(dest);
@@ -1062,8 +1068,8 @@ void Vertical4xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int block_height>
-void Vertical8xH_NEON(void* const dest, ptrdiff_t stride,
-                      const void* const top_row,
+void Vertical8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                      const void* LIBGAV1_RESTRICT const top_row,
                       const void* const /*left_column*/) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
   auto* dst = static_cast<uint8_t*>(dest);
@@ -1076,8 +1082,8 @@ void Vertical8xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int block_height>
-void Vertical16xH_NEON(void* const dest, ptrdiff_t stride,
-                       const void* const top_row,
+void Vertical16xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                       const void* LIBGAV1_RESTRICT const top_row,
                        const void* const /*left_column*/) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
   auto* dst = static_cast<uint8_t*>(dest);
@@ -1096,8 +1102,8 @@ void Vertical16xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int block_height>
-void Vertical32xH_NEON(void* const dest, ptrdiff_t stride,
-                       const void* const top_row,
+void Vertical32xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                       const void* LIBGAV1_RESTRICT const top_row,
                        const void* const /*left_column*/) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
   auto* dst = static_cast<uint8_t*>(dest);
@@ -1122,8 +1128,8 @@ void Vertical32xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int block_height>
-void Vertical64xH_NEON(void* const dest, ptrdiff_t stride,
-                       const void* const top_row,
+void Vertical64xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                       const void* LIBGAV1_RESTRICT const top_row,
                        const void* const /*left_column*/) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
   auto* dst = static_cast<uint8_t*>(dest);
@@ -1160,9 +1166,9 @@ void Vertical64xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int height>
-inline void Paeth4xH_NEON(void* const dest, ptrdiff_t stride,
-                          const void* const top_ptr,
-                          const void* const left_ptr) {
+inline void Paeth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                          const void* LIBGAV1_RESTRICT const top_ptr,
+                          const void* LIBGAV1_RESTRICT const left_ptr) {
   auto* dst = static_cast<uint8_t*>(dest);
   const auto* const top_row = static_cast<const uint16_t*>(top_ptr);
   const auto* const left_col = static_cast<const uint16_t*>(left_ptr);
@@ -1203,9 +1209,9 @@ inline void Paeth4xH_NEON(void* const dest, ptrdiff_t stride,
 }
 
 template <int height>
-inline void Paeth8xH_NEON(void* const dest, ptrdiff_t stride,
-                          const void* const top_ptr,
-                          const void* const left_ptr) {
+inline void Paeth8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                          const void* LIBGAV1_RESTRICT const top_ptr,
+                          const void* LIBGAV1_RESTRICT const left_ptr) {
   auto* dst = static_cast<uint8_t*>(dest);
   const auto* const top_row = static_cast<const uint16_t*>(top_ptr);
   const auto* const left_col = static_cast<const uint16_t*>(left_ptr);
@@ -1248,9 +1254,9 @@ inline void Paeth8xH_NEON(void* const dest, ptrdiff_t stride,
 
 // For 16xH and above.
 template <int width, int height>
-inline void PaethWxH_NEON(void* const dest, ptrdiff_t stride,
-                          const void* const top_ptr,
-                          const void* const left_ptr) {
+inline void PaethWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                          const void* LIBGAV1_RESTRICT const top_ptr,
+                          const void* LIBGAV1_RESTRICT const left_ptr) {
   auto* dst = static_cast<uint8_t*>(dest);
   const auto* const top_row = static_cast<const uint16_t*>(top_ptr);
   const auto* const left_col = static_cast<const uint16_t*>(left_ptr);
