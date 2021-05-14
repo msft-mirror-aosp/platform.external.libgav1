@@ -85,9 +85,10 @@ alignas(8) constexpr uint8_t kTransposedTaps[kNumFilterIntraPredictors][7][8] =
       {14, 12, 11, 10, 0, 0, 1, 1},
       {0, 0, 0, 0, 14, 12, 11, 9}}};
 
-void FilterIntraPredictor_NEON(void* const dest, ptrdiff_t stride,
-                               const void* const top_row,
-                               const void* const left_column,
+void FilterIntraPredictor_NEON(void* LIBGAV1_RESTRICT const dest,
+                               ptrdiff_t stride,
+                               const void* LIBGAV1_RESTRICT const top_row,
+                               const void* LIBGAV1_RESTRICT const left_column,
                                FilterIntraPredictor pred, int width,
                                int height) {
   const uint8_t* const top = static_cast<const uint8_t*>(top_row);
