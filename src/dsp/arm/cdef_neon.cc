@@ -234,7 +234,7 @@ LIBGAV1_ALWAYS_INLINE void AddPartial_D5_D7(uint8x8_t* v_src,
   *partial_hi = vaddq_u16(*partial_hi, vextq_u16(v_pair_add[3], v_zero, 5));
 }
 
-LIBGAV1_ALWAYS_INLINE void AddPartial(const void* const source,
+LIBGAV1_ALWAYS_INLINE void AddPartial(const void* LIBGAV1_RESTRICT const source,
                                       ptrdiff_t stride, uint16x8_t* partial_lo,
                                       uint16x8_t* partial_hi) {
   const auto* src = static_cast<const uint8_t*>(source);
@@ -358,8 +358,10 @@ uint32_t CostOdd(const uint16x8_t a, const uint16x8_t b, const uint32x4_t mask,
   return SumVector(c);
 }
 
-void CdefDirection_NEON(const void* const source, ptrdiff_t stride,
-                        uint8_t* const direction, int* const variance) {
+void CdefDirection_NEON(const void* LIBGAV1_RESTRICT const source,
+                        ptrdiff_t stride,
+                        uint8_t* LIBGAV1_RESTRICT const direction,
+                        int* LIBGAV1_RESTRICT const variance) {
   assert(direction != nullptr);
   assert(variance != nullptr);
   const auto* src = static_cast<const uint8_t*>(source);
@@ -407,8 +409,9 @@ void CdefDirection_NEON(const void* const source, ptrdiff_t stride,
 // CdefFilter
 
 // Load 4 vectors based on the given |direction|.
-void LoadDirection(const uint16_t* const src, const ptrdiff_t stride,
-                   uint16x8_t* output, const int direction) {
+void LoadDirection(const uint16_t* LIBGAV1_RESTRICT const src,
+                   const ptrdiff_t stride, uint16x8_t* output,
+                   const int direction) {
   // Each |direction| describes a different set of source values. Expand this
   // set by negating each set. For |direction| == 0 this gives a diagonal line
   // from top right to bottom left. The first value is y, the second x. Negative
@@ -432,8 +435,9 @@ void LoadDirection(const uint16_t* const src, const ptrdiff_t stride,
 
 // Load 4 vectors based on the given |direction|. Use when |block_width| == 4 to
 // do 2 rows at a time.
-void LoadDirection4(const uint16_t* const src, const ptrdiff_t stride,
-                    uint16x8_t* output, const int direction) {
+void LoadDirection4(const uint16_t* LIBGAV1_RESTRICT const src,
+                    const ptrdiff_t stride, uint16x8_t* output,
+                    const int direction) {
   const int y_0 = kCdefDirections[direction][0][0];
   const int x_0 = kCdefDirections[direction][0][1];
   const int y_1 = kCdefDirections[direction][1][0];
@@ -470,11 +474,11 @@ int16x8_t Constrain(const uint16x8_t pixel, const uint16x8_t reference,
 }
 
 template <int width, bool enable_primary = true, bool enable_secondary = true>
-void CdefFilter_NEON(const uint16_t* src, const ptrdiff_t src_stride,
-                     const int height, const int primary_strength,
-                     const int secondary_strength, const int damping,
-                     const int direction, void* dest,
-                     const ptrdiff_t dst_stride) {
+void CdefFilter_NEON(const uint16_t* LIBGAV1_RESTRICT src,
+                     const ptrdiff_t src_stride, const int height,
+                     const int primary_strength, const int secondary_strength,
+                     const int damping, const int direction,
+                     void* LIBGAV1_RESTRICT dest, const ptrdiff_t dst_stride) {
   static_assert(width == 8 || width == 4, "");
   static_assert(enable_primary || enable_secondary, "");
   constexpr bool clipping_required = enable_primary && enable_secondary;
