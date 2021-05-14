@@ -60,8 +60,9 @@ constexpr uint8_t kSmoothWeights[] = {
 // SmoothFuncs_C::Smooth
 template <int block_width, int block_height, typename Pixel>
 void SmoothFuncs_C<block_width, block_height, Pixel>::Smooth(
-    void* const dest, ptrdiff_t stride, const void* const top_row,
-    const void* const left_column) {
+    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row,
+    const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const Pixel*>(top_row);
   const auto* const left = static_cast<const Pixel*>(left_column);
   const Pixel top_right = top[block_width - 1];
@@ -94,8 +95,9 @@ void SmoothFuncs_C<block_width, block_height, Pixel>::Smooth(
 // SmoothFuncs_C::SmoothVertical
 template <int block_width, int block_height, typename Pixel>
 void SmoothFuncs_C<block_width, block_height, Pixel>::SmoothVertical(
-    void* const dest, ptrdiff_t stride, const void* const top_row,
-    const void* const left_column) {
+    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row,
+    const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const Pixel*>(top_row);
   const auto* const left = static_cast<const Pixel*>(left_column);
   const Pixel bottom_left = left[block_height - 1];
@@ -121,8 +123,9 @@ void SmoothFuncs_C<block_width, block_height, Pixel>::SmoothVertical(
 // SmoothFuncs_C::SmoothHorizontal
 template <int block_width, int block_height, typename Pixel>
 void SmoothFuncs_C<block_width, block_height, Pixel>::SmoothHorizontal(
-    void* const dest, ptrdiff_t stride, const void* const top_row,
-    const void* const left_column) {
+    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row,
+    const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const Pixel*>(top_row);
   const auto* const left = static_cast<const Pixel*>(left_column);
   const Pixel top_right = top[block_width - 1];
