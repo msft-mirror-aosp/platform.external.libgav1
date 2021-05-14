@@ -52,9 +52,9 @@ inline uint8x8_t WeightedBlend(const uint8x8_t a, const uint8x8_t b,
 }
 
 // Fill |left| and |right| with the appropriate values for a given |base_step|.
-inline void LoadStepwise(const uint8_t* const source, const uint8x8_t left_step,
-                         const uint8x8_t right_step, uint8x8_t* left,
-                         uint8x8_t* right) {
+inline void LoadStepwise(const uint8_t* LIBGAV1_RESTRICT const source,
+                         const uint8x8_t left_step, const uint8x8_t right_step,
+                         uint8x8_t* left, uint8x8_t* right) {
   const uint8x16_t mixed = vld1q_u8(source);
   *left = VQTbl1U8(mixed, left_step);
   *right = VQTbl1U8(mixed, right_step);
@@ -62,17 +62,18 @@ inline void LoadStepwise(const uint8_t* const source, const uint8x8_t left_step,
 
 // Handle signed step arguments by ignoring the sign. Negative values are
 // considered out of range and overwritten later.
-inline void LoadStepwise(const uint8_t* const source, const int8x8_t left_step,
-                         const int8x8_t right_step, uint8x8_t* left,
-                         uint8x8_t* right) {
+inline void LoadStepwise(const uint8_t* LIBGAV1_RESTRICT const source,
+                         const int8x8_t left_step, const int8x8_t right_step,
+                         uint8x8_t* left, uint8x8_t* right) {
   LoadStepwise(source, vreinterpret_u8_s8(left_step),
                vreinterpret_u8_s8(right_step), left, right);
 }
 
 // Process 4 or 8 |width| by any |height|.
 template <int width>
-inline void DirectionalZone1_WxH(uint8_t* dst, const ptrdiff_t stride,
-                                 const int height, const uint8_t* const top,
+inline void DirectionalZone1_WxH(uint8_t* LIBGAV1_RESTRICT dst,
+                                 const ptrdiff_t stride, const int height,
+                                 const uint8_t* LIBGAV1_RESTRICT const top,
                                  const int xstep, const bool upsampled) {
   assert(width == 4 || width == 8);
 
@@ -142,10 +143,11 @@ inline void DirectionalZone1_WxH(uint8_t* dst, const ptrdiff_t stride,
 
 // Process a multiple of 8 |width| by any |height|. Processes horizontally
 // before vertically in the hopes of being a little more cache friendly.
-inline void DirectionalZone1_WxH(uint8_t* dst, const ptrdiff_t stride,
-                                 const int width, const int height,
-                                 const uint8_t* const top, const int xstep,
-                                 const bool upsampled) {
+inline void DirectionalZone1_WxH(uint8_t* LIBGAV1_RESTRICT dst,
+                                 const ptrdiff_t stride, const int width,
+                                 const int height,
+                                 const uint8_t* LIBGAV1_RESTRICT const top,
+                                 const int xstep, const bool upsampled) {
   assert(width % 8 == 0);
   const int upsample_shift = static_cast<int>(upsampled);
   const int scale_bits = 6 - upsample_shift;
@@ -203,12 +205,10 @@ inline void DirectionalZone1_WxH(uint8_t* dst, const ptrdiff_t stride,
   } while (++y < height);
 }
 
-void DirectionalIntraPredictorZone1_NEON(void* const dest,
-                                         const ptrdiff_t stride,
-                                         const void* const top_row,
-                                         const int width, const int height,
-                                         const int xstep,
-                                         const bool upsampled_top) {
+void DirectionalIntraPredictorZone1_NEON(
+    void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row, const int width,
+    const int height, const int xstep, const bool upsampled_top) {
   const uint8_t* const top = static_cast<const uint8_t*>(top_row);
   uint8_t* dst = static_cast<uint8_t*>(dest);
 
@@ -282,11 +282,10 @@ void DirectionalIntraPredictorZone1_NEON(void* const dest,
 
 // Process 4 or 8 |width| by 4 or 8 |height|.
 template <int width>
-inline void DirectionalZone3_WxH(uint8_t* dest, const ptrdiff_t stride,
-                                 const int height,
-                                 const uint8_t* const left_column,
-                                 const int base_left_y, const int ystep,
-                                 const int upsample_shift) {
+inline void DirectionalZone3_WxH(
+    uint8_t* LIBGAV1_RESTRICT dest, const ptrdiff_t stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const left_column, const int base_left_y,
+    const int ystep, const int upsample_shift) {
   assert(width == 4 || width == 8);
   assert(height == 4 || height == 8);
   const int scale_bits = 6 - upsample_shift;
@@ -417,12 +416,10 @@ constexpr int kPositiveIndexOffset = 15;
 
 // Process 4 or 8 |width| by any |height|.
 template <int width>
-inline void DirectionalZone2FromLeftCol_WxH(uint8_t* dst,
-                                            const ptrdiff_t stride,
-                                            const int height,
-                                            const uint8_t* const left_column,
-                                            const int16x8_t left_y,
-                                            const int upsample_shift) {
+inline void DirectionalZone2FromLeftCol_WxH(
+    uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const left_column, const int16x8_t left_y,
+    const int upsample_shift) {
   assert(width == 4 || width == 8);
 
   // The shift argument must be a constant.
@@ -468,12 +465,10 @@ inline void DirectionalZone2FromLeftCol_WxH(uint8_t* dst,
 
 // Process 4 or 8 |width| by any |height|.
 template <int width>
-inline void DirectionalZone1Blend_WxH(uint8_t* dest, const ptrdiff_t stride,
-                                      const int height,
-                                      const uint8_t* const top_row,
-                                      int zone_bounds, int top_x,
-                                      const int xstep,
-                                      const int upsample_shift) {
+inline void DirectionalZone1Blend_WxH(
+    uint8_t* LIBGAV1_RESTRICT dest, const ptrdiff_t stride, const int height,
+    const uint8_t* LIBGAV1_RESTRICT const top_row, int zone_bounds, int top_x,
+    const int xstep, const int upsample_shift) {
   assert(width == 4 || width == 8);
 
   const int scale_bits_x = 6 - upsample_shift;
@@ -523,12 +518,12 @@ constexpr int kDirectionalZone2ShuffleInvalidHeight[16] = {
 // then handle only blocks that take from |left_ptr|. Additionally, a fast
 // index-shuffle approach is used for pred values from |left_column| in sections
 // that permit it.
-inline void DirectionalZone2_4xH(uint8_t* dst, const ptrdiff_t stride,
-                                 const uint8_t* const top_row,
-                                 const uint8_t* const left_column,
-                                 const int height, const int xstep,
-                                 const int ystep, const bool upsampled_top,
-                                 const bool upsampled_left) {
+inline void DirectionalZone2_4xH(
+    uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride,
+    const uint8_t* LIBGAV1_RESTRICT const top_row,
+    const uint8_t* LIBGAV1_RESTRICT const left_column, const int height,
+    const int xstep, const int ystep, const bool upsampled_top,
+    const bool upsampled_left) {
   const int upsample_left_shift = static_cast<int>(upsampled_left);
   const int upsample_top_shift = static_cast<int>(upsampled_top);
 
@@ -639,13 +634,12 @@ inline void DirectionalZone2_4xH(uint8_t* dst, const ptrdiff_t stride,
 }
 
 // Process a multiple of 8 |width|.
-inline void DirectionalZone2_8(uint8_t* const dst, const ptrdiff_t stride,
-                               const uint8_t* const top_row,
-                               const uint8_t* const left_column,
-                               const int width, const int height,
-                               const int xstep, const int ystep,
-                               const bool upsampled_top,
-                               const bool upsampled_left) {
+inline void DirectionalZone2_8(
+    uint8_t* LIBGAV1_RESTRICT const dst, const ptrdiff_t stride,
+    const uint8_t* LIBGAV1_RESTRICT const top_row,
+    const uint8_t* LIBGAV1_RESTRICT const left_column, const int width,
+    const int height, const int xstep, const int ystep,
+    const bool upsampled_top, const bool upsampled_left) {
   const int upsample_left_shift = static_cast<int>(upsampled_left);
   const int upsample_top_shift = static_cast<int>(upsampled_top);
 
@@ -770,10 +764,11 @@ inline void DirectionalZone2_8(uint8_t* const dst, const ptrdiff_t stride,
 }
 
 void DirectionalIntraPredictorZone2_NEON(
-    void* const dest, const ptrdiff_t stride, const void* const top_row,
-    const void* const left_column, const int width, const int height,
-    const int xstep, const int ystep, const bool upsampled_top,
-    const bool upsampled_left) {
+    void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row,
+    const void* LIBGAV1_RESTRICT const left_column, const int width,
+    const int height, const int xstep, const int ystep,
+    const bool upsampled_top, const bool upsampled_left) {
   // Increasing the negative buffer for this function allows more rows to be
   // processed at a time without branching in an inner loop to check the base.
   uint8_t top_buffer[288];
@@ -793,12 +788,10 @@ void DirectionalIntraPredictorZone2_NEON(
   }
 }
 
-void DirectionalIntraPredictorZone3_NEON(void* const dest,
-                                         const ptrdiff_t stride,
-                                         const void* const left_column,
-                                         const int width, const int height,
-                                         const int ystep,
-                                         const bool upsampled_left) {
+void DirectionalIntraPredictorZone3_NEON(
+    void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const left_column, const int width,
+    const int height, const int ystep, const bool upsampled_left) {
   const auto* const left = static_cast<const uint8_t*>(left_column);
 
   assert(ystep > 0);
@@ -934,7 +927,8 @@ inline uint16x8_t WeightedBlend(const uint16x8_t a, const uint16x8_t b,
 }
 
 // Each element of |dest| contains values associated with one weight value.
-inline void LoadEdgeVals(uint16x4x2_t* dest, const uint16_t* const source,
+inline void LoadEdgeVals(uint16x4x2_t* dest,
+                         const uint16_t* LIBGAV1_RESTRICT const source,
                          const bool upsampled) {
   if (upsampled) {
     *dest = vld2_u16(source);
@@ -945,7 +939,8 @@ inline void LoadEdgeVals(uint16x4x2_t* dest, const uint16_t* const source,
 }
 
 // Each element of |dest| contains values associated with one weight value.
-inline void LoadEdgeVals(uint16x8x2_t* dest, const uint16_t* const source,
+inline void LoadEdgeVals(uint16x8x2_t* dest,
+                         const uint16_t* LIBGAV1_RESTRICT const source,
                          const bool upsampled) {
   if (upsampled) {
     *dest = vld2q_u16(source);
@@ -956,8 +951,9 @@ inline void LoadEdgeVals(uint16x8x2_t* dest, const uint16_t* const source,
 }
 
 template <bool upsampled>
-inline void DirectionalZone1_4xH(uint16_t* dst, const ptrdiff_t stride,
-                                 const int height, const uint16_t* const top,
+inline void DirectionalZone1_4xH(uint16_t* LIBGAV1_RESTRICT dst,
+                                 const ptrdiff_t stride, const int height,
+                                 const uint16_t* LIBGAV1_RESTRICT const top,
                                  const int xstep) {
   const int upsample_shift = static_cast<int>(upsampled);
   const int index_scale_bits = 6 - upsample_shift;
@@ -1007,9 +1003,11 @@ inline void DirectionalZone1_4xH(uint16_t* dst, const ptrdiff_t stride,
 // Process a multiple of 8 |width| by any |height|. Processes horizontally
 // before vertically in the hopes of being a little more cache friendly.
 template <bool upsampled>
-inline void DirectionalZone1_WxH(uint16_t* dst, const ptrdiff_t stride,
-                                 const int width, const int height,
-                                 const uint16_t* const top, const int xstep) {
+inline void DirectionalZone1_WxH(uint16_t* LIBGAV1_RESTRICT dst,
+                                 const ptrdiff_t stride, const int width,
+                                 const int height,
+                                 const uint16_t* LIBGAV1_RESTRICT const top,
+                                 const int xstep) {
   assert(width % 8 == 0);
   const int upsample_shift = static_cast<int>(upsampled);
   const int index_scale_bits = 6 - upsample_shift;
@@ -1068,10 +1066,11 @@ inline void DirectionalZone1_WxH(uint16_t* dst, const ptrdiff_t stride,
 
 // Process a multiple of 8 |width| by any |height|. Processes horizontally
 // before vertically in the hopes of being a little more cache friendly.
-inline void DirectionalZone1_Large(uint16_t* dst, const ptrdiff_t stride,
-                                   const int width, const int height,
-                                   const uint16_t* const top, const int xstep,
-                                   const bool upsampled) {
+inline void DirectionalZone1_Large(uint16_t* LIBGAV1_RESTRICT dst,
+                                   const ptrdiff_t stride, const int width,
+                                   const int height,
+                                   const uint16_t* LIBGAV1_RESTRICT const top,
+                                   const int xstep, const bool upsampled) {
   assert(width % 8 == 0);
   const int upsample_shift = static_cast<int>(upsampled);
   const int index_scale_bits = 6 - upsample_shift;
@@ -1156,11 +1155,10 @@ inline void DirectionalZone1_Large(uint16_t* dst, const ptrdiff_t stride,
   }
 }
 
-void DirectionalIntraPredictorZone1_NEON(void* const dest, ptrdiff_t stride,
-                                         const void* const top_row,
-                                         const int width, const int height,
-                                         const int xstep,
-                                         const bool upsampled_top) {
+void DirectionalIntraPredictorZone1_NEON(
+    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row, const int width,
+    const int height, const int xstep, const bool upsampled_top) {
   const uint16_t* const top = static_cast<const uint16_t*>(top_row);
   uint16_t* dst = static_cast<uint16_t*>(dest);
   stride /= sizeof(top[0]);
@@ -1225,9 +1223,10 @@ void DirectionalIntraPredictorZone1_NEON(void* const dest, ptrdiff_t stride,
 // 42 52 62 72             60 61 62 63
 // 43 53 63 73             70 71 72 73
 template <bool upsampled>
-inline void DirectionalZone3_4x4(uint8_t* dst, const ptrdiff_t stride,
-                                 const uint16_t* const left, const int ystep,
-                                 const int base_left_y = 0) {
+inline void DirectionalZone3_4x4(uint8_t* LIBGAV1_RESTRICT dst,
+                                 const ptrdiff_t stride,
+                                 const uint16_t* LIBGAV1_RESTRICT const left,
+                                 const int ystep, const int base_left_y = 0) {
   const int upsample_shift = static_cast<int>(upsampled);
   const int index_scale_bits = 6 - upsample_shift;
 
@@ -1278,8 +1277,9 @@ inline void DirectionalZone3_4x4(uint8_t* dst, const ptrdiff_t stride,
 }
 
 template <bool upsampled>
-inline void DirectionalZone3_4xH(uint8_t* dest, const ptrdiff_t stride,
-                                 const int height, const uint16_t* const left,
+inline void DirectionalZone3_4xH(uint8_t* LIBGAV1_RESTRICT dest,
+                                 const ptrdiff_t stride, const int height,
+                                 const uint16_t* LIBGAV1_RESTRICT const left,
                                  const int ystep) {
   const int upsample_shift = static_cast<int>(upsampled);
   int y = 0;
@@ -1292,8 +1292,9 @@ inline void DirectionalZone3_4xH(uint8_t* dest, const ptrdiff_t stride,
 }
 
 template <bool upsampled>
-inline void DirectionalZone3_Wx4(uint8_t* dest, const ptrdiff_t stride,
-                                 const int width, const uint16_t* const left,
+inline void DirectionalZone3_Wx4(uint8_t* LIBGAV1_RESTRICT dest,
+                                 const ptrdiff_t stride, const int width,
+                                 const uint16_t* LIBGAV1_RESTRICT const left,
                                  const int ystep) {
   int x = 0;
   int base_left_y = 0;
@@ -1308,9 +1309,10 @@ inline void DirectionalZone3_Wx4(uint8_t* dest, const ptrdiff_t stride,
 }
 
 template <bool upsampled>
-inline void DirectionalZone3_8x8(uint8_t* dest, const ptrdiff_t stride,
-                                 const uint16_t* const left, const int ystep,
-                                 const int base_left_y = 0) {
+inline void DirectionalZone3_8x8(uint8_t* LIBGAV1_RESTRICT dest,
+                                 const ptrdiff_t stride,
+                                 const uint16_t* LIBGAV1_RESTRICT const left,
+                                 const int ystep, const int base_left_y = 0) {
   const int upsample_shift = static_cast<int>(upsampled);
   const int index_scale_bits = 6 - upsample_shift;
 
@@ -1400,9 +1402,11 @@ inline void DirectionalZone3_8x8(uint8_t* dest, const ptrdiff_t stride,
 }
 
 template <bool upsampled>
-inline void DirectionalZone3_WxH(uint8_t* dest, const ptrdiff_t stride,
-                                 const int width, const int height,
-                                 const uint16_t* const left, const int ystep) {
+inline void DirectionalZone3_WxH(uint8_t* LIBGAV1_RESTRICT dest,
+                                 const ptrdiff_t stride, const int width,
+                                 const int height,
+                                 const uint16_t* LIBGAV1_RESTRICT const left,
+                                 const int ystep) {
   const int upsample_shift = static_cast<int>(upsampled);
   // Zone3 never runs out of left_column values.
   assert((width + height - 1) << upsample_shift >  // max_base_y
@@ -1424,12 +1428,10 @@ inline void DirectionalZone3_WxH(uint8_t* dest, const ptrdiff_t stride,
   } while (y < height);
 }
 
-void DirectionalIntraPredictorZone3_NEON(void* const dest,
-                                         const ptrdiff_t stride,
-                                         const void* const left_column,
-                                         const int width, const int height,
-                                         const int ystep,
-                                         const bool upsampled_left) {
+void DirectionalIntraPredictorZone3_NEON(
+    void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const left_column, const int width,
+    const int height, const int ystep, const bool upsampled_left) {
   const uint16_t* const left = static_cast<const uint16_t*>(left_column);
   uint8_t* dst = static_cast<uint8_t*>(dest);
 
@@ -1481,9 +1483,9 @@ void DirectionalIntraPredictorZone3_NEON(void* const dest,
 // extremely steep cases, source vectors can only be loaded one lane at a time.
 
 // Fill |left| and |right| with the appropriate values for a given |base_step|.
-inline void LoadStepwise(const void* const source, const uint8x8_t left_step,
-                         const uint8x8_t right_step, uint16x4_t* left,
-                         uint16x4_t* right) {
+inline void LoadStepwise(const void* LIBGAV1_RESTRICT const source,
+                         const uint8x8_t left_step, const uint8x8_t right_step,
+                         uint16x4_t* left, uint16x4_t* right) {
   const uint8x16x2_t mixed = {
       vld1q_u8(static_cast<const uint8_t*>(source)),
       vld1q_u8(static_cast<const uint8_t*>(source) + 16)};
@@ -1491,7 +1493,8 @@ inline void LoadStepwise(const void* const source, const uint8x8_t left_step,
   *right = vreinterpret_u16_u8(VQTbl2U8(mixed, right_step));
 }
 
-inline void LoadStepwise(const void* const source, const uint8x8_t left_step_0,
+inline void LoadStepwise(const void* LIBGAV1_RESTRICT const source,
+                         const uint8x8_t left_step_0,
                          const uint8x8_t right_step_0,
                          const uint8x8_t left_step_1,
                          const uint8x8_t right_step_1, uint16x8_t* left,
@@ -1540,12 +1543,10 @@ inline uint16x8_t WeightedBlend(const uint16x8_t a, const uint16x8_t b,
 constexpr int kPositiveIndexOffsetPixels = 15;
 constexpr int kPositiveIndexOffsetBytes = 30;
 
-inline void DirectionalZone2FromLeftCol_4xH(uint8_t* dst,
-                                            const ptrdiff_t stride,
-                                            const int height,
-                                            const uint16_t* const left_column,
-                                            const int16x4_t left_y,
-                                            const bool upsampled) {
+inline void DirectionalZone2FromLeftCol_4xH(
+    uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride, const int height,
+    const uint16_t* LIBGAV1_RESTRICT const left_column, const int16x4_t left_y,
+    const bool upsampled) {
   const int upsample_shift = static_cast<int>(upsampled);
 
   const int index_scale_bits = 6;
@@ -1598,12 +1599,10 @@ inline void DirectionalZone2FromLeftCol_4xH(uint8_t* dst,
   } while (++y < height);
 }
 
-inline void DirectionalZone2FromLeftCol_8xH(uint8_t* dst,
-                                            const ptrdiff_t stride,
-                                            const int height,
-                                            const uint16_t* const left_column,
-                                            const int16x8_t left_y,
-                                            const bool upsampled) {
+inline void DirectionalZone2FromLeftCol_8xH(
+    uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride, const int height,
+    const uint16_t* LIBGAV1_RESTRICT const left_column, const int16x8_t left_y,
+    const bool upsampled) {
   const int upsample_shift = static_cast<int>(upsampled);
 
   const int index_scale_bits = 6;
@@ -1660,11 +1659,10 @@ inline void DirectionalZone2FromLeftCol_8xH(uint8_t* dst,
 }
 
 template <bool upsampled>
-inline void DirectionalZone1Blend_4xH(uint8_t* dest, const ptrdiff_t stride,
-                                      const int height,
-                                      const uint16_t* const top_row,
-                                      int zone_bounds, int top_x,
-                                      const int xstep) {
+inline void DirectionalZone1Blend_4xH(
+    uint8_t* LIBGAV1_RESTRICT dest, const ptrdiff_t stride, const int height,
+    const uint16_t* LIBGAV1_RESTRICT const top_row, int zone_bounds, int top_x,
+    const int xstep) {
   const int upsample_shift = static_cast<int>(upsampled);
   const int scale_bits_x = 6 - upsample_shift;
 
@@ -1697,11 +1695,10 @@ inline void DirectionalZone1Blend_4xH(uint8_t* dest, const ptrdiff_t stride,
 }
 
 template <bool upsampled>
-inline void DirectionalZone1Blend_8xH(uint8_t* dest, const ptrdiff_t stride,
-                                      const int height,
-                                      const uint16_t* const top_row,
-                                      int zone_bounds, int top_x,
-                                      const int xstep) {
+inline void DirectionalZone1Blend_8xH(
+    uint8_t* LIBGAV1_RESTRICT dest, const ptrdiff_t stride, const int height,
+    const uint16_t* LIBGAV1_RESTRICT const top_row, int zone_bounds, int top_x,
+    const int xstep) {
   const int upsample_shift = static_cast<int>(upsampled);
   const int scale_bits_x = 6 - upsample_shift;
 
@@ -1751,11 +1748,11 @@ constexpr int kDirectionalZone2ShuffleInvalidHeight[16] = {
 // index-shuffle approach is used for pred values from |left_column| in sections
 // that permit it.
 template <bool upsampled_top, bool upsampled_left>
-inline void DirectionalZone2_4xH(uint8_t* dst, const ptrdiff_t stride,
-                                 const uint16_t* const top_row,
-                                 const uint16_t* const left_column,
-                                 const int height, const int xstep,
-                                 const int ystep) {
+inline void DirectionalZone2_4xH(
+    uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride,
+    const uint16_t* LIBGAV1_RESTRICT const top_row,
+    const uint16_t* LIBGAV1_RESTRICT const left_column, const int height,
+    const int xstep, const int ystep) {
   const int upsample_left_shift = static_cast<int>(upsampled_left);
 
   // Helper vector for index computation.
@@ -1834,11 +1831,11 @@ inline void DirectionalZone2_4xH(uint8_t* dst, const ptrdiff_t stride,
 // Process 8x4 and 16x4 blocks. This avoids a lot of overhead and simplifies
 // address safety.
 template <bool upsampled_top, bool upsampled_left>
-inline void DirectionalZone2_Wx4(uint8_t* const dst, const ptrdiff_t stride,
-                                 const uint16_t* const top_row,
-                                 const uint16_t* const left_column,
-                                 const int width, const int xstep,
-                                 const int ystep) {
+inline void DirectionalZone2_Wx4(
+    uint8_t* LIBGAV1_RESTRICT const dst, const ptrdiff_t stride,
+    const uint16_t* LIBGAV1_RESTRICT const top_row,
+    const uint16_t* LIBGAV1_RESTRICT const left_column, const int width,
+    const int xstep, const int ystep) {
   const int upsample_top_shift = static_cast<int>(upsampled_top);
   // Offsets the original zone bound value to simplify x < (y+1)*xstep/64 -1
   int xstep_bounds_base = (xstep == 64) ? 0 : xstep - 1;
@@ -1878,11 +1875,11 @@ inline void DirectionalZone2_Wx4(uint8_t* const dst, const ptrdiff_t stride,
 
 // Process a multiple of 8 |width|.
 template <bool upsampled_top, bool upsampled_left>
-inline void DirectionalZone2_8(uint8_t* const dst, const ptrdiff_t stride,
-                               const uint16_t* const top_row,
-                               const uint16_t* const left_column,
-                               const int width, const int height,
-                               const int xstep, const int ystep) {
+inline void DirectionalZone2_8(
+    uint8_t* LIBGAV1_RESTRICT const dst, const ptrdiff_t stride,
+    const uint16_t* LIBGAV1_RESTRICT const top_row,
+    const uint16_t* LIBGAV1_RESTRICT const left_column, const int width,
+    const int height, const int xstep, const int ystep) {
   if (height == 4) {
     DirectionalZone2_Wx4<upsampled_top, upsampled_left>(
         dst, stride, top_row, left_column, width, xstep, ystep);
@@ -2008,8 +2005,9 @@ inline void DirectionalZone2_8(uint8_t* const dst, const ptrdiff_t stride,
 // At this angle, neither edges are upsampled.
 // |min_width| is either 4 or 8.
 template <int min_width>
-void DirectionalAngle135(uint8_t* dst, const ptrdiff_t stride,
-                         const uint16_t* const top, const uint16_t* const left,
+void DirectionalAngle135(uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride,
+                         const uint16_t* LIBGAV1_RESTRICT const top,
+                         const uint16_t* LIBGAV1_RESTRICT const left,
                          const int width, const int height) {
   // y = 0 is more trivial than the other rows.
   memcpy(dst, top - 1, width * sizeof(top[0]));
@@ -2070,13 +2068,12 @@ void DirectionalAngle135(uint8_t* dst, const ptrdiff_t stride,
   }
 }
 
-void DirectionalIntraPredictorZone2_NEON(void* dest, const ptrdiff_t stride,
-                                         const void* const top_row,
-                                         const void* const left_column,
-                                         const int width, const int height,
-                                         const int xstep, const int ystep,
-                                         const bool upsampled_top,
-                                         const bool upsampled_left) {
+void DirectionalIntraPredictorZone2_NEON(
+    void* LIBGAV1_RESTRICT dest, const ptrdiff_t stride,
+    const void* LIBGAV1_RESTRICT const top_row,
+    const void* LIBGAV1_RESTRICT const left_column, const int width,
+    const int height, const int xstep, const int ystep,
+    const bool upsampled_top, const bool upsampled_left) {
   // Increasing the negative buffer for this function allows more rows to be
   // processed at a time without branching in an inner loop to check the base.
   uint16_t top_buffer[288];
