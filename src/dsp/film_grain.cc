@@ -153,12 +153,11 @@ void ApplyAutoRegressiveFilterToLumaGrain_C(const FilmGrainParams& params,
 
 template <int bitdepth, typename GrainType, int auto_regression_coeff_lag,
           bool use_luma>
-void ApplyAutoRegressiveFilterToChromaGrains_C(const FilmGrainParams& params,
-                                               const void* luma_grain_buffer,
-                                               int subsampling_x,
-                                               int subsampling_y,
-                                               void* u_grain_buffer,
-                                               void* v_grain_buffer) {
+void ApplyAutoRegressiveFilterToChromaGrains_C(
+    const FilmGrainParams& params,
+    const void* LIBGAV1_RESTRICT luma_grain_buffer, int subsampling_x,
+    int subsampling_y, void* LIBGAV1_RESTRICT u_grain_buffer,
+    void* LIBGAV1_RESTRICT v_grain_buffer) {
   static_assert(
       auto_regression_coeff_lag >= 0 && auto_regression_coeff_lag <= 3,
       "Unsupported autoregression lag for chroma.");
@@ -227,9 +226,10 @@ void ApplyAutoRegressiveFilterToChromaGrains_C(const FilmGrainParams& params,
 
 // This implementation is for the condition overlap_flag == false.
 template <int bitdepth, typename GrainType>
-void ConstructNoiseStripes_C(const void* grain_buffer, int grain_seed,
-                             int width, int height, int subsampling_x,
-                             int subsampling_y, void* noise_stripes_buffer) {
+void ConstructNoiseStripes_C(const void* LIBGAV1_RESTRICT grain_buffer,
+                             int grain_seed, int width, int height,
+                             int subsampling_x, int subsampling_y,
+                             void* LIBGAV1_RESTRICT noise_stripes_buffer) {
   auto* noise_stripes =
       static_cast<Array2DView<GrainType>*>(noise_stripes_buffer);
   const auto* grain = static_cast<const GrainType*>(grain_buffer);
@@ -291,10 +291,10 @@ void ConstructNoiseStripes_C(const void* grain_buffer, int grain_seed,
 
 // This implementation is for the condition overlap_flag == true.
 template <int bitdepth, typename GrainType>
-void ConstructNoiseStripesWithOverlap_C(const void* grain_buffer,
-                                        int grain_seed, int width, int height,
-                                        int subsampling_x, int subsampling_y,
-                                        void* noise_stripes_buffer) {
+void ConstructNoiseStripesWithOverlap_C(
+    const void* LIBGAV1_RESTRICT grain_buffer, int grain_seed, int width,
+    int height, int subsampling_x, int subsampling_y,
+    void* LIBGAV1_RESTRICT noise_stripes_buffer) {
   auto* noise_stripes =
       static_cast<Array2DView<GrainType>*>(noise_stripes_buffer);
   const auto* grain = static_cast<const GrainType*>(grain_buffer);
@@ -417,10 +417,11 @@ void ConstructNoiseStripesWithOverlap_C(const void* grain_buffer,
 }
 
 template <int bitdepth, typename GrainType>
-inline void WriteOverlapLine_C(const GrainType* noise_stripe_row,
-                               const GrainType* noise_stripe_row_prev,
-                               int plane_width, int grain_coeff, int old_coeff,
-                               GrainType* noise_image_row) {
+inline void WriteOverlapLine_C(
+    const GrainType* LIBGAV1_RESTRICT noise_stripe_row,
+    const GrainType* LIBGAV1_RESTRICT noise_stripe_row_prev, int plane_width,
+    int grain_coeff, int old_coeff,
+    GrainType* LIBGAV1_RESTRICT noise_image_row) {
   int x = 0;
   do {
     int grain = noise_stripe_row[x];
@@ -433,9 +434,10 @@ inline void WriteOverlapLine_C(const GrainType* noise_stripe_row,
 }
 
 template <int bitdepth, typename GrainType>
-void ConstructNoiseImageOverlap_C(const void* noise_stripes_buffer, int width,
-                                  int height, int subsampling_x,
-                                  int subsampling_y, void* noise_image_buffer) {
+void ConstructNoiseImageOverlap_C(
+    const void* LIBGAV1_RESTRICT noise_stripes_buffer, int width, int height,
+    int subsampling_x, int subsampling_y,
+    void* LIBGAV1_RESTRICT noise_image_buffer) {
   const auto* noise_stripes =
       static_cast<const Array2DView<GrainType>*>(noise_stripes_buffer);
   auto* noise_image = static_cast<Array2D<GrainType>*>(noise_image_buffer);
@@ -496,11 +498,11 @@ void ConstructNoiseImageOverlap_C(const void* noise_stripes_buffer, int width,
 
 template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageLuma_C(
-    const void* noise_image_ptr, int min_value, int max_luma, int scaling_shift,
-    int width, int height, int start_height,
+    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_luma,
+    int scaling_shift, int width, int height, int start_height,
     const uint8_t scaling_lut_y[kScalingLookupTableSize],
-    const void* source_plane_y, ptrdiff_t source_stride_y, void* dest_plane_y,
-    ptrdiff_t dest_stride_y) {
+    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
+    void* LIBGAV1_RESTRICT dest_plane_y, ptrdiff_t dest_stride_y) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y = static_cast<const Pixel*>(source_plane_y);
@@ -524,13 +526,13 @@ void BlendNoiseWithImageLuma_C(
 // This function is for the case params_.chroma_scaling_from_luma == false.
 template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageChroma_C(
-    Plane plane, const FilmGrainParams& params, const void* noise_image_ptr,
-    int min_value, int max_chroma, int width, int height, int start_height,
-    int subsampling_x, int subsampling_y,
-    const uint8_t scaling_lut_uv[kScalingLookupTableSize],
-    const void* source_plane_y, ptrdiff_t source_stride_y,
-    const void* source_plane_uv, ptrdiff_t source_stride_uv,
-    void* dest_plane_uv, ptrdiff_t dest_stride_uv) {
+    Plane plane, const FilmGrainParams& params,
+    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
+    int width, int height, int start_height, int subsampling_x,
+    int subsampling_y, const uint8_t scaling_lut_uv[kScalingLookupTableSize],
+    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
+    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
+    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
 
@@ -586,13 +588,13 @@ void BlendNoiseWithImageChroma_C(
 // This further implies that scaling_lut_u == scaling_lut_v == scaling_lut_y.
 template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageChromaWithCfl_C(
-    Plane plane, const FilmGrainParams& params, const void* noise_image_ptr,
-    int min_value, int max_chroma, int width, int height, int start_height,
-    int subsampling_x, int subsampling_y,
-    const uint8_t scaling_lut[kScalingLookupTableSize],
-    const void* source_plane_y, ptrdiff_t source_stride_y,
-    const void* source_plane_uv, ptrdiff_t source_stride_uv,
-    void* dest_plane_uv, ptrdiff_t dest_stride_uv) {
+    Plane plane, const FilmGrainParams& params,
+    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
+    int width, int height, int start_height, int subsampling_x,
+    int subsampling_y, const uint8_t scaling_lut[kScalingLookupTableSize],
+    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
+    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
+    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y = static_cast<const Pixel*>(source_plane_y);

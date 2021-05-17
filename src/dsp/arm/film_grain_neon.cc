@@ -84,8 +84,10 @@ inline int32x4x2_t AccumulateWeightedGrain(const int16x8_t grain_lo,
 // compute pixels that come after in the row, we have to finish the calculations
 // one at a time.
 template <int bitdepth, int auto_regression_coeff_lag, int lane>
-inline void WriteFinalAutoRegression(int8_t* grain_cursor, int32x4x2_t sum,
-                                     const int8_t* coeffs, int pos, int shift) {
+inline void WriteFinalAutoRegression(int8_t* LIBGAV1_RESTRICT grain_cursor,
+                                     int32x4x2_t sum,
+                                     const int8_t* LIBGAV1_RESTRICT coeffs,
+                                     int pos, int shift) {
   int32_t result = vgetq_lane_s32(sum.val[lane >> 2], lane & 3);
 
   for (int delta_col = -auto_regression_coeff_lag; delta_col < 0; ++delta_col) {
@@ -99,8 +101,10 @@ inline void WriteFinalAutoRegression(int8_t* grain_cursor, int32x4x2_t sum,
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 template <int bitdepth, int auto_regression_coeff_lag, int lane>
-inline void WriteFinalAutoRegression(int16_t* grain_cursor, int32x4x2_t sum,
-                                     const int8_t* coeffs, int pos, int shift) {
+inline void WriteFinalAutoRegression(int16_t* LIBGAV1_RESTRICT grain_cursor,
+                                     int32x4x2_t sum,
+                                     const int8_t* LIBGAV1_RESTRICT coeffs,
+                                     int pos, int shift) {
   int32_t result = vgetq_lane_s32(sum.val[lane >> 2], lane & 3);
 
   for (int delta_col = -auto_regression_coeff_lag; delta_col < 0; ++delta_col) {
@@ -117,12 +121,11 @@ inline void WriteFinalAutoRegression(int16_t* grain_cursor, int32x4x2_t sum,
 // compute pixels that come after in the row, we have to finish the calculations
 // one at a time.
 template <int bitdepth, int auto_regression_coeff_lag, int lane>
-inline void WriteFinalAutoRegressionChroma(int8_t* u_grain_cursor,
-                                           int8_t* v_grain_cursor,
-                                           int32x4x2_t sum_u, int32x4x2_t sum_v,
-                                           const int8_t* coeffs_u,
-                                           const int8_t* coeffs_v, int pos,
-                                           int shift) {
+inline void WriteFinalAutoRegressionChroma(
+    int8_t* LIBGAV1_RESTRICT u_grain_cursor,
+    int8_t* LIBGAV1_RESTRICT v_grain_cursor, int32x4x2_t sum_u,
+    int32x4x2_t sum_v, const int8_t* LIBGAV1_RESTRICT coeffs_u,
+    const int8_t* LIBGAV1_RESTRICT coeffs_v, int pos, int shift) {
   WriteFinalAutoRegression<bitdepth, auto_regression_coeff_lag, lane>(
       u_grain_cursor, sum_u, coeffs_u, pos, shift);
   WriteFinalAutoRegression<bitdepth, auto_regression_coeff_lag, lane>(
@@ -131,12 +134,11 @@ inline void WriteFinalAutoRegressionChroma(int8_t* u_grain_cursor,
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 template <int bitdepth, int auto_regression_coeff_lag, int lane>
-inline void WriteFinalAutoRegressionChroma(int16_t* u_grain_cursor,
-                                           int16_t* v_grain_cursor,
-                                           int32x4x2_t sum_u, int32x4x2_t sum_v,
-                                           const int8_t* coeffs_u,
-                                           const int8_t* coeffs_v, int pos,
-                                           int shift) {
+inline void WriteFinalAutoRegressionChroma(
+    int16_t* LIBGAV1_RESTRICT u_grain_cursor,
+    int16_t* LIBGAV1_RESTRICT v_grain_cursor, int32x4x2_t sum_u,
+    int32x4x2_t sum_v, const int8_t* LIBGAV1_RESTRICT coeffs_u,
+    const int8_t* LIBGAV1_RESTRICT coeffs_v, int pos, int shift) {
   WriteFinalAutoRegression<bitdepth, auto_regression_coeff_lag, lane>(
       u_grain_cursor, sum_u, coeffs_u, pos, shift);
   WriteFinalAutoRegression<bitdepth, auto_regression_coeff_lag, lane>(
@@ -224,12 +226,11 @@ inline uint16x8_t GetAverageLuma(const uint16_t* const luma,
 
 template <int bitdepth, typename GrainType, int auto_regression_coeff_lag,
           bool use_luma>
-void ApplyAutoRegressiveFilterToChromaGrains_NEON(const FilmGrainParams& params,
-                                                  const void* luma_grain_buffer,
-                                                  int subsampling_x,
-                                                  int subsampling_y,
-                                                  void* u_grain_buffer,
-                                                  void* v_grain_buffer) {
+void ApplyAutoRegressiveFilterToChromaGrains_NEON(
+    const FilmGrainParams& params,
+    const void* LIBGAV1_RESTRICT luma_grain_buffer, int subsampling_x,
+    int subsampling_y, void* LIBGAV1_RESTRICT u_grain_buffer,
+    void* LIBGAV1_RESTRICT v_grain_buffer) {
   static_assert(auto_regression_coeff_lag <= 3, "Invalid autoregression lag.");
   const auto* luma_grain = static_cast<const GrainType*>(luma_grain_buffer);
   auto* u_grain = static_cast<GrainType*>(u_grain_buffer);
@@ -686,11 +687,11 @@ inline int16x8_t ScaleNoise(const int16x8_t noise, const int16x8_t scaling,
 
 template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageLuma_NEON(
-    const void* noise_image_ptr, int min_value, int max_luma, int scaling_shift,
-    int width, int height, int start_height,
+    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_luma,
+    int scaling_shift, int width, int height, int start_height,
     const uint8_t scaling_lut_y[kScalingLookupTableSize],
-    const void* source_plane_y, ptrdiff_t source_stride_y, void* dest_plane_y,
-    ptrdiff_t dest_stride_y) {
+    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
+    void* LIBGAV1_RESTRICT dest_plane_y, ptrdiff_t dest_stride_y) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y_row = static_cast<const Pixel*>(source_plane_y);
@@ -741,9 +742,10 @@ void BlendNoiseWithImageLuma_NEON(
 
 template <int bitdepth, typename GrainType, typename Pixel>
 inline int16x8_t BlendChromaValsWithCfl(
-    const Pixel* average_luma_buffer,
+    const Pixel* LIBGAV1_RESTRICT average_luma_buffer,
     const uint8_t scaling_lut[kScalingLookupTableSize],
-    const Pixel* chroma_cursor, const GrainType* noise_image_cursor,
+    const Pixel* LIBGAV1_RESTRICT chroma_cursor,
+    const GrainType* LIBGAV1_RESTRICT noise_image_cursor,
     const int16x8_t scaling_shift_vect16,
     const int32x4_t scaling_shift_vect32) {
   const int16x8_t scaling =
@@ -763,10 +765,10 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
     const Array2D<GrainType>& noise_image, int min_value, int max_chroma,
     int width, int height, int start_height, int subsampling_x,
     int subsampling_y, int scaling_shift,
-    const uint8_t scaling_lut[kScalingLookupTableSize], const Pixel* in_y_row,
-    ptrdiff_t source_stride_y, const Pixel* in_chroma_row,
-    ptrdiff_t source_stride_chroma, Pixel* out_chroma_row,
-    ptrdiff_t dest_stride) {
+    const uint8_t scaling_lut[kScalingLookupTableSize],
+    const Pixel* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
+    const Pixel* LIBGAV1_RESTRICT in_chroma_row, ptrdiff_t source_stride_chroma,
+    Pixel* LIBGAV1_RESTRICT out_chroma_row, ptrdiff_t dest_stride) {
   const int16x8_t floor = vdupq_n_s16(min_value);
   const int16x8_t ceiling = vdupq_n_s16(max_chroma);
   Pixel luma_buffer[16];
@@ -842,13 +844,13 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
 // This further implies that scaling_lut_u == scaling_lut_v == scaling_lut_y.
 template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageChromaWithCfl_NEON(
-    Plane plane, const FilmGrainParams& params, const void* noise_image_ptr,
-    int min_value, int max_chroma, int width, int height, int start_height,
-    int subsampling_x, int subsampling_y,
-    const uint8_t scaling_lut[kScalingLookupTableSize],
-    const void* source_plane_y, ptrdiff_t source_stride_y,
-    const void* source_plane_uv, ptrdiff_t source_stride_uv,
-    void* dest_plane_uv, ptrdiff_t dest_stride_uv) {
+    Plane plane, const FilmGrainParams& params,
+    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
+    int width, int height, int start_height, int subsampling_x,
+    int subsampling_y, const uint8_t scaling_lut[kScalingLookupTableSize],
+    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
+    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
+    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y = static_cast<const Pixel*>(source_plane_y);
@@ -873,7 +875,8 @@ namespace {
 
 inline int16x8_t BlendChromaValsNoCfl(
     const uint8_t scaling_lut[kScalingLookupTableSize],
-    const uint8_t* chroma_cursor, const int8_t* noise_image_cursor,
+    const uint8_t* LIBGAV1_RESTRICT chroma_cursor,
+    const int8_t* LIBGAV1_RESTRICT noise_image_cursor,
     const int16x8_t& average_luma, const int16x8_t& scaling_shift_vect,
     const int16x8_t& offset, int luma_multiplier, int chroma_multiplier) {
   uint8_t merged_buffer[8];
@@ -898,9 +901,10 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
     int width, int height, int start_height, int subsampling_x,
     int subsampling_y, int scaling_shift, int chroma_offset,
     int chroma_multiplier, int luma_multiplier,
-    const uint8_t scaling_lut[kScalingLookupTableSize], const uint8_t* in_y_row,
-    ptrdiff_t source_stride_y, const uint8_t* in_chroma_row,
-    ptrdiff_t source_stride_chroma, uint8_t* out_chroma_row,
+    const uint8_t scaling_lut[kScalingLookupTableSize],
+    const uint8_t* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
+    const uint8_t* LIBGAV1_RESTRICT in_chroma_row,
+    ptrdiff_t source_stride_chroma, uint8_t* LIBGAV1_RESTRICT out_chroma_row,
     ptrdiff_t dest_stride) {
   const int16x8_t floor = vdupq_n_s16(min_value);
   const int16x8_t ceiling = vdupq_n_s16(max_chroma);
@@ -963,13 +967,13 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
 
 // This function is for the case params_.chroma_scaling_from_luma == false.
 void BlendNoiseWithImageChroma8bpp_NEON(
-    Plane plane, const FilmGrainParams& params, const void* noise_image_ptr,
-    int min_value, int max_chroma, int width, int height, int start_height,
-    int subsampling_x, int subsampling_y,
-    const uint8_t scaling_lut[kScalingLookupTableSize],
-    const void* source_plane_y, ptrdiff_t source_stride_y,
-    const void* source_plane_uv, ptrdiff_t source_stride_uv,
-    void* dest_plane_uv, ptrdiff_t dest_stride_uv) {
+    Plane plane, const FilmGrainParams& params,
+    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
+    int width, int height, int start_height, int subsampling_x,
+    int subsampling_y, const uint8_t scaling_lut[kScalingLookupTableSize],
+    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
+    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
+    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
   assert(plane == kPlaneU || plane == kPlaneV);
   const auto* noise_image =
       static_cast<const Array2D<int8_t>*>(noise_image_ptr);
@@ -989,12 +993,11 @@ void BlendNoiseWithImageChroma8bpp_NEON(
                             in_uv, source_stride_uv, out_uv, dest_stride_uv);
 }
 
-inline void WriteOverlapLine8bpp_NEON(const int8_t* noise_stripe_row,
-                                      const int8_t* noise_stripe_row_prev,
-                                      int plane_width,
-                                      const int8x8_t grain_coeff,
-                                      const int8x8_t old_coeff,
-                                      int8_t* noise_image_row) {
+inline void WriteOverlapLine8bpp_NEON(
+    const int8_t* LIBGAV1_RESTRICT noise_stripe_row,
+    const int8_t* LIBGAV1_RESTRICT noise_stripe_row_prev, int plane_width,
+    const int8x8_t grain_coeff, const int8x8_t old_coeff,
+    int8_t* LIBGAV1_RESTRICT noise_image_row) {
   int x = 0;
   do {
     // Note that these reads may exceed noise_stripe_row's width by up to 7
@@ -1009,10 +1012,10 @@ inline void WriteOverlapLine8bpp_NEON(const int8_t* noise_stripe_row,
   } while (x < plane_width);
 }
 
-void ConstructNoiseImageOverlap8bpp_NEON(const void* noise_stripes_buffer,
-                                         int width, int height,
-                                         int subsampling_x, int subsampling_y,
-                                         void* noise_image_buffer) {
+void ConstructNoiseImageOverlap8bpp_NEON(
+    const void* LIBGAV1_RESTRICT noise_stripes_buffer, int width, int height,
+    int subsampling_x, int subsampling_y,
+    void* LIBGAV1_RESTRICT noise_image_buffer) {
   const auto* noise_stripes =
       static_cast<const Array2DView<int8_t>*>(noise_stripes_buffer);
   auto* noise_image = static_cast<Array2D<int8_t>*>(noise_image_buffer);
