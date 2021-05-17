@@ -38,8 +38,9 @@ namespace {
 constexpr int kRoundingBits8bpp = 4;
 
 template <bool mask_is_inverse>
-inline void WeightMask8_NEON(const int16_t* prediction_0,
-                             const int16_t* prediction_1, uint8_t* mask) {
+inline void WeightMask8_NEON(const int16_t* LIBGAV1_RESTRICT prediction_0,
+                             const int16_t* LIBGAV1_RESTRICT prediction_1,
+                             uint8_t* LIBGAV1_RESTRICT mask) {
   const int16x8_t pred_0 = vld1q_s16(prediction_0);
   const int16x8_t pred_1 = vld1q_s16(prediction_1);
   const uint8x8_t difference_offset = vdup_n_u8(38);
@@ -67,8 +68,9 @@ inline void WeightMask8_NEON(const int16_t* prediction_0,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask8x8_NEON(const void* prediction_0, const void* prediction_1,
-                        uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask8x8_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                        const void* LIBGAV1_RESTRICT prediction_1,
+                        uint8_t* LIBGAV1_RESTRICT mask, ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y = 0;
@@ -79,8 +81,10 @@ void WeightMask8x8_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask8x16_NEON(const void* prediction_0, const void* prediction_1,
-                         uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask8x16_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -93,8 +97,10 @@ void WeightMask8x16_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask8x32_NEON(const void* prediction_0, const void* prediction_1,
-                         uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask8x32_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 0;
@@ -120,8 +126,10 @@ void WeightMask8x32_NEON(const void* prediction_0, const void* prediction_1,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask16x8_NEON(const void* prediction_0, const void* prediction_1,
-                         uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask16x8_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y = 0;
@@ -132,8 +140,10 @@ void WeightMask16x8_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x16_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask16x16_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -146,8 +156,10 @@ void WeightMask16x16_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x32_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask16x32_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 0;
@@ -163,8 +175,10 @@ void WeightMask16x32_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x64_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask16x64_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -189,8 +203,10 @@ void WeightMask16x64_NEON(const void* prediction_0, const void* prediction_1,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask32x8_NEON(const void* prediction_0, const void* prediction_1,
-                         uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask32x8_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   WEIGHT32_AND_STRIDE;
@@ -204,8 +220,10 @@ void WeightMask32x8_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x16_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask32x16_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -218,8 +236,10 @@ void WeightMask32x16_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x32_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask32x32_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 0;
@@ -235,8 +255,10 @@ void WeightMask32x32_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x64_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask32x64_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -265,8 +287,10 @@ void WeightMask32x64_NEON(const void* prediction_0, const void* prediction_1,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask64x16_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask64x16_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -279,8 +303,10 @@ void WeightMask64x16_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x32_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask64x32_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 0;
@@ -296,8 +322,10 @@ void WeightMask64x32_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x64_NEON(const void* prediction_0, const void* prediction_1,
-                          uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask64x64_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -310,8 +338,10 @@ void WeightMask64x64_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x128_NEON(const void* prediction_0, const void* prediction_1,
-                           uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask64x128_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                           const void* LIBGAV1_RESTRICT prediction_1,
+                           uint8_t* LIBGAV1_RESTRICT mask,
+                           ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -325,8 +355,10 @@ void WeightMask64x128_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask128x64_NEON(const void* prediction_0, const void* prediction_1,
-                           uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask128x64_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                           const void* LIBGAV1_RESTRICT prediction_1,
+                           uint8_t* LIBGAV1_RESTRICT mask,
+                           ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -367,8 +399,10 @@ void WeightMask128x64_NEON(const void* prediction_0, const void* prediction_1,
 }
 
 template <bool mask_is_inverse>
-void WeightMask128x128_NEON(const void* prediction_0, const void* prediction_1,
-                            uint8_t* mask, ptrdiff_t mask_stride) {
+void WeightMask128x128_NEON(const void* LIBGAV1_RESTRICT prediction_0,
+                            const void* LIBGAV1_RESTRICT prediction_1,
+                            uint8_t* LIBGAV1_RESTRICT mask,
+                            ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
