@@ -578,7 +578,6 @@ using DistanceWeightedBlendFunc = void (*)(const void* prediction_0,
 // compound average prediction), the valid range is [8x8, 128x128].
 // If there's subsampling, the corresponding width and height are halved for
 // chroma planes.
-// |subsampling_x|, |subsampling_y| are the subsampling factors.
 // |is_inter_intra| stands for the prediction mode. If it is true, one of the
 // prediction blocks is from intra prediction of current frame. Otherwise, two
 // prediction blocks are both inter frame predictions.
