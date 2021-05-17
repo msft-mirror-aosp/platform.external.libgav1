@@ -532,8 +532,8 @@ void Adst4DcOnly_C(void* dest, int8_t range, bool should_round, int row_shift,
 }
 
 template <typename Residual>
-void AdstInputPermutation(int32_t* const dst, const Residual* const src,
-                          int n) {
+void AdstInputPermutation(int32_t* LIBGAV1_RESTRICT const dst,
+                          const Residual* LIBGAV1_RESTRICT const src, int n) {
   assert(n == 8 || n == 16);
   for (int i = 0; i < n; ++i) {
     dst[i] = src[((i & 1) == 0) ? n - i - 1 : i - 1];
@@ -544,8 +544,8 @@ constexpr int8_t kAdstOutputPermutationLookup[16] = {
     0, 8, 12, 4, 6, 14, 10, 2, 3, 11, 15, 7, 5, 13, 9, 1};
 
 template <typename Residual>
-void AdstOutputPermutation(Residual* const dst, const int32_t* const src,
-                           int n) {
+void AdstOutputPermutation(Residual* LIBGAV1_RESTRICT const dst,
+                           const int32_t* LIBGAV1_RESTRICT const src, int n) {
   assert(n == 8 || n == 16);
   const auto shift = static_cast<int8_t>(n == 8);
   for (int i = 0; i < n; ++i) {
@@ -1106,8 +1106,9 @@ template <int bitdepth, typename Residual, typename Pixel,
           InverseTransformDcOnlyFunc dconly_transform1d,
           InverseTransform1DFunc transform1d_func, bool is_row>
 void TransformLoop_C(TransformType tx_type, TransformSize tx_size,
-                     int adjusted_tx_height, void* src_buffer, int start_x,
-                     int start_y, void* dst_frame) {
+                     int adjusted_tx_height, void* LIBGAV1_RESTRICT src_buffer,
+                     int start_x, int start_y,
+                     void* LIBGAV1_RESTRICT dst_frame) {
   constexpr bool lossless = transform1d_type == k1DTransformWht;
   constexpr bool is_identity = transform1d_type == k1DTransformIdentity;
   // The transform size of the WHT is always 4x4. Setting tx_width and

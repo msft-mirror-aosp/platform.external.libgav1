@@ -1805,9 +1805,10 @@ LIBGAV1_ALWAYS_INLINE bool Identity4DcOnly(void* dest, int adjusted_tx_height,
 template <int identity_size>
 LIBGAV1_ALWAYS_INLINE void IdentityColumnStoreToFrame(
     Array2DView<uint8_t> frame, const int start_x, const int start_y,
-    const int tx_width, const int tx_height, const int16_t* source) {
+    const int tx_width, const int tx_height,
+    const int16_t* LIBGAV1_RESTRICT source) {
   const int stride = frame.columns();
-  uint8_t* dst = frame[start_y] + start_x;
+  uint8_t* LIBGAV1_RESTRICT dst = frame[start_y] + start_x;
 
   if (identity_size < 32) {
     if (tx_width == 4) {
@@ -1891,9 +1892,10 @@ LIBGAV1_ALWAYS_INLINE void IdentityColumnStoreToFrame(
 
 LIBGAV1_ALWAYS_INLINE void Identity4RowColumnStoreToFrame(
     Array2DView<uint8_t> frame, const int start_x, const int start_y,
-    const int tx_width, const int tx_height, const int16_t* source) {
+    const int tx_width, const int tx_height,
+    const int16_t* LIBGAV1_RESTRICT source) {
   const int stride = frame.columns();
-  uint8_t* dst = frame[start_y] + start_x;
+  uint8_t* LIBGAV1_RESTRICT dst = frame[start_y] + start_x;
 
   if (tx_width == 4) {
     uint8x8_t frame_data = vdup_n_u8(0);
@@ -2106,8 +2108,9 @@ LIBGAV1_ALWAYS_INLINE void TransposeAndPermute4x4WideInput(
 }
 
 // Process 4 wht4 rows and columns.
-LIBGAV1_ALWAYS_INLINE void Wht4_NEON(uint8_t* dst, const int dst_stride,
-                                     const void* source,
+LIBGAV1_ALWAYS_INLINE void Wht4_NEON(uint8_t* LIBGAV1_RESTRICT dst,
+                                     const int dst_stride,
+                                     const void* LIBGAV1_RESTRICT source,
                                      const int adjusted_tx_height) {
   const auto* const src = static_cast<const int16_t*>(source);
   int16x4_t s[4];
@@ -2273,11 +2276,12 @@ LIBGAV1_ALWAYS_INLINE void RowShift(int16_t* source, int num_rows,
 template <int tx_height, bool enable_flip_rows = false>
 LIBGAV1_ALWAYS_INLINE void StoreToFrameWithRound(
     Array2DView<uint8_t> frame, const int start_x, const int start_y,
-    const int tx_width, const int16_t* source, TransformType tx_type) {
+    const int tx_width, const int16_t* LIBGAV1_RESTRICT source,
+    TransformType tx_type) {
   const bool flip_rows =
       enable_flip_rows ? kTransformFlipRowsMask.Contains(tx_type) : false;
   const int stride = frame.columns();
-  uint8_t* dst = frame[start_y] + start_x;
+  uint8_t* LIBGAV1_RESTRICT dst = frame[start_y] + start_x;
 
   // Enable for 4x4, 4x8, 4x16
   if (tx_height < 32 && tx_width == 4) {
@@ -2368,8 +2372,10 @@ void Dct4TransformLoopRow_NEON(TransformType /*tx_type*/, TransformSize tx_size,
 }
 
 void Dct4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                  int adjusted_tx_height, void* src_buffer,
-                                  int start_x, int start_y, void* dst_frame) {
+                                  int adjusted_tx_height,
+                                  void* LIBGAV1_RESTRICT src_buffer,
+                                  int start_x, int start_y,
+                                  void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2435,8 +2441,10 @@ void Dct8TransformLoopRow_NEON(TransformType /*tx_type*/, TransformSize tx_size,
 }
 
 void Dct8TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                  int adjusted_tx_height, void* src_buffer,
-                                  int start_x, int start_y, void* dst_frame) {
+                                  int adjusted_tx_height,
+                                  void* LIBGAV1_RESTRICT src_buffer,
+                                  int start_x, int start_y,
+                                  void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2497,8 +2505,10 @@ void Dct16TransformLoopRow_NEON(TransformType /*tx_type*/,
 }
 
 void Dct16TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                   int adjusted_tx_height, void* src_buffer,
-                                   int start_x, int start_y, void* dst_frame) {
+                                   int adjusted_tx_height,
+                                   void* LIBGAV1_RESTRICT src_buffer,
+                                   int start_x, int start_y,
+                                   void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2551,8 +2561,10 @@ void Dct32TransformLoopRow_NEON(TransformType /*tx_type*/,
 }
 
 void Dct32TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                   int adjusted_tx_height, void* src_buffer,
-                                   int start_x, int start_y, void* dst_frame) {
+                                   int adjusted_tx_height,
+                                   void* LIBGAV1_RESTRICT src_buffer,
+                                   int start_x, int start_y,
+                                   void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2594,8 +2606,10 @@ void Dct64TransformLoopRow_NEON(TransformType /*tx_type*/,
 }
 
 void Dct64TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                   int adjusted_tx_height, void* src_buffer,
-                                   int start_x, int start_y, void* dst_frame) {
+                                   int adjusted_tx_height,
+                                   void* LIBGAV1_RESTRICT src_buffer,
+                                   int start_x, int start_y,
+                                   void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2645,8 +2659,10 @@ void Adst4TransformLoopRow_NEON(TransformType /*tx_type*/,
 }
 
 void Adst4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                   int adjusted_tx_height, void* src_buffer,
-                                   int start_x, int start_y, void* dst_frame) {
+                                   int adjusted_tx_height,
+                                   void* LIBGAV1_RESTRICT src_buffer,
+                                   int start_x, int start_y,
+                                   void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2707,8 +2723,10 @@ void Adst8TransformLoopRow_NEON(TransformType /*tx_type*/,
 }
 
 void Adst8TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                   int adjusted_tx_height, void* src_buffer,
-                                   int start_x, int start_y, void* dst_frame) {
+                                   int adjusted_tx_height,
+                                   void* LIBGAV1_RESTRICT src_buffer,
+                                   int start_x, int start_y,
+                                   void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2771,8 +2789,10 @@ void Adst16TransformLoopRow_NEON(TransformType /*tx_type*/,
 
 void Adst16TransformLoopColumn_NEON(TransformType tx_type,
                                     TransformSize tx_size,
-                                    int adjusted_tx_height, void* src_buffer,
-                                    int start_x, int start_y, void* dst_frame) {
+                                    int adjusted_tx_height,
+                                    void* LIBGAV1_RESTRICT src_buffer,
+                                    int start_x, int start_y,
+                                    void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2844,9 +2864,10 @@ void Identity4TransformLoopRow_NEON(TransformType tx_type,
 
 void Identity4TransformLoopColumn_NEON(TransformType tx_type,
                                        TransformSize tx_size,
-                                       int adjusted_tx_height, void* src_buffer,
+                                       int adjusted_tx_height,
+                                       void* LIBGAV1_RESTRICT src_buffer,
                                        int start_x, int start_y,
-                                       void* dst_frame) {
+                                       void* LIBGAV1_RESTRICT dst_frame) {
   auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
@@ -2919,9 +2940,10 @@ void Identity8TransformLoopRow_NEON(TransformType tx_type,
 
 void Identity8TransformLoopColumn_NEON(TransformType tx_type,
                                        TransformSize tx_size,
-                                       int adjusted_tx_height, void* src_buffer,
+                                       int adjusted_tx_height,
+                                       void* LIBGAV1_RESTRICT src_buffer,
                                        int start_x, int start_y,
-                                       void* dst_frame) {
+                                       void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -2960,8 +2982,9 @@ void Identity16TransformLoopRow_NEON(TransformType /*tx_type*/,
 void Identity16TransformLoopColumn_NEON(TransformType tx_type,
                                         TransformSize tx_size,
                                         int adjusted_tx_height,
-                                        void* src_buffer, int start_x,
-                                        int start_y, void* dst_frame) {
+                                        void* LIBGAV1_RESTRICT src_buffer,
+                                        int start_x, int start_y,
+                                        void* LIBGAV1_RESTRICT dst_frame) {
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
 
@@ -3007,8 +3030,9 @@ void Identity32TransformLoopRow_NEON(TransformType /*tx_type*/,
 void Identity32TransformLoopColumn_NEON(TransformType /*tx_type*/,
                                         TransformSize tx_size,
                                         int adjusted_tx_height,
-                                        void* src_buffer, int start_x,
-                                        int start_y, void* dst_frame) {
+                                        void* LIBGAV1_RESTRICT src_buffer,
+                                        int start_x, int start_y,
+                                        void* LIBGAV1_RESTRICT dst_frame) {
   auto& frame = *static_cast<Array2DView<uint8_t>*>(dst_frame);
   auto* src = static_cast<int16_t*>(src_buffer);
   const int tx_width = kTransformWidth[tx_size];
@@ -3029,8 +3053,10 @@ void Wht4TransformLoopRow_NEON(TransformType tx_type, TransformSize tx_size,
 }
 
 void Wht4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
-                                  int adjusted_tx_height, void* src_buffer,
-                                  int start_x, int start_y, void* dst_frame) {
+                                  int adjusted_tx_height,
+                                  void* LIBGAV1_RESTRICT src_buffer,
+                                  int start_x, int start_y,
+                                  void* LIBGAV1_RESTRICT dst_frame) {
   assert(tx_type == kTransformTypeDctDct);
   assert(tx_size == kTransformSize4x4);
   static_cast<void>(tx_type);
