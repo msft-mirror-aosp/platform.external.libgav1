@@ -49,14 +49,12 @@ inline void WriteObmcLine4(uint8_t* LIBGAV1_RESTRICT const pred,
 }
 
 template <bool from_left>
-inline void OverlapBlend2xH_NEON(
-    uint8_t* LIBGAV1_RESTRICT const prediction,
-    const ptrdiff_t prediction_stride, const int height,
-    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
-    const ptrdiff_t obmc_prediction_stride) {
-  uint8_t* pred = prediction;
+inline void OverlapBlend2xH_NEON(uint8_t* LIBGAV1_RESTRICT pred,
+                                 const ptrdiff_t prediction_stride,
+                                 const int height,
+                                 const uint8_t* LIBGAV1_RESTRICT obmc_pred,
+                                 const ptrdiff_t obmc_prediction_stride) {
   const uint8x8_t mask_inverter = vdup_n_u8(64);
-  const uint8_t* obmc_pred = obmc_prediction;
   uint8x8_t pred_mask;
   uint8x8_t obmc_pred_mask;
   int compute_height;
@@ -90,13 +88,9 @@ inline void OverlapBlend2xH_NEON(
 }
 
 inline void OverlapBlendFromLeft4xH_NEON(
-    uint8_t* LIBGAV1_RESTRICT const prediction,
-    const ptrdiff_t prediction_stride, const int height,
-    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const int height, const uint8_t* LIBGAV1_RESTRICT obmc_pred,
     const ptrdiff_t obmc_prediction_stride) {
-  uint8_t* pred = prediction;
-  const uint8_t* obmc_pred = obmc_prediction;
-
   const uint8x8_t mask_inverter = vdup_n_u8(64);
   const uint8x8_t pred_mask = Load4(kObmcMask + 2);
   // 64 - mask
@@ -116,12 +110,9 @@ inline void OverlapBlendFromLeft4xH_NEON(
 }
 
 inline void OverlapBlendFromLeft8xH_NEON(
-    uint8_t* LIBGAV1_RESTRICT const prediction,
-    const ptrdiff_t prediction_stride, const int height,
-    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const int height, const uint8_t* LIBGAV1_RESTRICT obmc_pred,
     const ptrdiff_t obmc_prediction_stride) {
-  uint8_t* pred = prediction;
-  const uint8_t* obmc_pred = obmc_prediction;
   const uint8x8_t mask_inverter = vdup_n_u8(64);
   const uint8x8_t pred_mask = vld1_u8(kObmcMask + 6);
   // 64 - mask
@@ -198,12 +189,9 @@ void OverlapBlendFromLeft_NEON(
 }
 
 inline void OverlapBlendFromTop4x4_NEON(
-    uint8_t* LIBGAV1_RESTRICT const prediction,
-    const ptrdiff_t prediction_stride,
-    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const uint8_t* LIBGAV1_RESTRICT obmc_pred,
     const ptrdiff_t obmc_prediction_stride, const int height) {
-  uint8_t* pred = prediction;
-  const uint8_t* obmc_pred = obmc_prediction;
   uint8x8_t pred_mask = vdup_n_u8(kObmcMask[height - 2]);
   const uint8x8_t mask_inverter = vdup_n_u8(64);
   uint8x8_t obmc_pred_mask = vsub_u8(mask_inverter, pred_mask);
@@ -227,17 +215,14 @@ inline void OverlapBlendFromTop4x4_NEON(
 }
 
 inline void OverlapBlendFromTop4xH_NEON(
-    uint8_t* LIBGAV1_RESTRICT const prediction,
-    const ptrdiff_t prediction_stride, const int height,
-    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const int height, const uint8_t* LIBGAV1_RESTRICT obmc_pred,
     const ptrdiff_t obmc_prediction_stride) {
   if (height < 8) {
-    OverlapBlendFromTop4x4_NEON(prediction, prediction_stride, obmc_prediction,
+    OverlapBlendFromTop4x4_NEON(pred, prediction_stride, obmc_pred,
                                 obmc_prediction_stride, height);
     return;
   }
-  uint8_t* pred = prediction;
-  const uint8_t* obmc_pred = obmc_prediction;
   const uint8_t* mask = kObmcMask + height - 2;
   const uint8x8_t mask_inverter = vdup_n_u8(64);
   int y = 0;
@@ -286,12 +271,9 @@ inline void OverlapBlendFromTop4xH_NEON(
 }
 
 inline void OverlapBlendFromTop8xH_NEON(
-    uint8_t* LIBGAV1_RESTRICT const prediction,
-    const ptrdiff_t prediction_stride, const int height,
-    const uint8_t* LIBGAV1_RESTRICT const obmc_prediction,
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const int height, const uint8_t* LIBGAV1_RESTRICT obmc_pred,
     const ptrdiff_t obmc_prediction_stride) {
-  uint8_t* pred = prediction;
-  const uint8_t* obmc_pred = obmc_prediction;
   const uint8x8_t mask_inverter = vdup_n_u8(64);
   const uint8_t* mask = kObmcMask + height - 2;
   const int compute_height = height - (height >> 2);
