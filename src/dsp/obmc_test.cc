@@ -42,7 +42,7 @@ namespace {
 #include "src/dsp/obmc.inc"
 
 constexpr int kMaxBlendingBlockSize = 64;
-constexpr int kNumSpeedTests = 1000000;
+constexpr int kNumSpeedTests = 2e8;
 
 const char* GetDigest8bpp(int id) {
   static const char* const kDigest[] = {
@@ -301,9 +301,8 @@ TEST_P(ObmcBlendTest8bpp, Blending) {
 }
 
 TEST_P(ObmcBlendTest8bpp, DISABLED_Speed) {
-  TestSpeed(
-      GetDigestSpeed8bpp(GetDigestId()),
-      (kNumSpeedTests * 32 * 32) / (GetParam().height * GetParam().width));
+  TestSpeed(GetDigestSpeed8bpp(GetDigestId()),
+            kNumSpeedTests / (GetParam().height * GetParam().width));
 }
 
 INSTANTIATE_TEST_SUITE_P(C, ObmcBlendTest8bpp,
@@ -331,9 +330,8 @@ TEST_P(ObmcBlendTest10bpp, Blending) {
 }
 
 TEST_P(ObmcBlendTest10bpp, DISABLED_Speed) {
-  TestSpeed(
-      GetDigestSpeed10bpp(GetDigestId()),
-      (kNumSpeedTests * 32 * 32) / (GetParam().height * GetParam().width));
+  TestSpeed(GetDigestSpeed10bpp(GetDigestId()),
+            kNumSpeedTests / (GetParam().height * GetParam().width));
 }
 
 INSTANTIATE_TEST_SUITE_P(C, ObmcBlendTest10bpp,
