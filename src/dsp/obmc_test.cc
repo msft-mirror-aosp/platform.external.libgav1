@@ -184,7 +184,7 @@ class ObmcBlendTest : public testing::TestWithParam<ObmcTestParam> {
  private:
   const int width_ = GetParam().width;
   const int height_ = GetParam().height;
-  const int blending_direction_ = GetParam().blending_direction;
+  const ObmcDirection blending_direction_ = GetParam().blending_direction;
   Pixel source1_[kMaxBlendingBlockSize * kMaxBlendingBlockSize] = {};
   Pixel source2_[kMaxBlendingBlockSize * kMaxBlendingBlockSize] = {};
   dsp::ObmcBlendFunc func_;
@@ -223,8 +223,9 @@ void ObmcBlendTest<bitdepth, Pixel>::Test(const char* const digest,
     EXPECT_TRUE(success);
   } else {
     test_utils::CheckMd5Digest(
-        "Obmc", absl::StrFormat("%dx%d", width_, height_).c_str(), digest,
-        source1_, sizeof(source1_), absl::Duration());
+        ToString(blending_direction_),
+        absl::StrFormat("%dx%d", width_, height_).c_str(), digest, source1_,
+        sizeof(source1_), absl::Duration());
   }
 }
 
@@ -256,7 +257,7 @@ void ObmcBlendTest<bitdepth, Pixel>::TestSpeed(const char* const digest,
   }
   memcpy(source1_, dest,
          sizeof(Pixel) * kMaxBlendingBlockSize * kMaxBlendingBlockSize);
-  test_utils::CheckMd5Digest("Obmc",
+  test_utils::CheckMd5Digest(ToString(blending_direction_),
                              absl::StrFormat("%dx%d", width_, height_).c_str(),
                              digest, source1_, sizeof(source1_), elapsed_time);
 }
