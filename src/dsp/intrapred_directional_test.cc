@@ -882,6 +882,7 @@ TEST_P(DirectionalIntraPredTest10bpp, FixedInput) {
 }
 
 TEST_P(DirectionalIntraPredTest10bpp, Overflow) { TestSaturatedValues(); }
+TEST_P(DirectionalIntraPredTest10bpp, Random) { TestRandomValues(); }
 
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
