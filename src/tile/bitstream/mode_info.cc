@@ -299,7 +299,8 @@ bool Tile::ReadSkipMode(const Block& block) {
 void Tile::ReadCdef(const Block& block) {
   BlockParameters& bp = *block.bp;
   if (bp.skip || frame_header_.coded_lossless ||
-      !sequence_header_.enable_cdef || frame_header_.allow_intrabc) {
+      !sequence_header_.enable_cdef || frame_header_.allow_intrabc ||
+      frame_header_.cdef.bits == 0) {
     return;
   }
   const int cdef_size4x4 = kNum4x4BlocksWide[kBlock64x64];
@@ -310,9 +311,7 @@ void Tile::ReadCdef(const Block& block) {
   const int column = DivideBy16(column4x4);
   if (cdef_index_[row][column] == -1) {
     cdef_index_[row][column] =
-        frame_header_.cdef.bits > 0
-            ? static_cast<int8_t>(reader_.ReadLiteral(frame_header_.cdef.bits))
-            : 0;
+        static_cast<int8_t>(reader_.ReadLiteral(frame_header_.cdef.bits));
     for (int i = row4x4; i < row4x4 + block.height4x4; i += cdef_size4x4) {
       for (int j = column4x4; j < column4x4 + block.width4x4;
            j += cdef_size4x4) {

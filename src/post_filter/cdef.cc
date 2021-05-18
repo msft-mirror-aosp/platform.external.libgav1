@@ -591,9 +591,12 @@ void PostFilter::ApplyCdefForOneSuperBlockRowHelper(
     uint16_t* cdef_block, uint8_t border_columns[2][kMaxPlanes][256],
     int row4x4, int block_height4x4) {
   bool use_border_columns[2][2] = {};
+  const bool non_zero_index = frame_header_.cdef.bits > 0;
   for (int column4x4 = 0; column4x4 < frame_header_.columns4x4;
        column4x4 += kStep64x64) {
-    const int index = cdef_index_[DivideBy16(row4x4)][DivideBy16(column4x4)];
+    const int index =
+        non_zero_index ? cdef_index_[DivideBy16(row4x4)][DivideBy16(column4x4)]
+                       : 0;
     const int block_width4x4 =
         std::min(kStep64x64, frame_header_.columns4x4 - column4x4);
 

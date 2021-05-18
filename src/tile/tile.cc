@@ -2389,7 +2389,7 @@ void Tile::ResetLoopRestorationParams() {
 }
 
 void Tile::ResetCdef(const int row4x4, const int column4x4) {
-  if (!sequence_header_.enable_cdef) return;
+  if (frame_header_.cdef.bits == 0) return;
   const int row = DivideBy16(row4x4);
   const int column = DivideBy16(column4x4);
   cdef_index_[row][column] = -1;
