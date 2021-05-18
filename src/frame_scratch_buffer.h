@@ -48,7 +48,7 @@ using IntraPredictionBuffer =
 // DecoderImpl::DecodeTiles().
 struct FrameScratchBuffer {
   LoopRestorationInfo loop_restoration_info;
-  Array2D<int16_t> cdef_index;
+  Array2D<int8_t> cdef_index;
   Array2D<TransformSize> inter_transform_sizes;
   BlockParametersHolder block_parameters_holder;
   TemporalMotionField motion_field;

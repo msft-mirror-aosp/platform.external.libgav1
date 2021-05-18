@@ -735,7 +735,7 @@ class Tile : public Allocable {
   Array2DView<uint8_t> buffer_[kMaxPlanes];
   RefCountedBuffer& current_frame_;
 
-  Array2D<int16_t>& cdef_index_;
+  Array2D<int8_t>& cdef_index_;
   Array2D<TransformSize>& inter_transform_sizes_;
   std::array<RestorationUnitInfo, kMaxPlanes> reference_unit_info_;
   // If |thread_pool_| is nullptr, the calling thread will do the parsing and

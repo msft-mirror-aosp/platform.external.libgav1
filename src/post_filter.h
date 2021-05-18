@@ -478,7 +478,7 @@ class PostFilter {
     int initial_subpixel_x;
     int step;
   } super_res_info_[kMaxPlanes];
-  const Array2D<int16_t>& cdef_index_;
+  const Array2D<int8_t>& cdef_index_;
   const Array2D<TransformSize>& inter_transform_sizes_;
   LoopRestorationInfo* const restoration_info_;
   uint8_t* const superres_coefficients_[kNumPlaneTypes];
