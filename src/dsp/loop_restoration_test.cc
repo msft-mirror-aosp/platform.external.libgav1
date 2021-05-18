@@ -231,7 +231,11 @@ void SelfGuidedFilterTest<bitdepth, Pixel>::TestRandomValues(bool speed) {
   if (target_self_guided_filter_func_ == nullptr) return;
   constexpr int bd_index = (bitdepth == 8) ? 0 : 1;
   const int num_inputs = speed ? 1 : 5;
-  const int num_tests = speed ? 20000 : 1;
+#if LIBGAV1_ENABLE_NEON
+  const int num_tests = speed ? 4000 : 1;
+#else
+  const int num_tests = speed ? 10000 : 1;
+#endif
   libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
   const Pixel* const src = src_ + kOffset;
   Pixel* const dst = dst_ + kOffset;
@@ -487,7 +491,11 @@ void WienerFilterTest<bitdepth, Pixel>::TestRandomValues(bool speed) {
         "3c91bf1a34672cd40bf261c5820d3ec3"}}};
   if (target_wiener_filter_func_ == nullptr) return;
   constexpr int bd_index = (bitdepth == 8) ? 0 : 1;
-  const int num_tests = speed ? 100000 : 1;
+#if LIBGAV1_ENABLE_NEON
+  const int num_tests = speed ? 5000 : 1;
+#else
+  const int num_tests = speed ? 10000 : 1;
+#endif
   const Pixel* const src = src_ + kOffset;
   Pixel* const dst = dst_ + kOffset;
   for (const auto vertical_order : kWienerOrders) {
