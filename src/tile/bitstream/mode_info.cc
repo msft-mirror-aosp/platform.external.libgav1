@@ -303,20 +303,22 @@ void Tile::ReadCdef(const Block& block) {
       frame_header_.cdef.bits == 0) {
     return;
   }
-  const int cdef_size4x4 = kNum4x4BlocksWide[kBlock64x64];
-  const int cdef_mask4x4 = ~(cdef_size4x4 - 1);
-  const int row4x4 = block.row4x4 & cdef_mask4x4;
-  const int column4x4 = block.column4x4 & cdef_mask4x4;
-  const int row = DivideBy16(row4x4);
-  const int column = DivideBy16(column4x4);
-  if (cdef_index_[row][column] == -1) {
-    cdef_index_[row][column] =
+  int8_t* const cdef_index =
+      &cdef_index_[DivideBy16(block.row4x4)][DivideBy16(block.column4x4)];
+  int stride = cdef_index_.columns();
+  if (cdef_index[0] == -1) {
+    cdef_index[0] =
         static_cast<int8_t>(reader_.ReadLiteral(frame_header_.cdef.bits));
-    for (int i = row4x4; i < row4x4 + block.height4x4; i += cdef_size4x4) {
-      for (int j = column4x4; j < column4x4 + block.width4x4;
-           j += cdef_size4x4) {
-        cdef_index_[DivideBy16(i)][DivideBy16(j)] = cdef_index_[row][column];
-      }
+    if (block.size == kBlock128x128) {
+      // This condition is shorthand for block.width4x4 > 16 && block.height4x4
+      // > 16.
+      cdef_index[1] = cdef_index[0];
+      cdef_index[stride] = cdef_index[0];
+      cdef_index[stride + 1] = cdef_index[0];
+    } else if (block.width4x4 > 16) {
+      cdef_index[1] = cdef_index[0];
+    } else if (block.height4x4 > 16) {
+      cdef_index[stride] = cdef_index[0];
     }
   }
 }
