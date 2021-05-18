@@ -702,7 +702,11 @@ const char* const* GetDirectionalIntraPredDigests8bpp(TransformSize tx_size) {
 }
 
 TEST_P(DirectionalIntraPredTest8bpp, DISABLED_Speed) {
-  const auto num_runs = static_cast<int>(5e7 / (block_width_ * block_height_));
+#if LIBGAV1_ENABLE_NEON
+  const auto num_runs = static_cast<int>(2e7 / (block_width_ * block_height_));
+#else
+  const int num_runs = static_cast<int>(4e7 / (block_width_ * block_height_));
+#endif
   for (int i = kZone1; i < kNumZones; ++i) {
     TestSpeed(GetDirectionalIntraPredDigests8bpp(tx_size_),
               static_cast<Zone>(i), num_runs);
@@ -867,7 +871,11 @@ const char* const* GetDirectionalIntraPredDigests10bpp(TransformSize tx_size) {
 }
 
 TEST_P(DirectionalIntraPredTest10bpp, DISABLED_Speed) {
-  const auto num_runs = static_cast<int>(5e7 / (block_width_ * block_height_));
+#if LIBGAV1_ENABLE_NEON
+  const int num_runs = static_cast<int>(2e7 / (block_width_ * block_height_));
+#else
+  const int num_runs = static_cast<int>(4e7 / (block_width_ * block_height_));
+#endif
   for (int i = kZone1; i < kNumZones; ++i) {
     TestSpeed(GetDirectionalIntraPredDigests10bpp(tx_size_),
               static_cast<Zone>(i), num_runs);
