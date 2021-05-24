@@ -83,14 +83,12 @@ void SetupGlobalMv(const Tile::Block& block, int index,
                  (gm.params[5] - (1 << kWarpedModelPrecisionBits)) * y +
                  gm.params[1];
   if (frame_header.allow_high_precision_mv) {
-    mv->mv[MotionVector::kRow] =
-        RightShiftWithRoundingSigned(yc, kWarpedModelPrecisionBits - 3);
-    mv->mv[MotionVector::kColumn] =
-        RightShiftWithRoundingSigned(xc, kWarpedModelPrecisionBits - 3);
+    mv->mv[0] = RightShiftWithRoundingSigned(yc, kWarpedModelPrecisionBits - 3);
+    mv->mv[1] = RightShiftWithRoundingSigned(xc, kWarpedModelPrecisionBits - 3);
   } else {
-    mv->mv[MotionVector::kRow] = MultiplyBy2(
+    mv->mv[0] = MultiplyBy2(
         RightShiftWithRoundingSigned(yc, kWarpedModelPrecisionBits - 2));
-    mv->mv[MotionVector::kColumn] = MultiplyBy2(
+    mv->mv[1] = MultiplyBy2(
         RightShiftWithRoundingSigned(xc, kWarpedModelPrecisionBits - 2));
     LowerMvPrecision(frame_header, mv);
   }
@@ -126,7 +124,7 @@ void SearchStack(const Tile::Block& block, const BlockParameters& mv_bp,
   const int num_found = *num_mv_found;
   const auto result = std::find_if(ref_mv_stack, ref_mv_stack + num_found,
                                    [&candidate_mv](const MotionVector& ref_mv) {
-                                     return ref_mv == candidate_mv;
+                                     return ref_mv.mv32 == candidate_mv.mv32;
                                    });
   if (result != ref_mv_stack + num_found) {
     prediction_parameters.IncreaseWeight(std::distance(ref_mv_stack, result),
@@ -164,7 +162,7 @@ void CompoundSearchStack(const Tile::Block& block, const BlockParameters& mv_bp,
   const auto result =
       std::find_if(compound_ref_mv_stack, compound_ref_mv_stack + num_found,
                    [&candidate_mv](const CompoundMotionVector& ref_mv) {
-                     return ref_mv == candidate_mv;
+                     return ref_mv.mv64 == candidate_mv.mv64;
                    });
   if (result != compound_ref_mv_stack + num_found) {
     prediction_parameters.IncreaseWeight(
@@ -172,7 +170,7 @@ void CompoundSearchStack(const Tile::Block& block, const BlockParameters& mv_bp,
     return;
   }
   if (num_found >= kMaxRefMvStackSize) return;
-  compound_ref_mv_stack[num_found] = candidate_mv;
+  compound_ref_mv_stack[num_found].mv64 = candidate_mv.mv64;
   prediction_parameters.SetWeightIndexStackEntry(num_found, weight);
   ++*num_mv_found;
 }
@@ -311,7 +309,7 @@ void AddTemporalReferenceMvCandidate(
       const auto result =
           std::find_if(compound_ref_mv_stack, compound_ref_mv_stack + num_found,
                        [&candidate_mv](const CompoundMotionVector& ref_mv) {
-                         return ref_mv == candidate_mv;
+                         return ref_mv.mv64 == candidate_mv.mv64;
                        });
       if (result != compound_ref_mv_stack + num_found) {
         prediction_parameters->IncreaseWeight(
@@ -319,7 +317,7 @@ void AddTemporalReferenceMvCandidate(
         continue;
       }
       if (num_found >= kMaxRefMvStackSize) continue;
-      compound_ref_mv_stack[num_found] = candidate_mv;
+      compound_ref_mv_stack[num_found].mv64 = candidate_mv.mv64;
       prediction_parameters->SetWeightIndexStackEntry(num_found, 2);
       ++num_found;
     } while (++index < count);
@@ -338,7 +336,7 @@ void AddTemporalReferenceMvCandidate(
     const auto result =
         std::find_if(ref_mv_stack, ref_mv_stack + num_found,
                      [&candidate_mv](const MotionVector& ref_mv) {
-                       return ref_mv == candidate_mv;
+                       return ref_mv.mv32 == candidate_mv.mv32;
                      });
     if (result != ref_mv_stack + num_found) {
       prediction_parameters->IncreaseWeight(std::distance(ref_mv_stack, result),
@@ -370,7 +368,7 @@ void AddTemporalReferenceMvCandidate(
     const auto result =
         std::find_if(ref_mv_stack, ref_mv_stack + num_found,
                      [&candidate_mv](const MotionVector& ref_mv) {
-                       return ref_mv == candidate_mv;
+                       return ref_mv.mv32 == candidate_mv.mv32;
                      });
     if (result != ref_mv_stack + num_found) {
       prediction_parameters->IncreaseWeight(std::distance(ref_mv_stack, result),
@@ -564,8 +562,8 @@ void AddExtraSingleMvCandidate(const Tile::Block& block, int mv_row,
       candidate_mv.mv[1] *= -1;
     }
     assert(num_found <= 2);
-    if ((num_found != 0 && ref_mv_stack[0] == candidate_mv) ||
-        (num_found == 2 && ref_mv_stack[1] == candidate_mv)) {
+    if ((num_found != 0 && ref_mv_stack[0].mv32 == candidate_mv.mv32) ||
+        (num_found == 2 && ref_mv_stack[1].mv32 == candidate_mv.mv32)) {
       continue;
     }
     ref_mv_stack[num_found] = candidate_mv;
@@ -625,16 +623,16 @@ void ExtraSearch(const Tile::Block& block, bool is_compound,
       }
     }
     if (*num_mv_found == 1) {
-      if (combined_mvs[0] == compound_ref_mv_stack[0]) {
-        compound_ref_mv_stack[1] = combined_mvs[1];
+      if (combined_mvs[0].mv64 == compound_ref_mv_stack[0].mv64) {
+        compound_ref_mv_stack[1].mv64 = combined_mvs[1].mv64;
       } else {
-        compound_ref_mv_stack[1] = combined_mvs[0];
+        compound_ref_mv_stack[1].mv64 = combined_mvs[0].mv64;
       }
       prediction_parameters.SetWeightIndexStackEntry(1, 0);
     } else {
       assert(*num_mv_found == 0);
       for (int i = 0; i < 2; ++i) {
-        compound_ref_mv_stack[i] = combined_mvs[i];
+        compound_ref_mv_stack[i].mv64 = combined_mvs[i].mv64;
         prediction_parameters.SetWeightIndexStackEntry(i, 0);
       }
     }

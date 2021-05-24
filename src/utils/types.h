@@ -28,45 +28,20 @@
 
 namespace libgav1 {
 
-struct MotionVector : public Allocable {
-  static constexpr int kRow = 0;
-  static constexpr int kColumn = 1;
-
-  MotionVector() = default;
-  MotionVector(const MotionVector& mv) = default;
-
-  MotionVector& operator=(const MotionVector& rhs) {
-    mv32 = rhs.mv32;
-    return *this;
-  }
-
-  bool operator==(const MotionVector& rhs) const { return mv32 == rhs.mv32; }
-
-  union {
-    // Motion vectors will always fit in int16_t and using int16_t here instead
-    // of int saves significant memory since some of the frame sized structures
-    // store motion vectors.
-    int16_t mv[2];
-    // A uint32_t view into the |mv| array. Useful for cases where both the
-    // motion vectors have to be copied or compared with a single 32 bit
-    // instruction.
-    uint32_t mv32;
-  };
+union MotionVector {
+  // Motion vectors will always fit in int16_t and using int16_t here instead
+  // of int saves significant memory since some of the frame sized structures
+  // store motion vectors.
+  // Index 0 is the entry for row (horizontal direction) motion vector.
+  // Index 1 is the entry for column (vertical direction) motion vector.
+  int16_t mv[2];
+  // A uint32_t view into the |mv| array. Useful for cases where both the
+  // motion vectors have to be copied or compared with a single 32 bit
+  // instruction.
+  uint32_t mv32;
 };
 
 union CompoundMotionVector {
-  CompoundMotionVector() = default;
-  CompoundMotionVector(const CompoundMotionVector& mv) = default;
-
-  CompoundMotionVector& operator=(const CompoundMotionVector& rhs) {
-    mv64 = rhs.mv64;
-    return *this;
-  }
-
-  bool operator==(const CompoundMotionVector& rhs) const {
-    return mv64 == rhs.mv64;
-  }
-
   MotionVector mv[2];
   // A uint64_t view into the |mv| array. Useful for cases where all the motion
   // vectors have to be copied or compared with a single 64 bit instruction.
