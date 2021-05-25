@@ -71,6 +71,7 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
           DoRestoration(loop_restoration_, do_post_filter_mask, planes_)),
       do_superres_(DoSuperRes(frame_header, do_post_filter_mask)),
       cdef_index_(frame_scratch_buffer->cdef_index),
+      cdef_skip_(frame_scratch_buffer->cdef_skip),
       inter_transform_sizes_(frame_scratch_buffer->inter_transform_sizes),
       restoration_info_(&frame_scratch_buffer->loop_restoration_info),
       superres_coefficients_{

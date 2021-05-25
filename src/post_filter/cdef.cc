@@ -356,18 +356,14 @@ void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
 
   const bool compute_direction_and_variance =
       (y_primary_strength | frame_header_.cdef.uv_primary_strength[index]) != 0;
-  BlockParameters* const* bp_row0_base =
-      block_parameters_.Address(row4x4_start, column4x4_start);
-  BlockParameters* const* bp_row1_base =
-      bp_row0_base + block_parameters_.columns4x4();
-  const int bp_stride = MultiplyBy2(block_parameters_.columns4x4());
+  const uint8_t* skip_row =
+      &cdef_skip_[row4x4_start >> 1][column4x4_start >> 4];
+  const int skip_stride = cdef_skip_.columns();
   int row4x4 = row4x4_start;
   do {
     uint8_t* cdef_buffer_base = cdef_buffer_row_base[kPlaneY];
     const uint8_t* src_buffer_base = src_buffer_row_base[kPlaneY];
     const uint16_t* cdef_src_base = cdef_src_row_base[kPlaneY];
-    BlockParameters* const* bp0 = bp_row0_base;
-    BlockParameters* const* bp1 = bp_row1_base;
     int column4x4 = column4x4_start;
     do {
       const int block_width = kStep;
@@ -378,9 +374,8 @@ void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
       const int src_stride = frame_buffer_.stride(kPlaneY);
       const uint8_t* const src_buffer = src_buffer_base;
 
-      const bool skip = (*bp0)->skip && (*(bp0 + 1))->skip && (*bp1)->skip &&
-                        (*(bp1 + 1))->skip;
-
+      const uint8_t skip_shift = (column4x4 >> 1) & 0x7;
+      const bool skip = ((*skip_row >> skip_shift) & 1) == 0;
       if (skip) {  // No cdef filtering.
         direction_y[y_index] = kCdefSkip;
         if (thread_pool_ == nullptr) {
@@ -443,8 +438,6 @@ void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
       src_buffer_base += column_step[kPlaneY];
       cdef_src_base += column_step[kPlaneY] / sizeof(Pixel);
 
-      bp0 += kStep4x4;
-      bp1 += kStep4x4;
       column4x4 += kStep4x4;
       y_index++;
     } while (column4x4 < column4x4_start + block_width4x4);
@@ -452,8 +445,7 @@ void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
     cdef_buffer_row_base[kPlaneY] += cdef_buffer_row_base_stride[kPlaneY];
     src_buffer_row_base[kPlaneY] += src_buffer_row_base_stride[kPlaneY];
     cdef_src_row_base[kPlaneY] += cdef_src_row_base_stride[kPlaneY];
-    bp_row0_base += bp_stride;
-    bp_row1_base += bp_stride;
+    skip_row += skip_stride;
     row4x4 += kStep4x4;
   } while (row4x4 < row4x4_start + block_height4x4);
 

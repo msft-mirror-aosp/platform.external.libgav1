@@ -1241,6 +1241,15 @@ StatusCode DecoderImpl::DecodeTiles(
       return kStatusOutOfMemory;
     }
   }
+  if (do_cdef) {
+    if (!frame_scratch_buffer->cdef_skip.Reset(
+            DivideBy2(frame_header.rows4x4 + kMaxBlockHeight4x4),
+            DivideBy16(frame_header.columns4x4 + kMaxBlockWidth4x4),
+            /*zero_initialize=*/true)) {
+      LIBGAV1_DLOG(ERROR, "Failed to allocate memory for cdef skip.");
+      return kStatusOutOfMemory;
+    }
+  }
   if (!frame_scratch_buffer->inter_transform_sizes.Reset(
           frame_header.rows4x4 + kMaxBlockHeight4x4,
           frame_header.columns4x4 + kMaxBlockWidth4x4,

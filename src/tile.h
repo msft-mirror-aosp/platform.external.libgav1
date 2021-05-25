@@ -330,6 +330,7 @@ class Tile : public Allocable {
   // Populates |BlockParameters::deblock_filter_level| for the given |block|
   // using |deblock_filter_levels_|.
   void PopulateDeblockFilterLevel(const Block& block);
+  void PopulateCdefSkip(const Block& block);
   void ReadPredictionModeY(const Block& block, bool intra_y_mode);
   void ReadIntraAngleInfo(const Block& block,
                           PlaneType plane_type);  // 5.11.42 and 5.11.43.
@@ -736,6 +737,7 @@ class Tile : public Allocable {
   RefCountedBuffer& current_frame_;
 
   Array2D<int8_t>& cdef_index_;
+  Array2D<uint8_t>& cdef_skip_;
   Array2D<TransformSize>& inter_transform_sizes_;
   std::array<RestorationUnitInfo, kMaxPlanes> reference_unit_info_;
   // If |thread_pool_| is nullptr, the calling thread will do the parsing and

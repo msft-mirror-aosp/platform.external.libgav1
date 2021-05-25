@@ -463,6 +463,7 @@ Tile::Tile(int tile_number, const uint8_t* const data, size_t size,
               : 1),
       current_frame_(*current_frame),
       cdef_index_(frame_scratch_buffer->cdef_index),
+      cdef_skip_(frame_scratch_buffer->cdef_skip),
       inter_transform_sizes_(frame_scratch_buffer->inter_transform_sizes),
       thread_pool_(thread_pool),
       residual_buffer_pool_(frame_scratch_buffer->residual_buffer_pool.get()),
@@ -2128,6 +2129,43 @@ void Tile::PopulateDeblockFilterLevel(const Block& block) {
   }
 }
 
+void Tile::PopulateCdefSkip(const Block& block) {
+  if (!post_filter_.DoCdef() || block.bp->skip ||
+      (frame_header_.cdef.bits > 0 &&
+       cdef_index_[DivideBy16(block.row4x4)][DivideBy16(block.column4x4)] ==
+           -1)) {
+    return;
+  }
+  // The rest of this function is an efficient version of the following code:
+  // for (int y = block.row4x4; y < block.row4x4 + block.height4x4; y++) {
+  //   for (int x = block.column4x4; y < block.column4x4 + block.width4x4;
+  //        x++) {
+  //     const uint8_t mask = uint8_t{1} << ((x >> 1) & 0x7);
+  //     cdef_skip_[y >> 1][x >> 4] |= mask;
+  //   }
+  // }
+
+  // For all block widths other than 32, the mask will fit in uint8_t. For
+  // block width == 32, the mask is always 0xFFFF.
+  const int bw4 =
+      std::max(DivideBy2(block.width4x4) + (block.column4x4 & 1), 1);
+  const uint8_t mask = (block.width4x4 == 32)
+                           ? 0xFF
+                           : (uint8_t{0xFF} >> (8 - bw4))
+                                 << (DivideBy2(block.column4x4) & 0x7);
+  uint8_t* cdef_skip = &cdef_skip_[block.row4x4 >> 1][block.column4x4 >> 4];
+  const int stride = cdef_skip_.columns();
+  int row = 0;
+  do {
+    *cdef_skip |= mask;
+    if (block.width4x4 == 32) {
+      *(cdef_skip + 1) = 0xFF;
+    }
+    cdef_skip += stride;
+    row += 2;
+  } while (row < block.height4x4);
+}
+
 bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
                         TileScratchBuffer* const scratch_buffer,
                         ResidualPtr* residual) {
@@ -2174,6 +2212,7 @@ bool Tile::ProcessBlock(int row4x4, int column4x4, BlockSize block_size,
           ? kTransformSize4x4
           : kUVTransformSize[block.residual_size[kPlaneU]];
   if (bp.skip) ResetEntropyContext(block);
+  PopulateCdefSkip(block);
   if (split_parse_and_decode_) {
     if (!Residual(block, kProcessingModeParseOnly)) return false;
   } else {
