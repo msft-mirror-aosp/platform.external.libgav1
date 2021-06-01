@@ -56,6 +56,10 @@ void LoopFilterInit_NEON();
   LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp10bpp_LoopFilterSize6_LoopFilterTypeVertical LIBGAV1_CPU_NEON
 
+#define LIBGAV1_Dsp10bpp_LoopFilterSize8_LoopFilterTypeHorizontal \
+  LIBGAV1_CPU_NEON
+#define LIBGAV1_Dsp10bpp_LoopFilterSize8_LoopFilterTypeVertical LIBGAV1_CPU_NEON
+
 #endif  // LIBGAV1_ENABLE_NEON
 
 #endif  // LIBGAV1_SRC_DSP_ARM_LOOP_FILTER_NEON_H_
