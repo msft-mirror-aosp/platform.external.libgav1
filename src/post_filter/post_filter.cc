@@ -578,7 +578,9 @@ int PostFilter::ApplyFilteringForOneSuperBlockRow(int row4x4, int sb4x4,
                                                   bool do_deblock) {
   if (row4x4 < 0) return -1;
   if (DoDeblock() && do_deblock) {
-    ApplyDeblockFilterForOneSuperBlockRow(row4x4, sb4x4);
+    VerticalDeblockFilter(row4x4, row4x4 + sb4x4, 0, frame_header_.columns4x4);
+    HorizontalDeblockFilter(row4x4, row4x4 + sb4x4, 0,
+                            frame_header_.columns4x4);
   }
   if (DoRestoration() && DoCdef()) {
     SetupLoopRestorationBorder(row4x4, sb4x4);

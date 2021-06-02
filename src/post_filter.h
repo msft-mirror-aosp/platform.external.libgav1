@@ -238,8 +238,9 @@ class PostFilter {
  private:
   // The type of the HorizontalDeblockFilter and VerticalDeblockFilter member
   // functions.
-  using DeblockFilter = void (PostFilter::*)(int row4x4_start,
-                                             int column4x4_start);
+  using DeblockFilter = void (PostFilter::*)(int row4x4_start, int row4x4_end,
+                                             int column4x4_start,
+                                             int column4x4_end);
   // Functions common to all post filters.
 
   // Extends the frame by setting the border pixel values to the one from its
@@ -312,8 +313,10 @@ class PostFilter {
                                           BlockParameters* const* bp_ptr,
                                           uint8_t* level_u, uint8_t* level_v,
                                           int* step, int* filter_length) const;
-  void HorizontalDeblockFilter(int row4x4_start, int column4x4_start);
-  void VerticalDeblockFilter(int row4x4_start, int column4x4_start);
+  void HorizontalDeblockFilter(int row4x4_start, int row4x4_end,
+                               int column4x4_start, int column4x4_end);
+  void VerticalDeblockFilter(int row4x4_start, int row4x4_end,
+                             int column4x4_start, int column4x4_end);
   // HorizontalDeblockFilter and VerticalDeblockFilter must have the correct
   // signature.
   static_assert(std::is_same<decltype(&PostFilter::HorizontalDeblockFilter),
@@ -322,9 +325,6 @@ class PostFilter {
   static_assert(std::is_same<decltype(&PostFilter::VerticalDeblockFilter),
                              DeblockFilter>::value,
                 "");
-  // Applies deblock filtering for the superblock row starting at |row4x4| with
-  // a height of 4*|sb4x4|.
-  void ApplyDeblockFilterForOneSuperBlockRow(int row4x4, int sb4x4);
   // Worker function used for multi-threaded deblocking.
   template <LoopFilterType loop_filter_type>
   void DeblockFilterWorker(std::atomic<int>* row4x4_atomic);
