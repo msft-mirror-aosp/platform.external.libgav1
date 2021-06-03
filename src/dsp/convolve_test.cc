@@ -1213,7 +1213,7 @@ void ShowRange() {
     assert(max > INT16_MAX && max < INT32_MAX);
   }
 
-  printf("  intermediate range:                [%8d, %8d]\n", min, max);
+  printf("  Horizontal upscaled range:         [%8d, %8d]\n", min, max);
 
   const int first_pass_min = RightShiftWithRounding(min, horizontal_bits);
   const int first_pass_max = RightShiftWithRounding(max, horizontal_bits);
@@ -1222,7 +1222,7 @@ void ShowRange() {
   assert(first_pass_min > INT16_MIN);
   assert(first_pass_max < INT16_MAX);
 
-  printf("  first pass output range:           [%8d, %8d]\n", first_pass_min,
+  printf("  Horizontal downscaled range:       [%8d, %8d]\n", first_pass_min,
          first_pass_max);
 
   // Second pass.
@@ -1233,14 +1233,14 @@ void ShowRange() {
   assert(min < INT16_MIN && min > INT32_MIN);
   assert(max > INT16_MAX && max < INT32_MAX);
 
-  printf("  intermediate range:                [%8d, %8d]\n", min, max);
+  printf("  Vertical upscaled range:           [%8d, %8d]\n", min, max);
 
   // Second pass non-compound output is clipped to Pixel values.
   const int second_pass_min =
       Clip3(RightShiftWithRounding(min, vertical_bits), 0, max_input);
   const int second_pass_max =
       Clip3(RightShiftWithRounding(max, vertical_bits), 0, max_input);
-  printf("  second pass output range:          [%8d, %8d]\n", second_pass_min,
+  printf("  Pixel output range:                [%8d, %8d]\n", second_pass_min,
          second_pass_max);
 
   // Output is Pixel so matches Pixel values.
@@ -1252,7 +1252,7 @@ void ShowRange() {
   const int compound_second_pass_max =
       RightShiftWithRounding(max, compound_vertical_bits) + compound_offset;
 
-  printf("  compound second pass output range: [%8d, %8d]\n",
+  printf("  Compound output range:             [%8d, %8d]\n",
          compound_second_pass_min, compound_second_pass_max);
 
   if (bitdepth == 8) {

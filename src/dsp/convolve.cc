@@ -33,26 +33,30 @@ constexpr int kHorizontalOffset = 3;
 constexpr int kVerticalOffset = 3;
 
 // Compound prediction output ranges from ConvolveTest.ShowRange.
+// In some cases, the horizontal or vertical filter will be omitted. This table
+// shows the general case, where the downscaled horizontal output is input to
+// the vertical filter via the |intermediate_result| array. The final output is
+// either Pixel or compound values, depending on the |is_compound| variable.
 // Bitdepth:  8 Input range:            [       0,      255]
-//   intermediate range:                [   -7140,    23460]
-//   first pass output range:           [   -1785,     5865]
-//   intermediate range:                [ -328440,   589560]
-//   second pass output range:          [       0,      255]
-//   compound second pass output range: [   -5132,     9212]
+//   Horizontal upscaled range:         [   -7140,    23460]
+//   Horizontal downscaled range:       [   -1785,     5865]
+//   Vertical upscaled range:           [ -328440,   589560]
+//   Pixel output range:                [       0,      255]
+//   Compound output range:             [   -5132,     9212]
 //
 // Bitdepth: 10 Input range:            [       0,     1023]
-//   intermediate range:                [  -28644,    94116]
-//   first pass output range:           [   -7161,    23529]
-//   intermediate range:                [-1317624,  2365176]
-//   second pass output range:          [       0,     1023]
-//   compound second pass output range: [    3988,    61532]
+//   Horizontal upscaled range:         [  -28644,    94116]
+//   Horizontal downscaled range:       [   -7161,    23529]
+//   Vertical upscaled range:           [-1317624,  2365176]
+//   Pixel output range:                [       0,     1023]
+//   Compound output range:             [    3988,    61532]
 //
 // Bitdepth: 12 Input range:            [       0,     4095]
-//   intermediate range:                [ -114660,   376740]
-//   first pass output range:           [   -7166,    23546]
-//   intermediate range:                [-1318560,  2366880]
-//   second pass output range:          [       0,     4095]
-//   compound second pass output range: [    3974,    61559]
+//   Horizontal upscaled range:         [ -114660,   376740]
+//   Horizontal downscaled range:       [   -7166,    23546]
+//   Vertical upscaled range:           [-1318560,  2366880]
+//   Pixel output range:                [       0,     4095]
+//   Compound output range:             [    3974,    61559]
 
 template <int bitdepth, typename Pixel>
 void ConvolveScale2D_C(const void* LIBGAV1_RESTRICT const reference,
