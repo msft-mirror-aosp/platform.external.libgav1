@@ -210,6 +210,14 @@ inline uint8x8_t Load2(const void* const buf, uint8x8_t val) {
       vld1_lane_u16(&temp, vreinterpret_u16_u8(val), lane));
 }
 
+template <int lane>
+inline uint16x4_t Load2(const void* const buf, uint16x4_t val) {
+  uint32_t temp;
+  memcpy(&temp, buf, 4);
+  return vreinterpret_u16_u32(
+      vld1_lane_u32(&temp, vreinterpret_u32_u16(val), lane));
+}
+
 // Load 4 uint8_t values into the low half of a uint8x8_t register. Zeros the
 // register before loading the values. Use caution when using this in loops
 // because it will re-zero the register before loading on every iteration.
