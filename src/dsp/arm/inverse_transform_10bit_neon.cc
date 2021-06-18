@@ -2026,7 +2026,7 @@ void Dct4TransformLoopRow_NEON(TransformType /*tx_type*/, TransformSize tx_size,
   auto* src = static_cast<int32_t*>(src_buffer);
   const int tx_height = kTransformHeight[tx_size];
   const bool should_round = (tx_height == 8);
-  const int row_shift = (tx_height == 16);
+  const int row_shift = static_cast<int>(tx_height == 16);
 
   if (DctDcOnly<4>(src, adjusted_tx_height, should_round, row_shift)) {
     return;

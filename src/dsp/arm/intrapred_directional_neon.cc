@@ -1556,7 +1556,7 @@ inline void DirectionalZone2FromLeftCol_4xH(
   int16x4_t shift_upsampled = left_y;
   // The shift argument must be a constant, otherwise use upsample_shift
   // directly.
-  if (upsample_shift) {
+  if (upsampled) {
     offset_y = vshr_n_s16(left_y, index_scale_bits - 1 /*upsample_shift*/);
     shift_upsampled = vshl_n_s16(shift_upsampled, 1);
   } else {
@@ -1612,7 +1612,7 @@ inline void DirectionalZone2FromLeftCol_8xH(
   int16x8_t shift_upsampled = left_y;
   // The shift argument must be a constant, otherwise use upsample_shift
   // directly.
-  if (upsample_shift) {
+  if (upsampled) {
     offset_y = vshrq_n_s16(left_y, index_scale_bits - 1);
     shift_upsampled = vshlq_n_s16(shift_upsampled, 1);
   } else {

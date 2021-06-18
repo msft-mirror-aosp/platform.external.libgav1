@@ -132,7 +132,7 @@ void MvProjectionCompoundLowPrecision_NEON(
     temporal_mvs += 2;
     temporal_reference_offsets += 2;
     candidate_mvs += 2;
-  } while (--loop_count);
+  } while (--loop_count != 0);
 }
 
 void MvProjectionCompoundForceInteger_NEON(
@@ -152,7 +152,7 @@ void MvProjectionCompoundForceInteger_NEON(
     temporal_mvs += 2;
     temporal_reference_offsets += 2;
     candidate_mvs += 2;
-  } while (--loop_count);
+  } while (--loop_count != 0);
 }
 
 void MvProjectionCompoundHighPrecision_NEON(
@@ -172,7 +172,7 @@ void MvProjectionCompoundHighPrecision_NEON(
     temporal_mvs += 2;
     temporal_reference_offsets += 2;
     candidate_mvs += 2;
-  } while (--loop_count);
+  } while (--loop_count != 0);
 }
 
 void MvProjectionSingleLowPrecision_NEON(
@@ -190,7 +190,7 @@ void MvProjectionSingleLowPrecision_NEON(
     temporal_mvs += 4;
     temporal_reference_offsets += 4;
     candidate_mvs += 4;
-  } while (--loop_count);
+  } while (--loop_count != 0);
 }
 
 void MvProjectionSingleForceInteger_NEON(
@@ -208,7 +208,7 @@ void MvProjectionSingleForceInteger_NEON(
     temporal_mvs += 4;
     temporal_reference_offsets += 4;
     candidate_mvs += 4;
-  } while (--loop_count);
+  } while (--loop_count != 0);
 }
 
 void MvProjectionSingleHighPrecision_NEON(
@@ -226,7 +226,7 @@ void MvProjectionSingleHighPrecision_NEON(
     temporal_mvs += 4;
     temporal_reference_offsets += 4;
     candidate_mvs += 4;
-  } while (--loop_count);
+  } while (--loop_count != 0);
 }
 
 void Init8bpp() {
