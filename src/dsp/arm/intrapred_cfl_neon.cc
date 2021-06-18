@@ -140,7 +140,7 @@ void CflSubsampler420_NEON(
       const uint8_t a11 = src[max_luma_width - 1 + stride];
       // Dup the 2x2 sum at the max luma offset.
       const uint16x8_t max_luma_sum =
-          vdupq_n_u16((uint16_t)((a00 + a01 + a10 + a11) << 1));
+          vdupq_n_u16(static_cast<uint16_t>((a00 + a01 + a10 + a11) << 1));
       uint16x8_t x_index = {0, 2, 4, 6, 8, 10, 12, 14};
 
       ptrdiff_t src_x_offset = 0;
