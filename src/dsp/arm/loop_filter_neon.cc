@@ -132,7 +132,7 @@ inline void Filter4(const uint8x8_t q0p1, const uint8x8_t p0q1,
 void Horizontal4_NEON(void* const dest, const ptrdiff_t stride,
                       const int outer_thresh, const int inner_thresh,
                       const int hev_thresh) {
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint8x8_t p1_v = Load4(dst - 2 * stride);
   const uint8x8_t p0_v = Load4(dst - stride);
@@ -181,7 +181,7 @@ void Horizontal4_NEON(void* const dest, const ptrdiff_t stride,
 void Vertical4_NEON(void* const dest, const ptrdiff_t stride,
                     const int outer_thresh, const int inner_thresh,
                     const int hev_thresh) {
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   // Move |dst| to the left side of the filter window.
   dst -= 2;

@@ -60,12 +60,12 @@ inline void Smooth4Or8xN_NEON(void* LIBGAV1_RESTRICT const dest,
                               ptrdiff_t stride,
                               const void* LIBGAV1_RESTRICT const top_row,
                               const void* LIBGAV1_RESTRICT const left_column) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  const uint8_t* const left = static_cast<const uint8_t*>(left_column);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t top_right = top[width - 1];
   const uint8_t bottom_left = left[height - 1];
   const uint8_t* const weights_y = kSmoothWeights + height - 4;
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   uint8x8_t top_v;
   if (width == 4) {
@@ -142,12 +142,12 @@ inline void Smooth16PlusxN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  const uint8_t* const left = static_cast<const uint8_t*>(left_column);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t top_right = top[width - 1];
   const uint8_t bottom_left = left[height - 1];
   const uint8_t* const weights_y = kSmoothWeights + height - 4;
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   uint8x16_t top_v[4];
   top_v[0] = vld1q_u8(top);
@@ -224,11 +224,11 @@ inline void SmoothVertical4Or8xN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  const uint8_t* const left = static_cast<const uint8_t*>(left_column);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t bottom_left = left[height - 1];
   const uint8_t* const weights_y = kSmoothWeights + height - 4;
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   uint8x8_t top_v;
   if (width == 4) {
@@ -275,11 +275,11 @@ inline void SmoothVertical16PlusxN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  const uint8_t* const left = static_cast<const uint8_t*>(left_column);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t bottom_left = left[height - 1];
   const uint8_t* const weights_y = kSmoothWeights + height - 4;
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   uint8x16_t top_v[4];
   top_v[0] = vld1q_u8(top);
@@ -327,10 +327,10 @@ inline void SmoothHorizontal4Or8xN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  const uint8_t* const left = static_cast<const uint8_t*>(left_column);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t top_right = top[width - 1];
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint8x8_t top_right_v = vdup_n_u8(top_right);
   // Over-reads for 4xN but still within the array.
@@ -380,10 +380,10 @@ inline void SmoothHorizontal16PlusxN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  const uint8_t* const left = static_cast<const uint8_t*>(left_column);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t top_right = top[width - 1];
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint8x8_t top_right_v = vdup_n_u8(top_right);
 
@@ -611,12 +611,12 @@ template <int height>
 inline void Smooth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                            const void* LIBGAV1_RESTRICT const top_row,
                            const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[3];
   const uint16_t bottom_left = left[height - 1];
   const uint16_t* const weights_y = kSmoothWeights + height - 4;
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4_t top_v = vld1_u16(top);
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
@@ -674,13 +674,13 @@ template <int height>
 inline void Smooth8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                            const void* LIBGAV1_RESTRICT const top_row,
                            const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[7];
   const uint16_t bottom_left = left[height - 1];
   const uint16_t* const weights_y = kSmoothWeights + height - 4;
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4x2_t top_vals = {vld1_u16(top), vld1_u16(top + 4)};
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
@@ -712,13 +712,13 @@ template <int width, int height>
 inline void SmoothWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                            const void* LIBGAV1_RESTRICT const top_row,
                            const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[width - 1];
   const uint16_t bottom_left = left[height - 1];
   const uint16_t* const weights_y = kSmoothWeights + height - 4;
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4_t weight_scaling = vdup_n_u16(256);
   // Precompute weighted values that don't vary with |y|.
@@ -739,7 +739,7 @@ inline void SmoothWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     // |weighted_bl| is invariant across the row.
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
-    uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
+    auto* dst_x = reinterpret_cast<uint16_t*>(dst);
     for (int i = 0; i < width >> 3; ++i) {
       const int x = i << 3;
       const uint16x4x2_t top_vals = {vld1_u16(top + x), vld1_u16(top + x + 4)};
@@ -763,18 +763,18 @@ inline void SmoothVertical4xH_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t bottom_left = left[height - 1];
   const uint16_t* const weights_y = kSmoothWeights + height - 4;
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4_t top_v = vld1_u16(top);
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
 
   for (int y = 0; y < height; ++y) {
-    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
     const uint32x4_t weighted_top =
@@ -790,19 +790,19 @@ inline void SmoothVertical8xH_NEON(
     void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t bottom_left = left[height - 1];
   const uint16_t* const weights_y = kSmoothWeights + height - 4;
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4_t top_low = vld1_u16(top);
   const uint16x4_t top_high = vld1_u16(top + 4);
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
 
   for (int y = 0; y < height; ++y) {
-    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
     // |weighted_bl| is invariant across the row.
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
@@ -824,12 +824,12 @@ inline void SmoothVerticalWxH_NEON(
     void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t bottom_left = left[height - 1];
   const uint16_t* const weights_y = kSmoothWeights + height - 4;
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   uint16x4x2_t top_vals[width >> 3];
   for (int i = 0; i < width >> 3; ++i) {
@@ -843,7 +843,7 @@ inline void SmoothVerticalWxH_NEON(
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
 
-    uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
+    auto* dst_x = reinterpret_cast<uint16_t*>(dst);
     for (int i = 0; i < width >> 3; ++i) {
       const uint32x4_t weighted_top_low =
           vmlal_n_u16(weighted_bl, top_vals[i].val[0], weights_y[y]);
@@ -863,18 +863,18 @@ inline void SmoothHorizontal4xH_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[3];
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4_t weights_x = vld1_u16(kSmoothWeights);
   const uint16x4_t scaled_weights_x = vsub_u16(vdup_n_u16(256), weights_x);
 
   const uint32x4_t weighted_tr = vmull_n_u16(scaled_weights_x, top_right);
   for (int y = 0; y < height; ++y) {
-    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
     const uint32x4_t weighted_left =
         vmlal_n_u16(weighted_tr, weights_x, left[y]);
     vst1_u16(dst16, vrshrn_n_u32(weighted_left, kSmoothWeightScale));
@@ -887,11 +887,11 @@ inline void SmoothHorizontal8xH_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[7];
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4x2_t weights_x = {vld1_u16(kSmoothWeights + 4),
                                   vld1_u16(kSmoothWeights + 8)};
@@ -902,7 +902,7 @@ inline void SmoothHorizontal8xH_NEON(
       vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[1]), top_right);
 
   for (int y = 0; y < height; ++y) {
-    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
     const uint16_t left_y = left[y];
     const uint32x4_t weighted_left_low =
         vmlal_n_u16(weighted_tr_low, weights_x.val[0], left_y);
@@ -921,11 +921,11 @@ inline void SmoothHorizontalWxH_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[width - 1];
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4_t weight_scaling = vdup_n_u16(256);
 
@@ -944,7 +944,7 @@ inline void SmoothHorizontalWxH_NEON(
   }
 
   for (int y = 0; y < height; ++y) {
-    uint16_t* dst_x = reinterpret_cast<uint16_t*>(dst);
+    auto* dst_x = reinterpret_cast<uint16_t*>(dst);
     const uint16_t left_y = left[y];
     for (int i = 0; i < width >> 3; ++i) {
       const uint32x4_t weighted_left_low =

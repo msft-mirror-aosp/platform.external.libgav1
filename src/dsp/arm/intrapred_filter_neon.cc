@@ -91,12 +91,12 @@ void FilterIntraPredictor_NEON(void* LIBGAV1_RESTRICT const dest,
                                const void* LIBGAV1_RESTRICT const left_column,
                                FilterIntraPredictor pred, int width,
                                int height) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  const uint8_t* const left = static_cast<const uint8_t*>(left_column);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  const auto* const left = static_cast<const uint8_t*>(left_column);
 
   assert(width <= 32 && height <= 32);
 
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   uint8x8_t transposed_taps[7];
   for (int i = 0; i < 7; ++i) {

@@ -1359,8 +1359,8 @@ void ConvolveVerticalScale4xH(const int16_t* LIBGAV1_RESTRICT const src,
   constexpr ptrdiff_t src_stride = kIntermediateStride;
   const int16_t* src_y = src;
   // |dest| is 16-bit in compound mode, Pixel otherwise.
-  uint16_t* dest16_y = static_cast<uint16_t*>(dest);
-  uint8_t* dest_y = static_cast<uint8_t*>(dest);
+  auto* dest16_y = static_cast<uint16_t*>(dest);
+  auto* dest_y = static_cast<uint8_t*>(dest);
   int16x4_t s[num_taps + grade_y];
 
   int p = subpixel_y & 1023;

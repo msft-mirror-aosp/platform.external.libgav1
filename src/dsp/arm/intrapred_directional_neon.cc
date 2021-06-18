@@ -209,8 +209,8 @@ void DirectionalIntraPredictorZone1_NEON(
     void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row, const int width,
     const int height, const int xstep, const bool upsampled_top) {
-  const uint8_t* const top = static_cast<const uint8_t*>(top_row);
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  const auto* const top = static_cast<const uint8_t*>(top_row);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   assert(xstep > 0);
 
@@ -812,7 +812,7 @@ void DirectionalIntraPredictorZone3_NEON(
     do {
       int x = 0;
       do {
-        uint8_t* dst = static_cast<uint8_t*>(dest);
+        auto* dst = static_cast<uint8_t*>(dest);
         dst += y * stride + x;
         uint8x8_t left_v[4], right_v[4], value_v[4];
         const int ystep_base = ystep * x;
@@ -879,7 +879,7 @@ void DirectionalIntraPredictorZone3_NEON(
     do {
       int x = 0;
       do {
-        uint8_t* dst = static_cast<uint8_t*>(dest);
+        auto* dst = static_cast<uint8_t*>(dest);
         dst += y * stride + x;
         const int ystep_base = ystep * (x + 1);
 
@@ -1159,8 +1159,8 @@ void DirectionalIntraPredictorZone1_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row, const int width,
     const int height, const int xstep, const bool upsampled_top) {
-  const uint16_t* const top = static_cast<const uint16_t*>(top_row);
-  uint16_t* dst = static_cast<uint16_t*>(dest);
+  const auto* const top = static_cast<const uint16_t*>(top_row);
+  auto* dst = static_cast<uint16_t*>(dest);
   stride /= sizeof(top[0]);
 
   assert(xstep > 0);
@@ -1432,8 +1432,8 @@ void DirectionalIntraPredictorZone3_NEON(
     void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const left_column, const int width,
     const int height, const int ystep, const bool upsampled_left) {
-  const uint16_t* const left = static_cast<const uint16_t*>(left_column);
-  uint8_t* dst = static_cast<uint8_t*>(dest);
+  const auto* const left = static_cast<const uint16_t*>(left_column);
+  auto* dst = static_cast<uint8_t*>(dest);
 
   if (ystep == 64) {
     assert(!upsampled_left);
@@ -2025,7 +2025,7 @@ void DirectionalAngle135(uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride,
     // left[-2], and is reversed to store left[1], left[0], with negative values
     // overwritten from |top_row|.
     const uint16_t* const load_left = left + y - min_width;
-    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
 
     // Some values will be overwritten when |y| is not a multiple of
     // |min_width|.
@@ -2049,7 +2049,7 @@ void DirectionalAngle135(uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride,
 
   // Left only.
   for (; y < height; ++y, dst += stride) {
-    uint16_t* dst16 = reinterpret_cast<uint16_t*>(dst);
+    auto* dst16 = reinterpret_cast<uint16_t*>(dst);
     const uint16_t* const load_left = left + y - min_width;
 
     int x = 0;
