@@ -168,12 +168,14 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
       if (ref_1_size_log2 == 2) {  // 4x4
         val = Load4<1>(ref_1_u8, val);
         return Sum(vpaddl_u8(val));
-      } else if (ref_1_size_log2 == 3) {  // 4x8
+      }
+      if (ref_1_size_log2 == 3) {  // 4x8
         const uint8x8_t val_1 = vld1_u8(ref_1_u8);
         const uint16x4_t sum_0 = vpaddl_u8(val);
         const uint16x4_t sum_1 = vpaddl_u8(val_1);
         return Sum(vadd_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 4) {  // 4x16
+      }
+      if (ref_1_size_log2 == 4) {  // 4x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
         return Sum(vaddw_u8(vpaddlq_u8(val_1), val));
       }
@@ -181,7 +183,8 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
     // 4x1
     const uint16x4_t sum = vpaddl_u8(val);
     return vpaddl_u16(sum);
-  } else if (ref_0_size_log2 == 3) {
+  }
+  if (ref_0_size_log2 == 3) {
     const uint8x8_t val_0 = vld1_u8(ref_0_u8);
     if (use_ref_1) {
       if (ref_1_size_log2 == 2) {  // 8x4
@@ -189,37 +192,45 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
         const uint16x4_t sum_0 = vpaddl_u8(val_0);
         const uint16x4_t sum_1 = vpaddl_u8(val_1);
         return Sum(vadd_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 3) {  // 8x8
+      }
+      if (ref_1_size_log2 == 3) {  // 8x8
         const uint8x8_t val_1 = vld1_u8(ref_1_u8);
         const uint16x4_t sum_0 = vpaddl_u8(val_0);
         const uint16x4_t sum_1 = vpaddl_u8(val_1);
         return Sum(vadd_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 4) {  // 8x16
+      }
+      if (ref_1_size_log2 == 4) {  // 8x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
         return Sum(vaddw_u8(vpaddlq_u8(val_1), val_0));
-      } else if (ref_1_size_log2 == 5) {  // 8x32
+      }
+      if (ref_1_size_log2 == 5) {  // 8x32
         return Sum(vaddw_u8(LoadAndAdd32(ref_1_u8), val_0));
       }
     }
     // 8x1
     return Sum(vpaddl_u8(val_0));
-  } else if (ref_0_size_log2 == 4) {
+  }
+  if (ref_0_size_log2 == 4) {
     const uint8x16_t val_0 = vld1q_u8(ref_0_u8);
     if (use_ref_1) {
       if (ref_1_size_log2 == 2) {  // 16x4
         const uint8x8_t val_1 = Load4(ref_1_u8);
         return Sum(vaddw_u8(vpaddlq_u8(val_0), val_1));
-      } else if (ref_1_size_log2 == 3) {  // 16x8
+      }
+      if (ref_1_size_log2 == 3) {  // 16x8
         const uint8x8_t val_1 = vld1_u8(ref_1_u8);
         return Sum(vaddw_u8(vpaddlq_u8(val_0), val_1));
-      } else if (ref_1_size_log2 == 4) {  // 16x16
+      }
+      if (ref_1_size_log2 == 4) {  // 16x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
         return Sum(Add(val_0, val_1));
-      } else if (ref_1_size_log2 == 5) {  // 16x32
+      }
+      if (ref_1_size_log2 == 5) {  // 16x32
         const uint16x8_t sum_0 = vpaddlq_u8(val_0);
         const uint16x8_t sum_1 = LoadAndAdd32(ref_1_u8);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 6) {  // 16x64
+      }
+      if (ref_1_size_log2 == 6) {  // 16x64
         const uint16x8_t sum_0 = vpaddlq_u8(val_0);
         const uint16x8_t sum_1 = LoadAndAdd64(ref_1_u8);
         return Sum(vaddq_u16(sum_0, sum_1));
@@ -227,20 +238,24 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
     }
     // 16x1
     return Sum(vpaddlq_u8(val_0));
-  } else if (ref_0_size_log2 == 5) {
+  }
+  if (ref_0_size_log2 == 5) {
     const uint16x8_t sum_0 = LoadAndAdd32(ref_0_u8);
     if (use_ref_1) {
       if (ref_1_size_log2 == 3) {  // 32x8
         const uint8x8_t val_1 = vld1_u8(ref_1_u8);
         return Sum(vaddw_u8(sum_0, val_1));
-      } else if (ref_1_size_log2 == 4) {  // 32x16
+      }
+      if (ref_1_size_log2 == 4) {  // 32x16
         const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
         const uint16x8_t sum_1 = vpaddlq_u8(val_1);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 5) {  // 32x32
+      }
+      if (ref_1_size_log2 == 5) {  // 32x32
         const uint16x8_t sum_1 = LoadAndAdd32(ref_1_u8);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 6) {  // 32x64
+      }
+      if (ref_1_size_log2 == 6) {  // 32x64
         const uint16x8_t sum_1 = LoadAndAdd64(ref_1_u8);
         return Sum(vaddq_u16(sum_0, sum_1));
       }
@@ -256,10 +271,12 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
       const uint8x16_t val_1 = vld1q_u8(ref_1_u8);
       const uint16x8_t sum_1 = vpaddlq_u8(val_1);
       return Sum(vaddq_u16(sum_0, sum_1));
-    } else if (ref_1_size_log2 == 5) {  // 64x32
+    }
+    if (ref_1_size_log2 == 5) {  // 64x32
       const uint16x8_t sum_1 = LoadAndAdd32(ref_1_u8);
       return Sum(vaddq_u16(sum_0, sum_1));
-    } else if (ref_1_size_log2 == 6) {  // 64x64
+    }
+    if (ref_1_size_log2 == 6) {  // 64x64
       const uint16x8_t sum_1 = LoadAndAdd64(ref_1_u8);
       return Sum(vaddq_u16(sum_0, sum_1));
     }
@@ -786,11 +803,13 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
       if (ref_1_size_log2 == 2) {  // 4x4
         const uint16x4_t val_1 = vld1_u16(ref_1_u16);
         return Sum(vadd_u16(val_0, val_1));
-      } else if (ref_1_size_log2 == 3) {  // 4x8
+      }
+      if (ref_1_size_log2 == 3) {  // 4x8
         const uint16x8_t val_1 = vld1q_u16(ref_1_u16);
         const uint16x8_t sum_0 = vcombine_u16(vdup_n_u16(0), val_0);
         return Sum(vaddq_u16(sum_0, val_1));
-      } else if (ref_1_size_log2 == 4) {  // 4x16
+      }
+      if (ref_1_size_log2 == 4) {  // 4x16
         const uint16x8_t sum_0 = vcombine_u16(vdup_n_u16(0), val_0);
         const uint16x8_t sum_1 = LoadAndAdd16(ref_1_u16);
         return Sum(vaddq_u16(sum_0, sum_1));
@@ -798,43 +817,52 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
     }
     // 4x1
     return Sum(val_0);
-  } else if (ref_0_size_log2 == 3) {
+  }
+  if (ref_0_size_log2 == 3) {
     const uint16x8_t val_0 = vld1q_u16(ref_0_u16);
     if (use_ref_1) {
       if (ref_1_size_log2 == 2) {  // 8x4
         const uint16x4_t val_1 = vld1_u16(ref_1_u16);
         const uint16x8_t sum_1 = vcombine_u16(vdup_n_u16(0), val_1);
         return Sum(vaddq_u16(val_0, sum_1));
-      } else if (ref_1_size_log2 == 3) {  // 8x8
+      }
+      if (ref_1_size_log2 == 3) {  // 8x8
         const uint16x8_t val_1 = vld1q_u16(ref_1_u16);
         return Sum(vaddq_u16(val_0, val_1));
-      } else if (ref_1_size_log2 == 4) {  // 8x16
+      }
+      if (ref_1_size_log2 == 4) {  // 8x16
         const uint16x8_t sum_1 = LoadAndAdd16(ref_1_u16);
         return Sum(vaddq_u16(val_0, sum_1));
-      } else if (ref_1_size_log2 == 5) {  // 8x32
+      }
+      if (ref_1_size_log2 == 5) {  // 8x32
         const uint16x8_t sum_1 = LoadAndAdd32(ref_1_u16);
         return Sum(vaddq_u16(val_0, sum_1));
       }
     }
     // 8x1
     return Sum(val_0);
-  } else if (ref_0_size_log2 == 4) {
+  }
+  if (ref_0_size_log2 == 4) {
     const uint16x8_t sum_0 = LoadAndAdd16(ref_0_u16);
     if (use_ref_1) {
       if (ref_1_size_log2 == 2) {  // 16x4
         const uint16x4_t val_1 = vld1_u16(ref_1_u16);
         const uint16x8_t sum_1 = vcombine_u16(vdup_n_u16(0), val_1);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 3) {  // 16x8
+      }
+      if (ref_1_size_log2 == 3) {  // 16x8
         const uint16x8_t val_1 = vld1q_u16(ref_1_u16);
         return Sum(vaddq_u16(sum_0, val_1));
-      } else if (ref_1_size_log2 == 4) {  // 16x16
+      }
+      if (ref_1_size_log2 == 4) {  // 16x16
         const uint16x8_t sum_1 = LoadAndAdd16(ref_1_u16);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 5) {  // 16x32
+      }
+      if (ref_1_size_log2 == 5) {  // 16x32
         const uint16x8_t sum_1 = LoadAndAdd32(ref_1_u16);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 6) {  // 16x64
+      }
+      if (ref_1_size_log2 == 6) {  // 16x64
         const uint16x8_t sum_1 = LoadAndAdd64(ref_1_u16);
         return Sum(vaddq_u16(sum_0, sum_1));
       }
@@ -847,13 +875,16 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
       if (ref_1_size_log2 == 3) {  // 32x8
         const uint16x8_t val_1 = vld1q_u16(ref_1_u16);
         return Sum(vaddq_u16(sum_0, val_1));
-      } else if (ref_1_size_log2 == 4) {  // 32x16
+      }
+      if (ref_1_size_log2 == 4) {  // 32x16
         const uint16x8_t sum_1 = LoadAndAdd16(ref_1_u16);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 5) {  // 32x32
+      }
+      if (ref_1_size_log2 == 5) {  // 32x32
         const uint16x8_t sum_1 = LoadAndAdd32(ref_1_u16);
         return Sum(vaddq_u16(sum_0, sum_1));
-      } else if (ref_1_size_log2 == 6) {  // 32x64
+      }
+      if (ref_1_size_log2 == 6) {  // 32x64
         const uint16x8_t sum_1 = LoadAndAdd64(ref_1_u16);
         return Sum(vaddq_u16(sum_0, sum_1));
       }
@@ -868,10 +899,12 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
     if (ref_1_size_log2 == 4) {  // 64x16
       const uint16x8_t sum_1 = LoadAndAdd16(ref_1_u16);
       return Sum(vaddq_u16(sum_0, sum_1));
-    } else if (ref_1_size_log2 == 5) {  // 64x32
+    }
+    if (ref_1_size_log2 == 5) {  // 64x32
       const uint16x8_t sum_1 = LoadAndAdd32(ref_1_u16);
       return Sum(vaddq_u16(sum_0, sum_1));
-    } else if (ref_1_size_log2 == 6) {  // 64x64
+    }
+    if (ref_1_size_log2 == 6) {  // 64x64
       const uint16x8_t sum_1 = LoadAndAdd64(ref_1_u16);
       return Sum(vaddq_u16(sum_0, sum_1));
     }
