@@ -14,7 +14,6 @@
 #include <atomic>
 
 #include "src/post_filter.h"
-#include "src/utils/blocking_counter.h"
 
 namespace libgav1 {
 namespace {
@@ -261,7 +260,7 @@ void PostFilter::GetVerticalDeblockFilterEdgeInfoUV(
       kDeblockFilterLevelIndex[kPlaneU][kLoopFilterTypeVertical];
   const int filter_id_v =
       kDeblockFilterLevelIndex[kPlaneV][kLoopFilterTypeVertical];
-  const BlockParameters* bp_prev = *(bp_ptr - (1 << subsampling_x));
+  const BlockParameters* bp_prev = *(bp_ptr - (ptrdiff_t{1} << subsampling_x));
 
   if (bp == bp_prev) {
     // Not a border.
@@ -299,7 +298,7 @@ void PostFilter::GetVerticalDeblockFilterEdgeInfoUV(
 void PostFilter::HorizontalDeblockFilter(int row4x4_start,
                                          int column4x4_start) {
   const int column_step = 1;
-  const size_t src_step = MultiplyBy4(pixel_size_);
+  const int src_step = 4 << pixel_size_log2_;
   const ptrdiff_t src_stride = frame_buffer_.stride(kPlaneY);
   uint8_t* src = GetSourceBuffer(kPlaneY, row4x4_start, column4x4_start);
   int row_step;
@@ -383,6 +382,7 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
   BlockParameters* const* bp_row_base =
       block_parameters_.Address(row4x4_start, column4x4_start);
   const int bp_stride = block_parameters_.columns4x4();
+  const int column_step_shift = pixel_size_log2_;
   for (int row4x4 = 0; row4x4 < kNum4x4InLoopFilterUnit &&
                        MultiplyBy4(row4x4_start + row4x4) < height_;
        ++row4x4, src += row_stride, bp_row_base += bp_stride) {
@@ -400,7 +400,7 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
             src_row, src_stride, outer_thresh_[level], inner_thresh_[level],
             HevThresh(level));
       }
-      src_row += column_step * pixel_size_;
+      src_row += column_step << column_step_shift;
       column_step = DivideBy4(column_step);
     }
   }
@@ -424,7 +424,7 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
     BlockParameters* const* bp_row_base = block_parameters_.Address(
         GetDeblockPosition(row4x4_start, subsampling_y),
         GetDeblockPosition(column4x4_start, subsampling_x));
-    const int bp_stride = block_parameters_.columns4x4() * row_step;
+    const int bp_stride = block_parameters_.columns4x4() << subsampling_y;
     for (int row4x4 = 0; row4x4 < kNum4x4InLoopFilterUnit &&
                          MultiplyBy4(row4x4_start + row4x4) < height_;
          row4x4 += row_step, src_u += row_stride_u, src_v += row_stride_v,
@@ -450,8 +450,8 @@ void PostFilter::VerticalDeblockFilter(int row4x4_start, int column4x4_start) {
               src_row_v, src_stride_v, outer_thresh_[level_v],
               inner_thresh_[level_v], HevThresh(level_v));
         }
-        src_row_u += column_step * pixel_size_;
-        src_row_v += column_step * pixel_size_;
+        src_row_u += column_step << column_step_shift;
+        src_row_v += column_step << column_step_shift;
         column_step = DivideBy4(column_step << subsampling_x);
       }
     }
@@ -481,67 +481,23 @@ void PostFilter::ApplyDeblockFilterForOneSuperBlockRow(int row4x4_start,
   }
 }
 
-void PostFilter::DeblockFilterWorker(int jobs_per_plane,
-                                     const Plane* /*planes*/,
-                                     int /*num_planes*/,
-                                     std::atomic<int>* job_counter,
-                                     DeblockFilter deblock_filter) {
-  const int total_jobs = jobs_per_plane;
-  int job_index;
-  while ((job_index = job_counter->fetch_add(1, std::memory_order_relaxed)) <
-         total_jobs) {
-    const int row_unit = job_index % jobs_per_plane;
-    const int row4x4 = row_unit * kNum4x4InLoopFilterUnit;
+template <LoopFilterType loop_filter_type>
+void PostFilter::DeblockFilterWorker(std::atomic<int>* row4x4_atomic) {
+  int row4x4;
+  while ((row4x4 = row4x4_atomic->fetch_add(kNum4x4InLoopFilterUnit,
+                                            std::memory_order_relaxed)) <
+         frame_header_.rows4x4) {
     for (int column4x4 = 0; column4x4 < frame_header_.columns4x4;
          column4x4 += kNum4x4InLoopFilterUnit) {
-      (this->*deblock_filter)(row4x4, column4x4);
+      (this->*deblock_filter_func_[loop_filter_type])(row4x4, column4x4);
     }
   }
 }
 
-void PostFilter::ApplyDeblockFilterThreaded() {
-  const int jobs_per_plane = DivideBy16(frame_header_.rows4x4 + 15);
-  const int num_workers = thread_pool_->num_threads();
-  std::array<Plane, kMaxPlanes> planes;
-  planes[0] = kPlaneY;
-  int num_planes = 1;
-  for (int plane = kPlaneU; plane < planes_; ++plane) {
-    if (frame_header_.loop_filter.level[plane + 1] != 0) {
-      planes[num_planes++] = static_cast<Plane>(plane);
-    }
-  }
-  // The vertical filters are not dependent on each other. So simply schedule
-  // them for all possible rows.
-  //
-  // The horizontal filter for a row/column depends on the vertical filter being
-  // finished for the blocks to the top and to the right. To work around
-  // this synchronization, we simply wait for the vertical filter to finish for
-  // all rows. Now, the horizontal filters can also be scheduled
-  // unconditionally similar to the vertical filters.
-  //
-  // The only synchronization involved is to know when the each directional
-  // filter is complete for the entire frame.
-  for (const auto& type :
-       {kLoopFilterTypeVertical, kLoopFilterTypeHorizontal}) {
-    const DeblockFilter deblock_filter = deblock_filter_func_[type];
-    std::atomic<int> job_counter(0);
-    BlockingCounter pending_workers(num_workers);
-    for (int i = 0; i < num_workers; ++i) {
-      thread_pool_->Schedule([this, jobs_per_plane, &planes, num_planes,
-                              &job_counter, deblock_filter,
-                              &pending_workers]() {
-        DeblockFilterWorker(jobs_per_plane, planes.data(), num_planes,
-                            &job_counter, deblock_filter);
-        pending_workers.Decrement();
-      });
-    }
-    // Run the jobs on the current thread.
-    DeblockFilterWorker(jobs_per_plane, planes.data(), num_planes, &job_counter,
-                        deblock_filter);
-    // Wait for the threadpool jobs to finish.
-    pending_workers.Wait();
-  }
-}
+template void PostFilter::DeblockFilterWorker<kLoopFilterTypeVertical>(
+    std::atomic<int>* row4x4_atomic);
+template void PostFilter::DeblockFilterWorker<kLoopFilterTypeHorizontal>(
+    std::atomic<int>* row4x4_atomic);
 
 void PostFilter::ApplyDeblockFilter(LoopFilterType loop_filter_type,
                                     int row4x4_start, int column4x4_start,
