@@ -885,7 +885,8 @@ inline uint32x2_t DcSum_NEON(const void* LIBGAV1_RESTRICT ref_0,
     }
     // 16x1
     return Sum(sum_0);
-  } else if (ref_0_size_log2 == 5) {
+  }
+  if (ref_0_size_log2 == 5) {
     const uint16x8_t sum_0 = LoadAndAdd32(ref_0_u16);
     if (use_ref_1) {
       switch (ref_1_size_log2) {
