@@ -2258,8 +2258,9 @@ void ConvolveVertical_NEON(
       FilterVertical<0>(src, src_stride, dest, dest_stride, width, height,
                         taps + 1);
     }
-  } else if ((filter_index == 1) & ((vertical_filter_id == 1) |
-                                    (vertical_filter_id == 15))) {  // 5 tap.
+  } else if ((static_cast<int>(filter_index == 1) &
+              (static_cast<int>(vertical_filter_id == 1) |
+               static_cast<int>(vertical_filter_id == 15))) != 0) {  // 5 tap.
     if (width == 2) {
       FilterVertical2xH<1>(src, src_stride, dest, dest_stride, height,
                            taps + 1);
@@ -2270,9 +2271,11 @@ void ConvolveVertical_NEON(
       FilterVertical<1>(src, src_stride, dest, dest_stride, width, height,
                         taps + 1);
     }
-  } else if ((filter_index == 1) &
-             ((vertical_filter_id == 7) | (vertical_filter_id == 8) |
-              (vertical_filter_id == 9))) {  // 6 tap with weird negative taps.
+  } else if ((static_cast<int>(filter_index == 1) &
+              (static_cast<int>(vertical_filter_id == 7) |
+               static_cast<int>(vertical_filter_id == 8) |
+               static_cast<int>(vertical_filter_id == 9))) !=
+             0) {  // 6 tap with weird negative taps.
     if (width == 2) {
       FilterVertical2xH<1,
                         /*negative_outside_taps=*/true>(
@@ -2427,8 +2430,9 @@ void ConvolveCompoundVertical_NEON(
       FilterVertical<0, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps + 1);
     }
-  } else if ((filter_index == 1) & ((vertical_filter_id == 1) |
-                                    (vertical_filter_id == 15))) {  // 5 tap.
+  } else if ((static_cast<int>(filter_index == 1) &
+              (static_cast<int>(vertical_filter_id == 1) |
+               static_cast<int>(vertical_filter_id == 15))) != 0) {  // 5 tap.
     if (width == 4) {
       FilterVertical4xH<1, /*is_compound=*/true>(src, src_stride, dest, 4,
                                                  height, taps + 1);
@@ -2436,9 +2440,11 @@ void ConvolveCompoundVertical_NEON(
       FilterVertical<1, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps + 1);
     }
-  } else if ((filter_index == 1) &
-             ((vertical_filter_id == 7) | (vertical_filter_id == 8) |
-              (vertical_filter_id == 9))) {  // 6 tap with weird negative taps.
+  } else if ((static_cast<int>(filter_index == 1) &
+              (static_cast<int>(vertical_filter_id == 7) |
+               static_cast<int>(vertical_filter_id == 8) |
+               static_cast<int>(vertical_filter_id == 9))) !=
+             0) {  // 6 tap with weird negative taps.
     if (width == 4) {
       FilterVertical4xH<1, /*is_compound=*/true,
                         /*negative_outside_taps=*/true>(src, src_stride, dest,

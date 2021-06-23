@@ -672,10 +672,12 @@ void ConvolveVertical_NEON(
       FilterVertical<0>(src, src_stride, dest, dest_stride, width, height,
                         taps + 1);
     }
-  } else if ((filter_index == 1) &
-             ((vertical_filter_id == 1) | (vertical_filter_id == 7) |
-              (vertical_filter_id == 8) | (vertical_filter_id == 9) |
-              (vertical_filter_id == 15))) {  // 6 tap.
+  } else if ((static_cast<int>(filter_index == 1) &
+              (static_cast<int>(vertical_filter_id == 1) |
+               static_cast<int>(vertical_filter_id == 7) |
+               static_cast<int>(vertical_filter_id == 8) |
+               static_cast<int>(vertical_filter_id == 9) |
+               static_cast<int>(vertical_filter_id == 15))) != 0) {  // 6 tap.
     if (width == 2) {
       FilterVertical2xH<1>(src, src_stride, dest, dest_stride, height,
                            taps + 1);
@@ -761,10 +763,12 @@ void ConvolveCompoundVertical_NEON(
       FilterVertical<0, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps + 1);
     }
-  } else if ((filter_index == 1) &
-             ((vertical_filter_id == 1) | (vertical_filter_id == 7) |
-              (vertical_filter_id == 8) | (vertical_filter_id == 9) |
-              (vertical_filter_id == 15))) {  // 6 tap.
+  } else if ((static_cast<int>(filter_index == 1) &
+              (static_cast<int>(vertical_filter_id == 1) |
+               static_cast<int>(vertical_filter_id == 7) |
+               static_cast<int>(vertical_filter_id == 8) |
+               static_cast<int>(vertical_filter_id == 9) |
+               static_cast<int>(vertical_filter_id == 15))) != 0) {  // 6 tap.
     if (width == 4) {
       FilterVertical4xH<1, /*is_compound=*/true>(src, src_stride, dest, 4,
                                                  height, taps + 1);
