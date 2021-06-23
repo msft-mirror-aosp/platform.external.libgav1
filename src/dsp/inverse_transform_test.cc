@@ -43,27 +43,27 @@ namespace {
 constexpr int kMaxBlockSize = 64;
 constexpr int kTotalPixels = kMaxBlockSize * kMaxBlockSize;
 
-const char* const kTransformSize1DNames[kNum1DTransformSizes] = {
-    "k1DTransformSize4", "k1DTransformSize8", "k1DTransformSize16",
-    "k1DTransformSize32", "k1DTransformSize64"};
+const char* const kTransform1dSizeNames[kNumTransform1dSizes] = {
+    "kTransform1dSize4", "kTransform1dSize8", "kTransform1dSize16",
+    "kTransform1dSize32", "kTransform1dSize64"};
 
-constexpr TransformSize1D kRow1DTransformSizes[] = {
-    k1DTransformSize4,  k1DTransformSize4,  k1DTransformSize4,
-    k1DTransformSize8,  k1DTransformSize8,  k1DTransformSize8,
-    k1DTransformSize8,  k1DTransformSize16, k1DTransformSize16,
-    k1DTransformSize16, k1DTransformSize16, k1DTransformSize16,
-    k1DTransformSize32, k1DTransformSize32, k1DTransformSize32,
-    k1DTransformSize32, k1DTransformSize64, k1DTransformSize64,
-    k1DTransformSize64};
+constexpr Transform1dSize kRowTransform1dSizes[] = {
+    kTransform1dSize4,  kTransform1dSize4,  kTransform1dSize4,
+    kTransform1dSize8,  kTransform1dSize8,  kTransform1dSize8,
+    kTransform1dSize8,  kTransform1dSize16, kTransform1dSize16,
+    kTransform1dSize16, kTransform1dSize16, kTransform1dSize16,
+    kTransform1dSize32, kTransform1dSize32, kTransform1dSize32,
+    kTransform1dSize32, kTransform1dSize64, kTransform1dSize64,
+    kTransform1dSize64};
 
-constexpr TransformSize1D kCol1DTransformSizes[] = {
-    k1DTransformSize4,  k1DTransformSize8,  k1DTransformSize16,
-    k1DTransformSize4,  k1DTransformSize8,  k1DTransformSize16,
-    k1DTransformSize32, k1DTransformSize4,  k1DTransformSize8,
-    k1DTransformSize16, k1DTransformSize32, k1DTransformSize64,
-    k1DTransformSize8,  k1DTransformSize16, k1DTransformSize32,
-    k1DTransformSize64, k1DTransformSize16, k1DTransformSize32,
-    k1DTransformSize64};
+constexpr Transform1dSize kColTransform1dSizes[] = {
+    kTransform1dSize4,  kTransform1dSize8,  kTransform1dSize16,
+    kTransform1dSize4,  kTransform1dSize8,  kTransform1dSize16,
+    kTransform1dSize32, kTransform1dSize4,  kTransform1dSize8,
+    kTransform1dSize16, kTransform1dSize32, kTransform1dSize64,
+    kTransform1dSize8,  kTransform1dSize16, kTransform1dSize32,
+    kTransform1dSize64, kTransform1dSize16, kTransform1dSize32,
+    kTransform1dSize64};
 
 template <int bitdepth, typename SrcPixel, typename DstPixel>
 class InverseTransformTestBase : public testing::TestWithParam<TransformSize>,
@@ -167,8 +167,8 @@ class InverseTransformTest
     const Dsp* const dsp = GetDspTable(bitdepth);
     ASSERT_NE(dsp, nullptr);
 
-    tx_size_1d_row_ = kRow1DTransformSizes[tx_size_];
-    tx_size_1d_column_ = kCol1DTransformSizes[tx_size_];
+    tx_size_1d_row_ = kRowTransform1dSizes[tx_size_];
+    tx_size_1d_column_ = kColTransform1dSizes[tx_size_];
 
     memcpy(base_inverse_transforms_, dsp->inverse_transforms,
            sizeof(base_inverse_transforms_));
@@ -193,7 +193,7 @@ class InverseTransformTest
     memcpy(cur_inverse_transforms_, dsp->inverse_transforms,
            sizeof(cur_inverse_transforms_));
 
-    for (int i = 0; i < kNum1DTransforms; ++i) {
+    for (int i = 0; i < kNumTransform1ds; ++i) {
       // skip functions that haven't been specialized for this particular
       // architecture.
       if (cur_inverse_transforms_[i][tx_size_1d_row_][kRow] ==
@@ -220,8 +220,8 @@ class InverseTransformTest
   Array2DView<DstPixel> base_frame_buffer_;
   Array2DView<DstPixel> cur_frame_buffer_;
 
-  TransformSize1D tx_size_1d_row_ = k1DTransformSize4;
-  TransformSize1D tx_size_1d_column_ = k1DTransformSize4;
+  Transform1dSize tx_size_1d_row_ = kTransform1dSize4;
+  Transform1dSize tx_size_1d_column_ = kTransform1dSize4;
 
   InverseTransformAddFuncs base_inverse_transforms_;
   InverseTransformAddFuncs cur_inverse_transforms_;
@@ -237,23 +237,23 @@ constexpr TransformType kLibgav1TxType[kNumTransformTypes] = {
     kTransformTypeIdentityAdst,     kTransformTypeAdstIdentity,
     kTransformTypeIdentityFlipadst, kTransformTypeFlipadstIdentity};
 
-// Maps TransformType to dsp::Transform1D for the row transforms.
-constexpr Transform1D kRowTransform[kNumTransformTypes] = {
-    k1DTransformDct,      k1DTransformAdst,     k1DTransformDct,
-    k1DTransformAdst,     k1DTransformAdst,     k1DTransformDct,
-    k1DTransformAdst,     k1DTransformAdst,     k1DTransformAdst,
-    k1DTransformIdentity, k1DTransformIdentity, k1DTransformDct,
-    k1DTransformIdentity, k1DTransformAdst,     k1DTransformIdentity,
-    k1DTransformAdst};
+// Maps TransformType to dsp::Transform1d for the row transforms.
+constexpr Transform1d kRowTransform[kNumTransformTypes] = {
+    kTransform1dDct,      kTransform1dAdst,     kTransform1dDct,
+    kTransform1dAdst,     kTransform1dAdst,     kTransform1dDct,
+    kTransform1dAdst,     kTransform1dAdst,     kTransform1dAdst,
+    kTransform1dIdentity, kTransform1dIdentity, kTransform1dDct,
+    kTransform1dIdentity, kTransform1dAdst,     kTransform1dIdentity,
+    kTransform1dAdst};
 
-// Maps TransformType to dsp::Transform1D for the column transforms.
-constexpr Transform1D kColumnTransform[kNumTransformTypes] = {
-    k1DTransformDct,      k1DTransformDct,      k1DTransformAdst,
-    k1DTransformAdst,     k1DTransformDct,      k1DTransformAdst,
-    k1DTransformAdst,     k1DTransformAdst,     k1DTransformAdst,
-    k1DTransformIdentity, k1DTransformDct,      k1DTransformIdentity,
-    k1DTransformAdst,     k1DTransformIdentity, k1DTransformAdst,
-    k1DTransformIdentity};
+// Maps TransformType to dsp::Transform1d for the column transforms.
+constexpr Transform1d kColumnTransform[kNumTransformTypes] = {
+    kTransform1dDct,      kTransform1dDct,      kTransform1dAdst,
+    kTransform1dAdst,     kTransform1dDct,      kTransform1dAdst,
+    kTransform1dAdst,     kTransform1dAdst,     kTransform1dAdst,
+    kTransform1dIdentity, kTransform1dDct,      kTransform1dIdentity,
+    kTransform1dAdst,     kTransform1dIdentity, kTransform1dAdst,
+    kTransform1dIdentity};
 
 // Mask indicating whether the transform sets contain a particular transform
 // type. If |tx_type| is present in |tx_set|, then the |tx_type|th LSB is set.
@@ -285,10 +285,10 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestRandomValues(
     const TransformType tx_type = (tx_type_idx == -1)
                                       ? kTransformTypeDctDct
                                       : kLibgav1TxType[tx_type_idx];
-    const Transform1D row_transform =
-        (tx_type_idx == -1) ? k1DTransformWht : kRowTransform[tx_type];
-    const Transform1D column_transform =
-        (tx_type_idx == -1) ? k1DTransformWht : kColumnTransform[tx_type];
+    const Transform1d row_transform =
+        (tx_type_idx == -1) ? kTransform1dWht : kRowTransform[tx_type];
+    const Transform1d column_transform =
+        (tx_type_idx == -1) ? kTransform1dWht : kColumnTransform[tx_type];
 
     // Skip the 'C' test case as this is used as the reference.
     if (base_inverse_transforms_[row_transform][tx_size_1d_row_][kRow] ==
@@ -351,7 +351,7 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestRandomValues(
                                      kMaxBlockSize, false)) {
         ADD_FAILURE() << "Result from optimized version of "
                       << ToString(
-                             static_cast<TransformSize1D>(tx_size_1d_column_))
+                             static_cast<Transform1dSize>(tx_size_1d_column_))
                       << " differs from reference in iteration #" << n
                       << " tx_type_idx:" << tx_type_idx;
         break;
@@ -365,7 +365,7 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestRandomValues(
           static_cast<int>(absl::ToInt64Microseconds(cur_elapsed_time[kRow]));
       printf("TxType %30s[%19s]:: base_row: %5d us  cur_row: %5d us  %2.2fx \n",
              (tx_type_idx == -1) ? ToString(row_transform) : ToString(tx_type),
-             kTransformSize1DNames[tx_size_1d_row_], base_row_elapsed_time_us,
+             kTransform1dSizeNames[tx_size_1d_row_], base_row_elapsed_time_us,
              cur_row_elapsed_time_us,
              static_cast<float>(base_row_elapsed_time_us) /
                  static_cast<float>(cur_row_elapsed_time_us));
@@ -376,7 +376,7 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestRandomValues(
       printf(
           "TxType %30s[%19s]:: base_col: %5d us  cur_col: %5d us  %2.2fx \n",
           (tx_type_idx == -1) ? ToString(column_transform) : ToString(tx_type),
-          kTransformSize1DNames[tx_size_1d_column_],
+          kTransform1dSizeNames[tx_size_1d_column_],
           base_column_elapsed_time_us, cur_column_elapsed_time_us,
           static_cast<float>(base_column_elapsed_time_us) /
               static_cast<float>(cur_column_elapsed_time_us));
@@ -391,8 +391,8 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestDcOnlyRandomValue(
 
   for (int tx_type_idx = 0; tx_type_idx < kNumTransformTypes; ++tx_type_idx) {
     const TransformType tx_type = kLibgav1TxType[tx_type_idx];
-    const Transform1D row_transform = kRowTransform[tx_type];
-    const Transform1D column_transform = kColumnTransform[tx_type];
+    const Transform1d row_transform = kRowTransform[tx_type];
+    const Transform1d column_transform = kColumnTransform[tx_type];
 
     if (cur_inverse_transforms_[row_transform][tx_size_1d_row_][kRow] ==
             nullptr ||
@@ -457,7 +457,7 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestDcOnlyRandomValue(
                                      kMaxBlockSize, false)) {
         ADD_FAILURE() << "Result from dc only version of "
                       << ToString(
-                             static_cast<TransformSize1D>(tx_size_1d_column_))
+                             static_cast<Transform1dSize>(tx_size_1d_column_))
                       << " differs from reference in iteration #" << n
                       << "tx_type_idx:" << tx_type_idx;
         break;
@@ -470,7 +470,7 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestDcOnlyRandomValue(
       const auto cur_row_elapsed_time_us =
           static_cast<int>(absl::ToInt64Microseconds(cur_elapsed_time[kRow]));
       printf("TxType %30s[%19s]:: base_row: %5d us  cur_row: %5d us  %2.2fx \n",
-             ToString(tx_type), kTransformSize1DNames[tx_size_1d_row_],
+             ToString(tx_type), kTransform1dSizeNames[tx_size_1d_row_],
              base_row_elapsed_time_us, cur_row_elapsed_time_us,
              static_cast<float>(base_row_elapsed_time_us) /
                  static_cast<float>(cur_row_elapsed_time_us));
@@ -479,7 +479,7 @@ void InverseTransformTest<bitdepth, Pixel, DstPixel>::TestDcOnlyRandomValue(
       const auto cur_column_elapsed_time_us = static_cast<int>(
           absl::ToInt64Microseconds(cur_elapsed_time[kColumn]));
       printf("TxType %30s[%19s]:: base_col: %5d us  cur_col: %5d us  %2.2fx \n",
-             ToString(tx_type), kTransformSize1DNames[tx_size_1d_column_],
+             ToString(tx_type), kTransform1dSizeNames[tx_size_1d_column_],
              base_column_elapsed_time_us, cur_column_elapsed_time_us,
              static_cast<float>(base_column_elapsed_time_us) /
                  static_cast<float>(cur_column_elapsed_time_us));

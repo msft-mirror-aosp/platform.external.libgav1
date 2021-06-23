@@ -50,23 +50,23 @@ enum IntraPredictor : uint8_t {
 };
 
 // List of valid 1D transforms.
-enum Transform1D : uint8_t {
-  k1DTransformDct,   // Discrete Cosine Transform.
-  k1DTransformAdst,  // Asymmetric Discrete Sine Transform.
-  k1DTransformIdentity,
-  k1DTransformWht,  // Walsh Hadamard Transform.
-  kNum1DTransforms
+enum Transform1d : uint8_t {
+  kTransform1dDct,   // Discrete Cosine Transform.
+  kTransform1dAdst,  // Asymmetric Discrete Sine Transform.
+  kTransform1dIdentity,
+  kTransform1dWht,  // Walsh Hadamard Transform.
+  kNumTransform1ds
 };
 
 // List of valid 1D transform sizes. Not all transforms may be available for all
 // the sizes.
-enum TransformSize1D : uint8_t {
-  k1DTransformSize4,
-  k1DTransformSize8,
-  k1DTransformSize16,
-  k1DTransformSize32,
-  k1DTransformSize64,
-  kNum1DTransformSizes
+enum Transform1dSize : uint8_t {
+  kTransform1dSize4,
+  kTransform1dSize8,
+  kTransform1dSize16,
+  kTransform1dSize32,
+  kTransform1dSize64,
+  kNumTransform1dSizes
 };
 
 // The maximum width of the loop filter, fewer pixels may be filtered depending
@@ -120,36 +120,36 @@ inline const char* ToString(const IntraPredictor predictor) {
   abort();
 }
 
-inline const char* ToString(const Transform1D transform) {
+inline const char* ToString(const Transform1d transform) {
   switch (transform) {
-    case k1DTransformDct:
-      return "k1DTransformDct";
-    case k1DTransformAdst:
-      return "k1DTransformAdst";
-    case k1DTransformIdentity:
-      return "k1DTransformIdentity";
-    case k1DTransformWht:
-      return "k1DTransformWht";
-    case kNum1DTransforms:
-      return "kNum1DTransforms";
+    case kTransform1dDct:
+      return "kTransform1dDct";
+    case kTransform1dAdst:
+      return "kTransform1dAdst";
+    case kTransform1dIdentity:
+      return "kTransform1dIdentity";
+    case kTransform1dWht:
+      return "kTransform1dWht";
+    case kNumTransform1ds:
+      return "kNumTransform1ds";
   }
   abort();
 }
 
-inline const char* ToString(const TransformSize1D transform_size) {
+inline const char* ToString(const Transform1dSize transform_size) {
   switch (transform_size) {
-    case k1DTransformSize4:
-      return "k1DTransformSize4";
-    case k1DTransformSize8:
-      return "k1DTransformSize8";
-    case k1DTransformSize16:
-      return "k1DTransformSize16";
-    case k1DTransformSize32:
-      return "k1DTransformSize32";
-    case k1DTransformSize64:
-      return "k1DTransformSize64";
-    case kNum1DTransformSizes:
-      return "kNum1DTransformSizes";
+    case kTransform1dSize4:
+      return "kTransform1dSize4";
+    case kTransform1dSize8:
+      return "kTransform1dSize8";
+    case kTransform1dSize16:
+      return "kTransform1dSize16";
+    case kTransform1dSize32:
+      return "kTransform1dSize32";
+    case kTransform1dSize64:
+      return "kTransform1dSize64";
+    case kNumTransform1dSizes:
+      return "kNumTransform1dSizes";
   }
   abort();
 }
@@ -324,7 +324,7 @@ using InverseTransformAddFunc = void (*)(TransformType tx_type,
 // The final dimension holds row and column transforms indexed with kRow and
 // kColumn.
 using InverseTransformAddFuncs =
-    InverseTransformAddFunc[kNum1DTransforms][kNum1DTransformSizes][2];
+    InverseTransformAddFunc[kNumTransform1ds][kNumTransform1dSizes][2];
 
 //------------------------------------------------------------------------------
 // Post processing.

@@ -2708,63 +2708,63 @@ void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
   // Maximum transform size for Dct is 64.
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize4][kRow] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize4][kRow] =
       Dct4TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize4][kColumn] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize4][kColumn] =
       Dct4TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize8][kRow] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize8][kRow] =
       Dct8TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize8][kColumn] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize8][kColumn] =
       Dct8TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize16][kRow] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize16][kRow] =
       Dct16TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize16][kColumn] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize16][kColumn] =
       Dct16TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kRow] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize32][kRow] =
       Dct32TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize32][kColumn] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize32][kColumn] =
       Dct32TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize64][kRow] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize64][kRow] =
       Dct64TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformDct][k1DTransformSize64][kColumn] =
+  dsp->inverse_transforms[kTransform1dDct][kTransform1dSize64][kColumn] =
       Dct64TransformLoopColumn_NEON;
 
   // Maximum transform size for Adst is 16.
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kRow] =
+  dsp->inverse_transforms[kTransform1dAdst][kTransform1dSize4][kRow] =
       Adst4TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize4][kColumn] =
+  dsp->inverse_transforms[kTransform1dAdst][kTransform1dSize4][kColumn] =
       Adst4TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize8][kRow] =
+  dsp->inverse_transforms[kTransform1dAdst][kTransform1dSize8][kRow] =
       Adst8TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize8][kColumn] =
+  dsp->inverse_transforms[kTransform1dAdst][kTransform1dSize8][kColumn] =
       Adst8TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize16][kRow] =
+  dsp->inverse_transforms[kTransform1dAdst][kTransform1dSize16][kRow] =
       Adst16TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformAdst][k1DTransformSize16][kColumn] =
+  dsp->inverse_transforms[kTransform1dAdst][kTransform1dSize16][kColumn] =
       Adst16TransformLoopColumn_NEON;
 
   // Maximum transform size for Identity transform is 32.
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize4][kRow] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize4][kRow] =
       Identity4TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize4][kColumn] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize4][kColumn] =
       Identity4TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize8][kRow] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize8][kRow] =
       Identity8TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize8][kColumn] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize8][kColumn] =
       Identity8TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize16][kRow] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize16][kRow] =
       Identity16TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize16][kColumn] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize16][kColumn] =
       Identity16TransformLoopColumn_NEON;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kRow] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize32][kRow] =
       Identity32TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformIdentity][k1DTransformSize32][kColumn] =
+  dsp->inverse_transforms[kTransform1dIdentity][kTransform1dSize32][kColumn] =
       Identity32TransformLoopColumn_NEON;
 
   // Maximum transform size for Wht is 4.
-  dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kRow] =
+  dsp->inverse_transforms[kTransform1dWht][kTransform1dSize4][kRow] =
       Wht4TransformLoopRow_NEON;
-  dsp->inverse_transforms[k1DTransformWht][k1DTransformSize4][kColumn] =
+  dsp->inverse_transforms[kTransform1dWht][kTransform1dSize4][kColumn] =
       Wht4TransformLoopColumn_NEON;
 }
 
