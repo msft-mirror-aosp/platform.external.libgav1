@@ -54,10 +54,10 @@ void HorizontalFilter(const int sx4, const int16_t alpha,
                       int16_t intermediate_result_row[8]) {
   int sx = sx4 - MultiplyBy4(alpha);
   int8x8_t filter[8];
-  for (int x = 0; x < 8; ++x) {
+  for (auto& f : filter) {
     const int offset = RightShiftWithRounding(sx, kWarpedDiffPrecisionBits) +
                        kWarpedPixelPrecisionShifts;
-    filter[x] = vld1_s8(kWarpedFilters8[offset]);
+    f = vld1_s8(kWarpedFilters8[offset]);
     sx += alpha;
   }
   Transpose8x8(filter);
@@ -395,11 +395,11 @@ void Warp_NEON(const void* LIBGAV1_RESTRICT const source,
       for (int y = 0; y < 8; ++y) {
         int sy = sy4 - MultiplyBy4(gamma);
         int16x8_t filter[8];
-        for (int x = 0; x < 8; ++x) {
+        for (auto& f : filter) {
           const int offset =
               RightShiftWithRounding(sy, kWarpedDiffPrecisionBits) +
               kWarpedPixelPrecisionShifts;
-          filter[x] = vld1q_s16(kWarpedFilters[offset]);
+          f = vld1q_s16(kWarpedFilters[offset]);
           sy += gamma;
         }
         Transpose8x8(filter);
