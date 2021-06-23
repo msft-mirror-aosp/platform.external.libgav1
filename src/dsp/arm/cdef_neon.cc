@@ -249,8 +249,8 @@ LIBGAV1_ALWAYS_INLINE void AddPartial(const void* LIBGAV1_RESTRICT const source,
   // 60 61 62 63 64 65 66 67
   // 70 71 72 73 74 75 76 77
   uint8x8_t v_src[8];
-  for (int i = 0; i < 8; ++i) {
-    v_src[i] = vld1_u8(src);
+  for (auto& v : v_src) {
+    v = vld1_u8(src);
     src += stride;
   }
 
