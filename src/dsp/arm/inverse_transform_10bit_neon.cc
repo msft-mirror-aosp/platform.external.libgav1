@@ -298,8 +298,8 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool is_row,
 
   if (is_row) {
     const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
-    for (int i = 0; i < 4; ++i) {
-      s[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(s[i], v_row_shift)));
+    for (auto& i : s) {
+      i = vmovl_s16(vqmovn_s32(vqrshlq_s32(i, v_row_shift)));
     }
     Transpose4x4(s, s);
   }
@@ -376,8 +376,8 @@ LIBGAV1_ALWAYS_INLINE void Dct8_NEON(void* dest, int32_t step, bool is_row,
 
   if (is_row) {
     const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
-    for (int i = 0; i < 8; ++i) {
-      s[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(s[i], v_row_shift)));
+    for (auto& i : s) {
+      i = vmovl_s16(vqmovn_s32(vqrshlq_s32(i, v_row_shift)));
     }
     Transpose4x4(&s[0], &s[0]);
     Transpose4x4(&s[4], &s[4]);
@@ -494,8 +494,8 @@ LIBGAV1_ALWAYS_INLINE void Dct16_NEON(void* dest, int32_t step, bool is_row,
 
   if (is_row) {
     const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
-    for (int i = 0; i < 16; ++i) {
-      s[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(s[i], v_row_shift)));
+    for (auto& i : s) {
+      i = vmovl_s16(vqmovn_s32(vqrshlq_s32(i, v_row_shift)));
     }
     for (int idx = 0; idx < 16; idx += 8) {
       Transpose4x4(&s[idx], &s[idx]);
@@ -689,8 +689,8 @@ LIBGAV1_ALWAYS_INLINE void Dct32_NEON(void* dest, const int32_t step,
       int32x4_t output[8];
       Transpose4x4(&s[idx], &output[0]);
       Transpose4x4(&s[idx + 4], &output[4]);
-      for (int i = 0; i < 8; ++i) {
-        output[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(output[i], v_row_shift)));
+      for (auto& o : output) {
+        o = vmovl_s16(vqmovn_s32(vqrshlq_s32(o, v_row_shift)));
       }
       StoreDst<4>(dst, step, idx, &output[0]);
       StoreDst<4>(dst, step, idx + 4, &output[4]);
@@ -918,8 +918,8 @@ void Dct64_NEON(void* dest, int32_t step, bool is_row, int row_shift) {
       int32x4_t output[8];
       Transpose4x4(&s[idx], &output[0]);
       Transpose4x4(&s[idx + 4], &output[4]);
-      for (int i = 0; i < 8; ++i) {
-        output[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(output[i], v_row_shift)));
+      for (auto& o : output) {
+        o = vmovl_s16(vqmovn_s32(vqrshlq_s32(o, v_row_shift)));
       }
       StoreDst<4>(dst, step, idx, &output[0]);
       StoreDst<4>(dst, step, idx + 4, &output[4]);
@@ -1121,8 +1121,8 @@ LIBGAV1_ALWAYS_INLINE void Adst8_NEON(void* dest, int32_t step, bool is_row,
 
   if (is_row) {
     const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
-    for (int i = 0; i < 8; ++i) {
-      x[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[i], v_row_shift)));
+    for (auto& i : x) {
+      i = vmovl_s16(vqmovn_s32(vqrshlq_s32(i, v_row_shift)));
     }
     Transpose4x4(&x[0], &x[0]);
     Transpose4x4(&x[4], &x[4]);
@@ -1357,8 +1357,8 @@ LIBGAV1_ALWAYS_INLINE void Adst16_NEON(void* dest, int32_t step, bool is_row,
 
   if (is_row) {
     const int32x4_t v_row_shift = vdupq_n_s32(-row_shift);
-    for (int i = 0; i < 16; ++i) {
-      x[i] = vmovl_s16(vqmovn_s32(vqrshlq_s32(x[i], v_row_shift)));
+    for (auto& i : x) {
+      i = vmovl_s16(vqmovn_s32(vqrshlq_s32(i, v_row_shift)));
     }
     for (int idx = 0; idx < 16; idx += 8) {
       Transpose4x4(&x[idx], &x[idx]);

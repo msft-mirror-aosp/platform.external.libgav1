@@ -736,8 +736,8 @@ LIBGAV1_ALWAYS_INLINE void Dct16_NEON(void* dest, int32_t step, bool is_row,
 
   if (is_row) {
     const int16x8_t v_row_shift = vdupq_n_s16(-row_shift);
-    for (int i = 0; i < 16; ++i) {
-      s[i] = vqrshlq_s16(s[i], v_row_shift);
+    for (auto& i : s) {
+      i = vqrshlq_s16(i, v_row_shift);
     }
   }
 
@@ -914,8 +914,8 @@ LIBGAV1_ALWAYS_INLINE void Dct32_NEON(void* dest, const int32_t step,
     for (int idx = 0; idx < 32; idx += 8) {
       int16x8_t output[8];
       Transpose8x8(&s[idx], output);
-      for (int i = 0; i < 8; ++i) {
-        output[i] = vqrshlq_s16(output[i], v_row_shift);
+      for (auto& o : output) {
+        o = vqrshlq_s16(o, v_row_shift);
       }
       StoreDst<16, 8>(dst, step, idx, output);
     }
@@ -1135,8 +1135,8 @@ void Dct64_NEON(void* dest, int32_t step, bool is_row, int row_shift) {
     for (int idx = 0; idx < 64; idx += 8) {
       int16x8_t output[8];
       Transpose8x8(&s[idx], output);
-      for (int i = 0; i < 8; ++i) {
-        output[i] = vqrshlq_s16(output[i], v_row_shift);
+      for (auto& o : output) {
+        o = vqrshlq_s16(o, v_row_shift);
       }
       StoreDst<16, 8>(dst, step, idx, output);
     }
@@ -1611,13 +1611,13 @@ LIBGAV1_ALWAYS_INLINE void Adst16_NEON(void* dest, int32_t step, bool is_row,
       const int16x8_t v_row_shift = vdupq_n_s16(-row_shift);
       int16x8_t output[4];
       Transpose4x8To8x4(x, output);
-      for (int i = 0; i < 4; ++i) {
-        output[i] = vqrshlq_s16(output[i], v_row_shift);
+      for (auto& o : output) {
+        o = vqrshlq_s16(o, v_row_shift);
       }
       StoreDst<16, 4>(dst, step, 0, output);
       Transpose4x8To8x4(&x[8], output);
-      for (int i = 0; i < 4; ++i) {
-        output[i] = vqrshlq_s16(output[i], v_row_shift);
+      for (auto& o : output) {
+        o = vqrshlq_s16(o, v_row_shift);
       }
       StoreDst<16, 4>(dst, step, 8, output);
     } else {
@@ -1629,8 +1629,8 @@ LIBGAV1_ALWAYS_INLINE void Adst16_NEON(void* dest, int32_t step, bool is_row,
       for (int idx = 0; idx < 16; idx += 8) {
         int16x8_t output[8];
         Transpose8x8(&x[idx], output);
-        for (int i = 0; i < 8; ++i) {
-          output[i] = vqrshlq_s16(output[i], v_row_shift);
+        for (auto& o : output) {
+          o = vqrshlq_s16(o, v_row_shift);
         }
         StoreDst<16, 8>(dst, step, idx, output);
       }
