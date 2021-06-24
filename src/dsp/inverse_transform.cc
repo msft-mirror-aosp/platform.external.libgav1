@@ -1333,12 +1333,7 @@ void InitAll(Dsp* const dsp) {
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(8);
   assert(dsp != nullptr);
-  for (auto& inverse_transform_by_size : dsp->inverse_transforms) {
-    for (auto& inverse_transform : inverse_transform_by_size) {
-      inverse_transform[kRow] = nullptr;
-      inverse_transform[kColumn] = nullptr;
-    }
-  }
+  static_cast<void>(dsp);
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   InitAll<8, int16_t, uint8_t>(dsp);
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
@@ -1479,12 +1474,7 @@ void Init8bpp() {
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(10);
   assert(dsp != nullptr);
-  for (auto& inverse_transform_by_size : dsp->inverse_transforms) {
-    for (auto& inverse_transform : inverse_transform_by_size) {
-      inverse_transform[kRow] = nullptr;
-      inverse_transform[kColumn] = nullptr;
-    }
-  }
+  static_cast<void>(dsp);
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   InitAll<10, int32_t, uint16_t>(dsp);
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
