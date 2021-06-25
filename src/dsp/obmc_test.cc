@@ -332,6 +332,10 @@ INSTANTIATE_TEST_SUITE_P(C, ObmcBlendTest10bpp,
 INSTANTIATE_TEST_SUITE_P(SSE41, ObmcBlendTest10bpp,
                          testing::ValuesIn(kObmcTestParam));
 #endif
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, ObmcBlendTest10bpp,
+                         testing::ValuesIn(kObmcTestParam));
+#endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
 }  // namespace
