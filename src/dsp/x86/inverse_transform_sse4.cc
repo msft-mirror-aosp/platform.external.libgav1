@@ -2068,8 +2068,7 @@ LIBGAV1_ALWAYS_INLINE void Wht4_SSE4_1(Array2DView<uint8_t> frame,
   for (int row = 0; row < 4; ++row) {
     const __m128i frame_data = Load4(dst);
     const __m128i a = _mm_cvtepu8_epi16(frame_data);
-    // Saturate to prevent overflowing int16_t
-    const __m128i b = _mm_adds_epi16(a, s[row]);
+    const __m128i b = _mm_add_epi16(a, s[row]);
     Store4(dst, _mm_packus_epi16(b, b));
     dst += stride;
   }
