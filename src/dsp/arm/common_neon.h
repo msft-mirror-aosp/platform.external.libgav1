@@ -304,6 +304,28 @@ inline void Store8(void* const buf, const uint16x8_t val) {
 }
 
 //------------------------------------------------------------------------------
+// Arithmetic.
+
+// Shim vmull_high_u16 for A32.
+inline uint32x4_t VMullHighU16(const uint16x8_t a, const uint16x8_t b) {
+#if defined(__aarch64__)
+  return vmull_high_u16(a, b);
+#else
+  return vmull_u16(vget_high_u16(a), vget_high_u16(b));
+#endif
+}
+
+// Shim vmlal_high_u16 for A32.
+inline uint32x4_t VMlalHighU16(const uint32x4_t a, const uint16x8_t b,
+                               const uint16x8_t c) {
+#if defined(__aarch64__)
+  return vmlal_high_u16(a, b, c);
+#else
+  return vmlal_u16(a, vget_high_u16(b), vget_high_u16(c));
+#endif
+}
+
+//------------------------------------------------------------------------------
 // Bit manipulation.
 
 // vshXX_n_XX() requires an immediate.

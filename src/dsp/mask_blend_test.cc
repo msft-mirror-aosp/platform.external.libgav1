@@ -514,6 +514,10 @@ INSTANTIATE_TEST_SUITE_P(C, MaskBlendTest10bpp,
 INSTANTIATE_TEST_SUITE_P(SSE41, MaskBlendTest10bpp,
                          testing::ValuesIn(kMaskBlendTestParam));
 #endif
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, MaskBlendTest10bpp,
+                         testing::ValuesIn(kMaskBlendTestParam));
+#endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
 }  // namespace
