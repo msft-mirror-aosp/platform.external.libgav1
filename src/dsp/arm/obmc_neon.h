@@ -34,6 +34,7 @@ void ObmcInit_NEON();
 #define LIBGAV1_Dsp8bpp_ObmcVertical LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp8bpp_ObmcHorizontal LIBGAV1_CPU_NEON
 
+#define LIBGAV1_Dsp10bpp_ObmcVertical LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp10bpp_ObmcHorizontal LIBGAV1_CPU_NEON
 #endif  // LIBGAV1_ENABLE_NEON
 

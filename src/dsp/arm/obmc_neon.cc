@@ -355,7 +355,9 @@ namespace high_bitdepth {
 namespace {
 
 // This is a flat array of masks for each block dimension from 2 to 32. The
-// starting index for each length is length-2.
+// starting index for each length is length-2. The value 64 leaves the result
+// equal to |pred| and may be ignored if convenient. Vector loads may overrread
+// values meant for larger sizes, but these values will be unused.
 constexpr uint16_t kObmcMask[62] = {
     // Obmc Mask 2
     45, 64,
@@ -492,9 +494,423 @@ void OverlapBlendFromLeft_NEON(
   } while (x < width);
 }
 
+template <int lane>
+inline uint16x4_t BlendObmcFromTop4(
+    uint8_t* LIBGAV1_RESTRICT const pred,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_pred, const uint16x8_t pred_mask,
+    const uint16x8_t obmc_pred_mask) {
+  const uint16x4_t pred_val = vld1_u16(reinterpret_cast<uint16_t*>(pred));
+  const uint16x4_t obmc_pred_val =
+      vld1_u16(reinterpret_cast<const uint16_t*>(obmc_pred));
+  const uint16x4_t weighted_pred = VMulLaneQU16<lane>(pred_val, pred_mask);
+  const uint16x4_t result = vrshr_n_u16(
+      VMlaLaneQU16<lane>(weighted_pred, obmc_pred_val, obmc_pred_mask), 6);
+  return result;
+}
+
+template <int lane>
+inline uint16x8_t BlendObmcFromTop8(
+    uint8_t* LIBGAV1_RESTRICT const pred,
+    const uint8_t* LIBGAV1_RESTRICT const obmc_pred, const uint16x8_t pred_mask,
+    const uint16x8_t obmc_pred_mask) {
+  const uint16x8_t pred_val = vld1q_u16(reinterpret_cast<uint16_t*>(pred));
+  const uint16x8_t obmc_pred_val =
+      vld1q_u16(reinterpret_cast<const uint16_t*>(obmc_pred));
+  const uint16x8_t weighted_pred = VMulQLaneQU16<lane>(pred_val, pred_mask);
+  const uint16x8_t result = vrshrq_n_u16(
+      VMlaQLaneQU16<lane>(weighted_pred, obmc_pred_val, obmc_pred_mask), 6);
+  return result;
+}
+
+inline void OverlapBlendFromTop4x2Or4_NEON(
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const uint8_t* LIBGAV1_RESTRICT obmc_pred,
+    const ptrdiff_t obmc_prediction_stride, const int height) {
+  const uint16x8_t pred_mask = vld1q_u16(&kObmcMask[height - 2]);
+  const uint16x8_t mask_inverter = vdupq_n_u16(64);
+  const uint16x8_t obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+  uint16x4_t result =
+      BlendObmcFromTop4<0>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  if (height == 2) {
+    // Mask value is 64, meaning |pred| is unchanged.
+    return;
+  }
+
+  result = BlendObmcFromTop4<1>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop4<2>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+}
+
+inline void OverlapBlendFromTop4xH_NEON(
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const int height, const uint8_t* LIBGAV1_RESTRICT obmc_pred,
+    const ptrdiff_t obmc_prediction_stride) {
+  if (height < 8) {
+    OverlapBlendFromTop4x2Or4_NEON(pred, prediction_stride, obmc_pred,
+                                   obmc_prediction_stride, height);
+    return;
+  }
+  const uint16_t* mask = kObmcMask + height - 2;
+  const uint16x8_t mask_inverter = vdupq_n_u16(64);
+  int y = 0;
+  // Compute 6 lines for height 8, or 12 lines for height 16. The remaining
+  // lines are unchanged as the corresponding mask value is 64.
+  do {
+    const uint16x8_t pred_mask = vld1q_u16(&mask[y]);
+    const uint16x8_t obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+    uint16x4_t result =
+        BlendObmcFromTop4<0>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+    vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    result = BlendObmcFromTop4<1>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+    vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    result = BlendObmcFromTop4<2>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+    vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    result = BlendObmcFromTop4<3>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+    vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    result = BlendObmcFromTop4<4>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+    vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    result = BlendObmcFromTop4<5>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+    vst1_u16(reinterpret_cast<uint16_t*>(pred), result);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    // Increment for the right mask index.
+    y += 6;
+  } while (y < height - 4);
+}
+
+inline void OverlapBlendFromTop8xH_NEON(
+    uint8_t* LIBGAV1_RESTRICT pred, const ptrdiff_t prediction_stride,
+    const uint8_t* LIBGAV1_RESTRICT obmc_pred,
+    const ptrdiff_t obmc_prediction_stride, const int height) {
+  const uint16_t* mask = kObmcMask + height - 2;
+  const uint16x8_t mask_inverter = vdupq_n_u16(64);
+  uint16x8_t pred_mask = vld1q_u16(mask);
+  uint16x8_t obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+  uint16x8_t result =
+      BlendObmcFromTop8<0>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  if (height == 2) return;
+
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<1>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<2>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<3>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  if (height == 4) return;
+
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<4>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<5>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+
+  if (height == 8) return;
+
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<6>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<7>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  pred_mask = vld1q_u16(&mask[8]);
+  obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+
+  result = BlendObmcFromTop8<0>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<1>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<2>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<3>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+
+  if (height == 16) return;
+
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<4>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<5>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<6>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<7>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  pred_mask = vld1q_u16(&mask[16]);
+  obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+
+  result = BlendObmcFromTop8<0>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<1>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<2>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<3>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<4>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<5>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<6>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+  pred += prediction_stride;
+  obmc_pred += obmc_prediction_stride;
+
+  result = BlendObmcFromTop8<7>(pred, obmc_pred, pred_mask, obmc_pred_mask);
+  vst1q_u16(reinterpret_cast<uint16_t*>(pred), result);
+}
+
+void OverlapBlendFromTop_NEON(
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t prediction_stride,
+    const int width, const int height,
+    const void* LIBGAV1_RESTRICT const obmc_prediction,
+    const ptrdiff_t obmc_prediction_stride) {
+  auto* pred = static_cast<uint8_t*>(prediction);
+  const auto* obmc_pred = static_cast<const uint8_t*>(obmc_prediction);
+  assert(width >= 4);
+  assert(height >= 2);
+
+  if (width == 4) {
+    OverlapBlendFromTop4xH_NEON(pred, prediction_stride, height, obmc_pred,
+                                obmc_prediction_stride);
+    return;
+  }
+
+  if (width == 8) {
+    OverlapBlendFromTop8xH_NEON(pred, prediction_stride, obmc_pred,
+                                obmc_prediction_stride, height);
+    return;
+  }
+
+  const uint16_t* mask = kObmcMask + height - 2;
+  const uint16x8_t mask_inverter = vdupq_n_u16(64);
+  const uint16x8_t pred_mask = vld1q_u16(mask);
+  // 64 - mask
+  const uint16x8_t obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+#define OBMC_ROW_FROM_TOP(n)                                                 \
+  do {                                                                       \
+    int x = 0;                                                               \
+    do {                                                                     \
+      const uint16x8_t result = BlendObmcFromTop8<n>(                        \
+          reinterpret_cast<uint8_t*>(reinterpret_cast<uint16_t*>(pred) + x), \
+          reinterpret_cast<const uint8_t*>(                                  \
+              reinterpret_cast<const uint16_t*>(obmc_pred) + x),             \
+          pred_mask, obmc_pred_mask);                                        \
+      vst1q_u16(reinterpret_cast<uint16_t*>(pred) + x, result);              \
+                                                                             \
+      x += 8;                                                                \
+    } while (x < width);                                                     \
+  } while (false)
+
+  // Compute 1 row.
+  if (height == 2) {
+    OBMC_ROW_FROM_TOP(0);
+    return;
+  }
+
+  // Compute 3 rows.
+  if (height == 4) {
+    OBMC_ROW_FROM_TOP(0);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(1);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(2);
+    return;
+  }
+
+  // Compute 6 rows.
+  if (height == 8) {
+    OBMC_ROW_FROM_TOP(0);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(1);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(2);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(3);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(4);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(5);
+    return;
+  }
+
+  // Compute 12 rows.
+  if (height == 16) {
+    OBMC_ROW_FROM_TOP(0);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(1);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(2);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(3);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(4);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(5);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(6);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(7);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    const uint16x8_t pred_mask = vld1q_u16(&mask[8]);
+    // 64 - mask
+    const uint16x8_t obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+    OBMC_ROW_FROM_TOP(0);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(1);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(2);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(3);
+    return;
+  }
+
+  // Stop when mask value becomes 64. This is a multiple of 8 for height 32
+  // and 64.
+  const int compute_height = height - (height >> 2);
+  int y = 0;
+  do {
+    const uint16x8_t pred_mask = vld1q_u16(&mask[y]);
+    // 64 - mask
+    const uint16x8_t obmc_pred_mask = vsubq_u16(mask_inverter, pred_mask);
+    OBMC_ROW_FROM_TOP(0);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(1);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(2);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(3);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(4);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(5);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(6);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+    OBMC_ROW_FROM_TOP(7);
+    pred += prediction_stride;
+    obmc_pred += obmc_prediction_stride;
+
+    y += 8;
+  } while (y < compute_height);
+}
+
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
+  dsp->obmc_blend[kObmcDirectionVertical] = OverlapBlendFromTop_NEON;
   dsp->obmc_blend[kObmcDirectionHorizontal] = OverlapBlendFromLeft_NEON;
 }
 

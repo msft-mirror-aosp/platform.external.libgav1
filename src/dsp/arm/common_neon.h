@@ -304,9 +304,9 @@ inline void Store8(void* const buf, const uint16x8_t val) {
 }
 
 //------------------------------------------------------------------------------
-// Arithmetic.
+// Multiply.
 
-// Shim vmull_high_u16 for A32.
+// Shim vmull_high_u16 for armv7.
 inline uint32x4_t VMullHighU16(const uint16x8_t a, const uint16x8_t b) {
 #if defined(__aarch64__)
   return vmull_high_u16(a, b);
@@ -315,13 +315,71 @@ inline uint32x4_t VMullHighU16(const uint16x8_t a, const uint16x8_t b) {
 #endif
 }
 
-// Shim vmlal_high_u16 for A32.
+// Shim vmlal_high_u16 for armv7.
 inline uint32x4_t VMlalHighU16(const uint32x4_t a, const uint16x8_t b,
                                const uint16x8_t c) {
 #if defined(__aarch64__)
   return vmlal_high_u16(a, b, c);
 #else
   return vmlal_u16(a, vget_high_u16(b), vget_high_u16(c));
+#endif
+}
+
+// Shim vmul_laneq_u16 for armv7.
+template <int lane>
+inline uint16x4_t VMulLaneQU16(const uint16x4_t a, const uint16x8_t b) {
+#if defined(__aarch64__)
+  return vmul_laneq_u16(a, b, lane);
+#else
+  if (lane < 4) {
+    return vmul_lane_u16(a, vget_low_u16(b), lane & 0x3);
+  } else {
+    return vmul_lane_u16(a, vget_high_u16(b), (lane - 4) & 0x3);
+  }
+#endif
+}
+
+// Shim vmulq_laneq_u16 for armv7.
+template <int lane>
+inline uint16x8_t VMulQLaneQU16(const uint16x8_t a, const uint16x8_t b) {
+#if defined(__aarch64__)
+  return vmulq_laneq_u16(a, b, lane);
+#else
+  if (lane < 4) {
+    return vmulq_lane_u16(a, vget_low_u16(b), lane & 0x3);
+  } else {
+    return vmulq_lane_u16(a, vget_high_u16(b), (lane - 4) & 0x3);
+  }
+#endif
+}
+
+// Shim vmla_laneq_u16 for armv7.
+template <int lane>
+inline uint16x4_t VMlaLaneQU16(const uint16x4_t a, const uint16x4_t b,
+                               const uint16x8_t c) {
+#if defined(__aarch64__)
+  return vmla_laneq_u16(a, b, c, lane);
+#else
+  if (lane < 4) {
+    return vmla_lane_u16(a, b, vget_low_u16(c), lane & 0x3);
+  } else {
+    return vmla_lane_u16(a, b, vget_high_u16(c), (lane - 4) & 0x3);
+  }
+#endif
+}
+
+// Shim vmlaq_laneq_u16 for armv7.
+template <int lane>
+inline uint16x8_t VMlaQLaneQU16(const uint16x8_t a, const uint16x8_t b,
+                                const uint16x8_t c) {
+#if defined(__aarch64__)
+  return vmlaq_laneq_u16(a, b, c, lane);
+#else
+  if (lane < 4) {
+    return vmlaq_lane_u16(a, b, vget_low_u16(c), lane & 0x3);
+  } else {
+    return vmlaq_lane_u16(a, b, vget_high_u16(c), (lane - 4) & 0x3);
+  }
 #endif
 }
 
