@@ -60,7 +60,8 @@ uint32_t ScaleCdf(uint32_t values_in_range_shifted, const uint16_t* const cdf,
          (kMinimumProbabilityPerSymbol * (symbol_count - index));
 }
 
-void UpdateCdf(uint16_t* const cdf, const int symbol_count, const int symbol) {
+void UpdateCdf(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol_count,
+               const int symbol) {
   const uint16_t count = cdf[symbol_count];
   // rate is computed in the spec as:
   //  3 + ( cdf[N] > 15 ) + ( cdf[N] > 31 ) + Min(FloorLog2(N), 2)
@@ -168,7 +169,7 @@ void UpdateCdf(uint16_t* const cdf, const int symbol_count, const int symbol) {
 //    the cdf array. Since an invalid CDF value is written into cdf[7], the
 //    count in cdf[7] needs to be fixed up after the vectorized code.
 
-void UpdateCdf5(uint16_t* const cdf, const int symbol) {
+void UpdateCdf5(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   uint16x4_t cdf_vec = vld1_u16(cdf);
   const uint16_t count = cdf[5];
   const int rate = (count >> 4) + 5;
@@ -195,7 +196,7 @@ void UpdateCdf5(uint16_t* const cdf, const int symbol) {
 // This version works for |symbol_count| = 7, 8, or 9.
 // See UpdateCdf5 for implementation details.
 template <int symbol_count>
-void UpdateCdf7To9(uint16_t* const cdf, const int symbol) {
+void UpdateCdf7To9(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   static_assert(symbol_count >= 7 && symbol_count <= 9, "");
   uint16x8_t cdf_vec = vld1q_u16(cdf);
   const uint16_t count = cdf[symbol_count];
@@ -229,7 +230,7 @@ void UpdateCdf9(uint16_t* const cdf, const int symbol) {
 }
 
 // See UpdateCdf5 for implementation details.
-void UpdateCdf11(uint16_t* const cdf, const int symbol) {
+void UpdateCdf11(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   uint16x8_t cdf_vec = vld1q_u16(cdf + 2);
   const uint16_t count = cdf[11];
   cdf[11] = count + static_cast<uint16_t>(count < 32);
@@ -266,7 +267,7 @@ void UpdateCdf11(uint16_t* const cdf, const int symbol) {
 }
 
 // See UpdateCdf5 for implementation details.
-void UpdateCdf13(uint16_t* const cdf, const int symbol) {
+void UpdateCdf13(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   uint16x8_t cdf_vec0 = vld1q_u16(cdf);
   uint16x8_t cdf_vec1 = vld1q_u16(cdf + 4);
   const uint16_t count = cdf[13];
@@ -299,7 +300,7 @@ void UpdateCdf13(uint16_t* const cdf, const int symbol) {
 }
 
 // See UpdateCdf5 for implementation details.
-void UpdateCdf16(uint16_t* const cdf, const int symbol) {
+void UpdateCdf16(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   uint16x8_t cdf_vec = vld1q_u16(cdf);
   const uint16_t count = cdf[16];
   const int rate = (count >> 4) + 5;
@@ -351,7 +352,7 @@ inline void StoreUnaligned16(void* a, const __m128i v) {
   _mm_storeu_si128(static_cast<__m128i*>(a), v);
 }
 
-void UpdateCdf5(uint16_t* const cdf, const int symbol) {
+void UpdateCdf5(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   __m128i cdf_vec = LoadLo8(cdf);
   const uint16_t count = cdf[5];
   const int rate = (count >> 4) + 5;
@@ -379,7 +380,7 @@ void UpdateCdf5(uint16_t* const cdf, const int symbol) {
 // This version works for |symbol_count| = 7, 8, or 9.
 // See UpdateCdf5 for implementation details.
 template <int symbol_count>
-void UpdateCdf7To9(uint16_t* const cdf, const int symbol) {
+void UpdateCdf7To9(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   static_assert(symbol_count >= 7 && symbol_count <= 9, "");
   __m128i cdf_vec = LoadUnaligned16(cdf);
   const uint16_t count = cdf[symbol_count];
@@ -412,7 +413,7 @@ void UpdateCdf9(uint16_t* const cdf, const int symbol) {
 }
 
 // See UpdateCdf5 for implementation details.
-void UpdateCdf11(uint16_t* const cdf, const int symbol) {
+void UpdateCdf11(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   __m128i cdf_vec = LoadUnaligned16(cdf + 2);
   const uint16_t count = cdf[11];
   cdf[11] = count + static_cast<uint16_t>(count < 32);
@@ -447,7 +448,7 @@ void UpdateCdf11(uint16_t* const cdf, const int symbol) {
 }
 
 // See UpdateCdf5 for implementation details.
-void UpdateCdf13(uint16_t* const cdf, const int symbol) {
+void UpdateCdf13(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   __m128i cdf_vec0 = LoadLo8(cdf);
   __m128i cdf_vec1 = LoadUnaligned16(cdf + 4);
   const uint16_t count = cdf[13];
@@ -478,7 +479,7 @@ void UpdateCdf13(uint16_t* const cdf, const int symbol) {
   cdf[13] = count + static_cast<uint16_t>(count < 32);
 }
 
-void UpdateCdf16(uint16_t* const cdf, const int symbol) {
+void UpdateCdf16(uint16_t* LIBGAV1_RESTRICT const cdf, const int symbol) {
   __m128i cdf_vec0 = LoadUnaligned16(cdf);
   const uint16_t count = cdf[16];
   const int rate = (count >> 4) + 5;
@@ -643,7 +644,8 @@ int64_t DaalaBitReader::ReadLiteral(int num_bits) {
   return literal;
 }
 
-int DaalaBitReader::ReadSymbol(uint16_t* const cdf, int symbol_count) {
+int DaalaBitReader::ReadSymbol(uint16_t* LIBGAV1_RESTRICT const cdf,
+                               int symbol_count) {
   const int symbol = ReadSymbolImpl(cdf, symbol_count);
   if (allow_update_cdf_) {
     UpdateCdf(cdf, symbol_count, symbol);
@@ -651,7 +653,7 @@ int DaalaBitReader::ReadSymbol(uint16_t* const cdf, int symbol_count) {
   return symbol;
 }
 
-bool DaalaBitReader::ReadSymbol(uint16_t* cdf) {
+bool DaalaBitReader::ReadSymbol(uint16_t* LIBGAV1_RESTRICT cdf) {
   assert(cdf[1] == 0);
   const bool symbol = ReadSymbolImpl(cdf[0]) != 0;
   if (allow_update_cdf_) {
@@ -686,7 +688,7 @@ bool DaalaBitReader::ReadSymbolWithoutCdfUpdate(uint16_t cdf) {
 }
 
 template <int symbol_count>
-int DaalaBitReader::ReadSymbol(uint16_t* const cdf) {
+int DaalaBitReader::ReadSymbol(uint16_t* LIBGAV1_RESTRICT const cdf) {
   static_assert(symbol_count >= 3 && symbol_count <= 16, "");
   if (symbol_count == 3 || symbol_count == 4) {
     return ReadSymbol3Or4(cdf, symbol_count);
@@ -721,7 +723,7 @@ int DaalaBitReader::ReadSymbol(uint16_t* const cdf) {
   return symbol;
 }
 
-int DaalaBitReader::ReadSymbolImpl(const uint16_t* const cdf,
+int DaalaBitReader::ReadSymbolImpl(const uint16_t* LIBGAV1_RESTRICT const cdf,
                                    int symbol_count) {
   assert(cdf[symbol_count - 1] == 0);
   --symbol_count;
@@ -744,8 +746,8 @@ int DaalaBitReader::ReadSymbolImpl(const uint16_t* const cdf,
   return symbol;
 }
 
-int DaalaBitReader::ReadSymbolImplBinarySearch(const uint16_t* const cdf,
-                                               int symbol_count) {
+int DaalaBitReader::ReadSymbolImplBinarySearch(
+    const uint16_t* LIBGAV1_RESTRICT const cdf, int symbol_count) {
   assert(cdf[symbol_count - 1] == 0);
   assert(symbol_count > 1 && symbol_count <= 16);
   --symbol_count;
@@ -805,7 +807,7 @@ int DaalaBitReader::ReadSymbolImpl(uint16_t cdf) {
 
 // Equivalent to ReadSymbol(cdf, [3,4]), with the ReadSymbolImpl and UpdateCdf
 // calls inlined.
-int DaalaBitReader::ReadSymbol3Or4(uint16_t* const cdf,
+int DaalaBitReader::ReadSymbol3Or4(uint16_t* LIBGAV1_RESTRICT const cdf,
                                    const int symbol_count) {
   assert(cdf[symbol_count - 1] == 0);
   uint32_t curr = values_in_range_;
@@ -970,7 +972,8 @@ found:
   return symbol;
 }
 
-int DaalaBitReader::ReadSymbolImpl8(const uint16_t* const cdf) {
+int DaalaBitReader::ReadSymbolImpl8(
+    const uint16_t* LIBGAV1_RESTRICT const cdf) {
   assert(cdf[7] == 0);
   uint32_t curr = values_in_range_;
   uint32_t prev;
