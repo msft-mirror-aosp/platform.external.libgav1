@@ -282,7 +282,9 @@ class CdefFilteringTest : public testing::TestWithParam<CdefTestParam> {
 
 template <int bitdepth, typename Pixel>
 void CdefFilteringTest<bitdepth, Pixel>::TestRandomValues(int num_runs) {
-  const int id = ((param_.rows4x4 < 4) + (param_.rows4x4 < 2)) * 3 +
+  const int id = (static_cast<int>(param_.rows4x4 < 4) +
+                  static_cast<int>(param_.rows4x4 < 2)) *
+                     3 +
                  param_.subsampling_x * 9 + param_.subsampling_y * 18;
   absl::Duration elapsed_time;
   for (int num_tests = 0; num_tests < num_runs; ++num_tests) {
