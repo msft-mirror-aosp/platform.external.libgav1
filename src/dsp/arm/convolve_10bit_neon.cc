@@ -36,6 +36,15 @@ namespace {
 // Include the constants and utility functions inside the anonymous namespace.
 #include "src/dsp/convolve.inc"
 
+// Output of ConvolveTest.ShowRange below.
+// Bitdepth: 10 Input range:            [       0,     1023]
+//   Horizontal base upscaled range:    [  -28644,    94116]
+//   Horizontal halved upscaled range:  [  -14322,    47085]
+//   Horizontal downscaled range:       [   -7161,    23529]
+//   Vertical upscaled range:           [-1317624,  2365176]
+//   Pixel output range:                [       0,     1023]
+//   Compound output range:             [    3988,    61532]
+
 template <int filter_index>
 int32x4x2_t SumOnePassTaps(const uint16x8_t* const src,
                            const int16x4_t* const taps) {
@@ -882,6 +891,1185 @@ void ConvolveCompoundCopy_NEON(
   }
 }
 
+// -----------------------------------------------------------------------------
+// Scaled Convolve
+
+// There are many opportunities for overreading in scaled convolve, because the
+// range of starting points for filter windows is anywhere from 0 to 16 for 8
+// destination pixels, and the window sizes range from 2 to 8. To accommodate
+// this range concisely, we use |grade_x| to mean the most steps in src that can
+// be traversed in a single |step_x| increment, i.e. 1 or 2. When grade_x is 2,
+// we are guaranteed to exceed 8 whole steps in src for every 8 |step_x|
+// increments. The first load covers the initial elements of src_x, while the
+// final load covers the taps.
+template <int grade_x>
+inline uint8x16x3_t LoadSrcVals(const uint16_t* const src_x) {
+  uint8x16x3_t ret;
+  // When fractional step size is less than or equal to 1, the rightmost
+  // starting value for a filter may be at position 7. For an 8-tap filter, the
+  // rightmost value for the final tap may be at position 14. Therefore we load
+  // 2 vectors of eight 16-bit values.
+  ret.val[0] = vreinterpretq_u8_u16(vld1q_u16(src_x));
+  ret.val[1] = vreinterpretq_u8_u16(vld1q_u16(src_x + 8));
+  if (grade_x > 1) {
+    // When fractional step size is greater than 1 (up to 2), the rightmost
+    // starting value for a filter may be at position 15. For an 8-tap filter,
+    // the rightmost value for the final tap may be at position 22. Therefore we
+    // load 3 vectors of eight 16-bit values.
+    ret.val[2] = vreinterpretq_u8_u16(vld1q_u16(src_x + 16));
+  }
+  return ret;
+}
+
+// Assemble 4 values corresponding to one tap position across multiple filters.
+// This is a simple case because maximum offset is 8 and only smaller filters
+// work on 4xH.
+inline uint16x4_t PermuteSrcVals(const uint8x16x3_t src_bytes,
+                                 const uint8x8_t indices) {
+  const uint8x16x2_t src_bytes2 = {src_bytes.val[0], src_bytes.val[1]};
+  return vreinterpret_u16_u8(VQTbl2U8(src_bytes2, indices));
+}
+
+// Assemble 8 values corresponding to one tap position across multiple filters.
+// This requires a lot of workaround on A32 architectures, so it may be worth
+// using an overall different algorithm for that architecture.
+template <int grade_x>
+inline uint16x8_t PermuteSrcVals(const uint8x16x3_t src_bytes,
+                                 const uint8x16_t indices) {
+  if (grade_x == 1) {
+    const uint8x16x2_t src_bytes2 = {src_bytes.val[0], src_bytes.val[1]};
+    return vreinterpretq_u16_u8(VQTbl2QU8(src_bytes2, indices));
+  }
+  return vreinterpretq_u16_u8(VQTbl3QU8(src_bytes, indices));
+}
+
+// Pre-transpose the 2 tap filters in |kAbsHalfSubPixelFilters|[3]
+// Although the taps need to be converted to 16-bit values, they must be
+// arranged by table lookup, which is more expensive for larger types than
+// lengthening in-loop. |tap_index| refers to the index within a kernel applied
+// to a single value.
+inline int8x16_t GetPositive2TapFilter(const int tap_index) {
+  assert(tap_index < 2);
+  alignas(
+      16) static constexpr int8_t kAbsHalfSubPixel2TapFilterColumns[2][16] = {
+      {64, 60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4},
+      {0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60}};
+
+  return vld1q_s8(kAbsHalfSubPixel2TapFilterColumns[tap_index]);
+}
+
+template <int grade_x>
+inline void ConvolveKernelHorizontal2Tap(
+    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const int width, const int subpixel_x, const int step_x,
+    const int intermediate_height, int16_t* LIBGAV1_RESTRICT intermediate) {
+  // Account for the 0-taps that precede the 2 nonzero taps in the spec.
+  const int kernel_offset = 3;
+  const int ref_x = subpixel_x >> kScaleSubPixelBits;
+  const int step_x8 = step_x << 3;
+  const int8x16_t filter_taps0 = GetPositive2TapFilter(0);
+  const int8x16_t filter_taps1 = GetPositive2TapFilter(1);
+  const uint16x8_t index_steps = vmulq_n_u16(
+      vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
+  const uint8x8_t filter_index_mask = vdup_n_u8(kSubPixelMask);
+
+  int p = subpixel_x;
+  if (width <= 4) {
+    const uint8_t* src_y = src;
+    // Only add steps to the 10-bit truncated p to avoid overflow.
+    const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
+    const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
+    const uint8x8_t filter_indices =
+        vand_u8(vshrn_n_u16(subpel_index_offsets, 6), filter_index_mask);
+    // Each lane of lane of taps[k] corresponds to one output value along the
+    // row, containing kSubPixelFilters[filter_index][filter_id][k], where
+    // filter_id depends on x.
+    const int16x4_t taps[2] = {
+        vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps0, filter_indices))),
+        vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps1, filter_indices)))};
+    // Lower byte of Nth value is at position 2*N.
+    // Narrowing shift is not available here because the maximum shift
+    // parameter is 8.
+    const uint8x8_t src_indices0 = vshl_n_u8(
+        vmovn_u16(vshrq_n_u16(subpel_index_offsets, kScaleSubPixelBits)), 1);
+    // Upper byte of Nth value is at position 2*N+1.
+    const uint8x8_t src_indices1 = vadd_u8(src_indices0, vdup_n_u8(1));
+    // Only 4 values needed.
+    const uint8x8_t src_indices = InterleaveLow8(src_indices0, src_indices1);
+    const uint8x8_t src_lookup[2] = {src_indices,
+                                     vadd_u8(src_indices, vdup_n_u8(2))};
+
+    int y = intermediate_height;
+    do {
+      const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src_y) +
+                              (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+      // Load a pool of samples to select from using stepped indices.
+      const uint8x16x3_t src_bytes = LoadSrcVals<1>(src_x);
+      // Each lane corresponds to a different filter kernel.
+      const uint16x4_t src[2] = {PermuteSrcVals(src_bytes, src_lookup[0]),
+                                 PermuteSrcVals(src_bytes, src_lookup[1])};
+
+      vst1_s16(intermediate,
+               vrshrn_n_s32(SumOnePassTaps</*filter_index=*/3>(src, taps),
+                            kInterRoundBitsHorizontal - 1));
+      src_y += src_stride;
+      intermediate += kIntermediateStride;
+    } while (--y != 0);
+    return;
+  }
+
+  // |width| >= 8
+  int x = 0;
+  do {
+    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
+                            (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+    int16_t* intermediate_x = intermediate + x;
+    // Only add steps to the 10-bit truncated p to avoid overflow.
+    const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
+    const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
+    const uint8x8_t filter_indices =
+        vand_u8(vshrn_n_u16(subpel_index_offsets, kFilterIndexShift),
+                filter_index_mask);
+    // Each lane of lane of taps[k] corresponds to one output value along the
+    // row, containing kSubPixelFilters[filter_index][filter_id][k], where
+    // filter_id depends on x.
+    const int16x8_t taps[2] = {
+        vmovl_s8(VQTbl1S8(filter_taps0, filter_indices)),
+        vmovl_s8(VQTbl1S8(filter_taps1, filter_indices))};
+    const int16x4_t taps_low[2] = {vget_low_s16(taps[0]),
+                                   vget_low_s16(taps[1])};
+    const int16x4_t taps_high[2] = {vget_high_s16(taps[0]),
+                                    vget_high_s16(taps[1])};
+    // Lower byte of Nth value is at position 2*N.
+    const uint8x8_t src_indices0 = vshl_n_u8(
+        vmovn_u16(vshrq_n_u16(subpel_index_offsets, kScaleSubPixelBits)), 1);
+    // Upper byte of Nth value is at position 2*N+1.
+    const uint8x8_t src_indices1 = vadd_u8(src_indices0, vdup_n_u8(1));
+    const uint8x8x2_t src_indices_zip = vzip_u8(src_indices0, src_indices1);
+    const uint8x16_t src_indices =
+        vcombine_u8(src_indices_zip.val[0], src_indices_zip.val[1]);
+    const uint8x16_t src_lookup[2] = {src_indices,
+                                      vaddq_u8(src_indices, vdupq_n_u8(2))};
+
+    int y = intermediate_height;
+    do {
+      // Load a pool of samples to select from using stepped indices.
+      const uint8x16x3_t src_bytes = LoadSrcVals<grade_x>(src_x);
+      // Each lane corresponds to a different filter kernel.
+      const uint16x8_t src[2] = {
+          PermuteSrcVals<grade_x>(src_bytes, src_lookup[0]),
+          PermuteSrcVals<grade_x>(src_bytes, src_lookup[1])};
+      const uint16x4_t src_low[2] = {vget_low_u16(src[0]),
+                                     vget_low_u16(src[1])};
+      const uint16x4_t src_high[2] = {vget_high_u16(src[0]),
+                                      vget_high_u16(src[1])};
+
+      vst1_s16(intermediate_x, vrshrn_n_s32(SumOnePassTaps</*filter_index=*/3>(
+                                                src_low, taps_low),
+                                            kInterRoundBitsHorizontal - 1));
+      vst1_s16(
+          intermediate_x + 4,
+          vrshrn_n_s32(SumOnePassTaps</*filter_index=*/3>(src_high, taps_high),
+                       kInterRoundBitsHorizontal - 1));
+      // Avoid right shifting the stride.
+      src_x = reinterpret_cast<const uint16_t*>(
+          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      intermediate_x += kIntermediateStride;
+    } while (--y != 0);
+    x += 8;
+    p += step_x8;
+  } while (x < width);
+}
+
+// Pre-transpose the 4 tap filters in |kAbsHalfSubPixelFilters|[5].
+inline int8x16_t GetPositive4TapFilter(const int tap_index) {
+  assert(tap_index < 4);
+  alignas(
+      16) static constexpr int8_t kSubPixel4TapPositiveFilterColumns[4][16] = {
+      {0, 15, 13, 11, 10, 9, 8, 7, 6, 6, 5, 4, 3, 2, 2, 1},
+      {64, 31, 31, 31, 30, 29, 28, 27, 26, 24, 23, 22, 21, 20, 18, 17},
+      {0, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 31, 31},
+      {0, 1, 2, 2, 3, 4, 5, 6, 6, 7, 8, 9, 10, 11, 13, 15}};
+
+  return vld1q_s8(kSubPixel4TapPositiveFilterColumns[tap_index]);
+}
+
+// This filter is only possible when width <= 4.
+inline void ConvolveKernelHorizontalPositive4Tap(
+    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const int subpixel_x, const int step_x, const int intermediate_height,
+    int16_t* LIBGAV1_RESTRICT intermediate) {
+  // Account for the 0-taps that precede the 2 nonzero taps in the spec.
+  const int kernel_offset = 2;
+  const int ref_x = subpixel_x >> kScaleSubPixelBits;
+  const int8x16_t filter_taps0 = GetPositive4TapFilter(0);
+  const int8x16_t filter_taps1 = GetPositive4TapFilter(1);
+  const int8x16_t filter_taps2 = GetPositive4TapFilter(2);
+  const int8x16_t filter_taps3 = GetPositive4TapFilter(3);
+  const uint16x8_t index_steps = vmulq_n_u16(
+      vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
+  const uint8x8_t filter_index_mask = vdup_n_u8(kSubPixelMask);
+
+  int p = subpixel_x;
+  // Only add steps to the 10-bit truncated p to avoid overflow.
+  const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
+  const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
+  const uint8x8_t filter_indices =
+      vand_u8(vshrn_n_u16(subpel_index_offsets, 6), filter_index_mask);
+  // Each lane of lane of taps[k] corresponds to one output value along the row,
+  // containing kSubPixelFilters[filter_index][filter_id][k], where filter_id
+  // depends on x.
+  const int16x4_t taps[4] = {
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps0, filter_indices))),
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps1, filter_indices))),
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps2, filter_indices))),
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps3, filter_indices)))};
+  // Lower byte of Nth value is at position 2*N.
+  // Narrowing shift is not available here because the maximum shift
+  // parameter is 8.
+  const uint8x8_t src_indices0 = vshl_n_u8(
+      vmovn_u16(vshrq_n_u16(subpel_index_offsets, kScaleSubPixelBits)), 1);
+  // Upper byte of Nth value is at position 2*N+1.
+  const uint8x8_t src_indices1 = vadd_u8(src_indices0, vdup_n_u8(1));
+  // Only 4 values needed.
+  const uint8x8_t src_indices_base = InterleaveLow8(src_indices0, src_indices1);
+
+  uint8x8_t src_lookup[4];
+  const uint8x8_t two = vdup_n_u8(2);
+  src_lookup[0] = src_indices_base;
+  for (int i = 1; i < 4; ++i) {
+    src_lookup[i] = vadd_u8(src_lookup[i - 1], two);
+  }
+
+  const uint16_t* src_y = reinterpret_cast<const uint16_t*>(src) +
+                          (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+  int y = intermediate_height;
+  do {
+    // Load a pool of samples to select from using stepped indices.
+    const uint8x16x3_t src_bytes = LoadSrcVals<1>(src_y);
+    // Each lane corresponds to a different filter kernel.
+    const uint16x4_t src[4] = {PermuteSrcVals(src_bytes, src_lookup[0]),
+                               PermuteSrcVals(src_bytes, src_lookup[1]),
+                               PermuteSrcVals(src_bytes, src_lookup[2]),
+                               PermuteSrcVals(src_bytes, src_lookup[3])};
+
+    vst1_s16(intermediate,
+             vrshrn_n_s32(SumOnePassTaps</*filter_index=*/5>(src, taps),
+                          kInterRoundBitsHorizontal - 1));
+    src_y = reinterpret_cast<const uint16_t*>(
+        reinterpret_cast<const uint8_t*>(src_y) + src_stride);
+    intermediate += kIntermediateStride;
+  } while (--y != 0);
+}
+
+// Pre-transpose the 4 tap filters in |kAbsHalfSubPixelFilters|[4].
+inline int8x16_t GetSigned4TapFilter(const int tap_index) {
+  assert(tap_index < 4);
+  alignas(16) static constexpr int8_t
+      kAbsHalfSubPixel4TapSignedFilterColumns[4][16] = {
+          {-0, -2, -4, -5, -6, -6, -7, -6, -6, -5, -5, -5, -4, -3, -2, -1},
+          {64, 63, 61, 58, 55, 51, 47, 42, 38, 33, 29, 24, 19, 14, 9, 4},
+          {0, 4, 9, 14, 19, 24, 29, 33, 38, 42, 47, 51, 55, 58, 61, 63},
+          {-0, -1, -2, -3, -4, -5, -5, -5, -6, -6, -7, -6, -6, -5, -4, -2}};
+
+  return vld1q_s8(kAbsHalfSubPixel4TapSignedFilterColumns[tap_index]);
+}
+
+// This filter is only possible when width <= 4.
+inline void ConvolveKernelHorizontalSigned4Tap(
+    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const int subpixel_x, const int step_x, const int intermediate_height,
+    int16_t* LIBGAV1_RESTRICT intermediate) {
+  const int kernel_offset = 2;
+  const int ref_x = subpixel_x >> kScaleSubPixelBits;
+  const uint8x8_t filter_index_mask = vdup_n_u8(kSubPixelMask);
+  const int8x16_t filter_taps0 = GetSigned4TapFilter(0);
+  const int8x16_t filter_taps1 = GetSigned4TapFilter(1);
+  const int8x16_t filter_taps2 = GetSigned4TapFilter(2);
+  const int8x16_t filter_taps3 = GetSigned4TapFilter(3);
+  const uint16x8_t index_steps = vmulq_n_u16(
+      vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
+
+  const int p = subpixel_x;
+  // Only add steps to the 10-bit truncated p to avoid overflow.
+  const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
+  const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
+  const uint8x8_t filter_indices =
+      vand_u8(vshrn_n_u16(subpel_index_offsets, 6), filter_index_mask);
+  // Each lane of lane of taps[k] corresponds to one output value along the row,
+  // containing kSubPixelFilters[filter_index][filter_id][k], where filter_id
+  // depends on x.
+  const int16x4_t taps[4] = {
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps0, filter_indices))),
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps1, filter_indices))),
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps2, filter_indices))),
+      vget_low_s16(vmovl_s8(VQTbl1S8(filter_taps3, filter_indices)))};
+  // Lower byte of Nth value is at position 2*N.
+  // Narrowing shift is not available here because the maximum shift
+  // parameter is 8.
+  const uint8x8_t src_indices0 = vshl_n_u8(
+      vmovn_u16(vshrq_n_u16(subpel_index_offsets, kScaleSubPixelBits)), 1);
+  // Upper byte of Nth value is at position 2*N+1.
+  const uint8x8_t src_indices1 = vadd_u8(src_indices0, vdup_n_u8(1));
+  // Only 4 values needed.
+  const uint8x8_t src_indices_base = InterleaveLow8(src_indices0, src_indices1);
+
+  uint8x8_t src_lookup[4];
+  const uint8x8_t two = vdup_n_u8(2);
+  src_lookup[0] = src_indices_base;
+  for (int i = 1; i < 4; ++i) {
+    src_lookup[i] = vadd_u8(src_lookup[i - 1], two);
+  }
+
+  const uint16_t* src_y = reinterpret_cast<const uint16_t*>(src) +
+                          (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+  int y = intermediate_height;
+  do {
+    // Load a pool of samples to select from using stepped indices.
+    const uint8x16x3_t src_bytes = LoadSrcVals<1>(src_y);
+    // Each lane corresponds to a different filter kernel.
+    const uint16x4_t src[4] = {PermuteSrcVals(src_bytes, src_lookup[0]),
+                               PermuteSrcVals(src_bytes, src_lookup[1]),
+                               PermuteSrcVals(src_bytes, src_lookup[2]),
+                               PermuteSrcVals(src_bytes, src_lookup[3])};
+
+    vst1_s16(intermediate,
+             vrshrn_n_s32(SumOnePassTaps</*filter_index=*/4>(src, taps),
+                          kInterRoundBitsHorizontal - 1));
+    src_y = reinterpret_cast<const uint16_t*>(
+        reinterpret_cast<const uint8_t*>(src_y) + src_stride);
+    intermediate += kIntermediateStride;
+  } while (--y != 0);
+}
+
+// Pre-transpose the 6 tap filters in |kAbsHalfSubPixelFilters|[0].
+inline int8x16_t GetSigned6TapFilter(const int tap_index) {
+  assert(tap_index < 6);
+  alignas(16) static constexpr int8_t
+      kAbsHalfSubPixel6TapSignedFilterColumns[6][16] = {
+          {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0},
+          {-0, -3, -5, -6, -7, -7, -8, -7, -7, -6, -6, -6, -5, -4, -2, -1},
+          {64, 63, 61, 58, 55, 51, 47, 42, 38, 33, 29, 24, 19, 14, 9, 4},
+          {0, 4, 9, 14, 19, 24, 29, 33, 38, 42, 47, 51, 55, 58, 61, 63},
+          {-0, -1, -2, -4, -5, -6, -6, -6, -7, -7, -8, -7, -7, -6, -5, -3},
+          {0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
+
+  return vld1q_s8(kAbsHalfSubPixel6TapSignedFilterColumns[tap_index]);
+}
+
+// This filter is only possible when width >= 8.
+template <int grade_x>
+inline void ConvolveKernelHorizontalSigned6Tap(
+    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const int width, const int subpixel_x, const int step_x,
+    const int intermediate_height,
+    int16_t* LIBGAV1_RESTRICT const intermediate) {
+  const int kernel_offset = 1;
+  const uint8x8_t filter_index_mask = vdup_n_u8(kSubPixelMask);
+  const int ref_x = subpixel_x >> kScaleSubPixelBits;
+  const int step_x8 = step_x << 3;
+  int8x16_t filter_taps[6];
+  for (int i = 0; i < 6; ++i) {
+    filter_taps[i] = GetSigned6TapFilter(i);
+  }
+  const uint16x8_t index_steps = vmulq_n_u16(
+      vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
+
+  int x = 0;
+  int p = subpixel_x;
+  do {
+    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
+                            (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+    int16_t* intermediate_x = intermediate + x;
+    // Only add steps to the 10-bit truncated p to avoid overflow.
+    const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
+    const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
+    const uint8x8_t filter_indices =
+        vand_u8(vshrn_n_u16(subpel_index_offsets, kFilterIndexShift),
+                filter_index_mask);
+
+    // Each lane of lane of taps_(low|high)[k] corresponds to one output value
+    // along the row, containing kSubPixelFilters[filter_index][filter_id][k],
+    // where filter_id depends on x.
+    int16x4_t taps_low[6];
+    int16x4_t taps_high[6];
+    for (int i = 0; i < 6; ++i) {
+      const int16x8_t taps_i =
+          vmovl_s8(VQTbl1S8(filter_taps[i], filter_indices));
+      taps_low[i] = vget_low_s16(taps_i);
+      taps_high[i] = vget_high_s16(taps_i);
+    }
+
+    // Lower byte of Nth value is at position 2*N.
+    const uint8x8_t src_indices0 = vshl_n_u8(
+        vmovn_u16(vshrq_n_u16(subpel_index_offsets, kScaleSubPixelBits)), 1);
+    // Upper byte of Nth value is at position 2*N+1.
+    const uint8x8_t src_indices1 = vadd_u8(src_indices0, vdup_n_u8(1));
+    const uint8x8x2_t src_indices_zip = vzip_u8(src_indices0, src_indices1);
+    const uint8x16_t src_indices_base =
+        vcombine_u8(src_indices_zip.val[0], src_indices_zip.val[1]);
+
+    uint8x16_t src_lookup[6];
+    const uint8x16_t two = vdupq_n_u8(2);
+    src_lookup[0] = src_indices_base;
+    for (int i = 1; i < 6; ++i) {
+      src_lookup[i] = vaddq_u8(src_lookup[i - 1], two);
+    }
+
+    int y = intermediate_height;
+    do {
+      // Load a pool of samples to select from using stepped indices.
+      const uint8x16x3_t src_bytes = LoadSrcVals<grade_x>(src_x);
+
+      uint16x4_t src_low[6];
+      uint16x4_t src_high[6];
+      for (int i = 0; i < 6; ++i) {
+        const uint16x8_t src_i =
+            PermuteSrcVals<grade_x>(src_bytes, src_lookup[i]);
+        src_low[i] = vget_low_u16(src_i);
+        src_high[i] = vget_high_u16(src_i);
+      }
+
+      vst1_s16(intermediate_x, vrshrn_n_s32(SumOnePassTaps</*filter_index=*/0>(
+                                                src_low, taps_low),
+                                            kInterRoundBitsHorizontal - 1));
+      vst1_s16(
+          intermediate_x + 4,
+          vrshrn_n_s32(SumOnePassTaps</*filter_index=*/0>(src_high, taps_high),
+                       kInterRoundBitsHorizontal - 1));
+      // Avoid right shifting the stride.
+      src_x = reinterpret_cast<const uint16_t*>(
+          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      intermediate_x += kIntermediateStride;
+    } while (--y != 0);
+    x += 8;
+    p += step_x8;
+  } while (x < width);
+}
+
+// Pre-transpose the 6 tap filters in |kAbsHalfSubPixelFilters|[1]. This filter
+// has mixed positive and negative outer taps depending on the filter id.
+inline int8x16_t GetMixed6TapFilter(const int tap_index) {
+  assert(tap_index < 6);
+  alignas(16) static constexpr int8_t
+      kAbsHalfSubPixel6TapMixedFilterColumns[6][16] = {
+          {0, 1, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 0, 0},
+          {0, 14, 13, 11, 10, 9, 8, 8, 7, 6, 5, 4, 3, 2, 2, 1},
+          {64, 31, 31, 31, 30, 29, 28, 27, 26, 24, 23, 22, 21, 20, 18, 17},
+          {0, 17, 18, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 31, 31},
+          {0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 8, 9, 10, 11, 13, 14},
+          {0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 1}};
+
+  return vld1q_s8(kAbsHalfSubPixel6TapMixedFilterColumns[tap_index]);
+}
+
+// This filter is only possible when width >= 8.
+template <int grade_x>
+inline void ConvolveKernelHorizontalMixed6Tap(
+    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const int width, const int subpixel_x, const int step_x,
+    const int intermediate_height,
+    int16_t* LIBGAV1_RESTRICT const intermediate) {
+  const int kernel_offset = 1;
+  const uint8x8_t filter_index_mask = vdup_n_u8(kSubPixelMask);
+  const int ref_x = subpixel_x >> kScaleSubPixelBits;
+  const int step_x8 = step_x << 3;
+  int8x16_t filter_taps[6];
+  for (int i = 0; i < 6; ++i) {
+    filter_taps[i] = GetMixed6TapFilter(i);
+  }
+  const uint16x8_t index_steps = vmulq_n_u16(
+      vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
+
+  int x = 0;
+  int p = subpixel_x;
+  do {
+    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
+                            (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+    int16_t* intermediate_x = intermediate + x;
+    // Only add steps to the 10-bit truncated p to avoid overflow.
+    const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
+    const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
+
+    const uint8x8_t filter_indices =
+        vand_u8(vshrn_n_u16(subpel_index_offsets, kFilterIndexShift),
+                filter_index_mask);
+    // Each lane of lane of taps_(low|high)[k] corresponds to one output value
+    // along the row, containing kSubPixelFilters[filter_index][filter_id][k],
+    // where filter_id depends on x.
+    int16x4_t taps_low[6];
+    int16x4_t taps_high[6];
+    for (int i = 0; i < 6; ++i) {
+      const int16x8_t taps = vmovl_s8(VQTbl1S8(filter_taps[i], filter_indices));
+      taps_low[i] = vget_low_s16(taps);
+      taps_high[i] = vget_high_s16(taps);
+    }
+
+    // Lower byte of Nth value is at position 2*N.
+    const uint8x8_t src_indices0 = vshl_n_u8(
+        vmovn_u16(vshrq_n_u16(subpel_index_offsets, kScaleSubPixelBits)), 1);
+    // Upper byte of Nth value is at position 2*N+1.
+    const uint8x8_t src_indices1 = vadd_u8(src_indices0, vdup_n_u8(1));
+    const uint8x8x2_t src_indices_zip = vzip_u8(src_indices0, src_indices1);
+    const uint8x16_t src_indices_base =
+        vcombine_u8(src_indices_zip.val[0], src_indices_zip.val[1]);
+
+    uint8x16_t src_lookup[6];
+    const uint8x16_t two = vdupq_n_u8(2);
+    src_lookup[0] = src_indices_base;
+    for (int i = 1; i < 6; ++i) {
+      src_lookup[i] = vaddq_u8(src_lookup[i - 1], two);
+    }
+
+    int y = intermediate_height;
+    do {
+      // Load a pool of samples to select from using stepped indices.
+      const uint8x16x3_t src_bytes = LoadSrcVals<grade_x>(src_x);
+
+      uint16x4_t src_low[6];
+      uint16x4_t src_high[6];
+      for (int i = 0; i < 6; ++i) {
+        const uint16x8_t src_i =
+            PermuteSrcVals<grade_x>(src_bytes, src_lookup[i]);
+        src_low[i] = vget_low_u16(src_i);
+        src_high[i] = vget_high_u16(src_i);
+      }
+
+      vst1_s16(intermediate_x, vrshrn_n_s32(SumOnePassTaps</*filter_index=*/0>(
+                                                src_low, taps_low),
+                                            kInterRoundBitsHorizontal - 1));
+      vst1_s16(
+          intermediate_x + 4,
+          vrshrn_n_s32(SumOnePassTaps</*filter_index=*/0>(src_high, taps_high),
+                       kInterRoundBitsHorizontal - 1));
+      // Avoid right shifting the stride.
+      src_x = reinterpret_cast<const uint16_t*>(
+          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      intermediate_x += kIntermediateStride;
+    } while (--y != 0);
+    x += 8;
+    p += step_x8;
+  } while (x < width);
+}
+
+// Pre-transpose the 8 tap filters in |kAbsHalfSubPixelFilters|[2].
+inline int8x16_t GetSigned8TapFilter(const int tap_index) {
+  assert(tap_index < 8);
+  alignas(16) static constexpr int8_t
+      kAbsHalfSubPixel8TapSignedFilterColumns[8][16] = {
+          {-0, -1, -1, -1, -2, -2, -2, -2, -2, -1, -1, -1, -1, -1, -1, -0},
+          {0, 1, 3, 4, 5, 5, 5, 5, 6, 5, 4, 4, 3, 3, 2, 1},
+          {-0, -3, -6, -9, -11, -11, -12, -12, -12, -11, -10, -9, -7, -5, -3,
+           -1},
+          {64, 63, 62, 60, 58, 54, 50, 45, 40, 35, 30, 24, 19, 13, 8, 4},
+          {0, 4, 8, 13, 19, 24, 30, 35, 40, 45, 50, 54, 58, 60, 62, 63},
+          {-0, -1, -3, -5, -7, -9, -10, -11, -12, -12, -12, -11, -11, -9, -6,
+           -3},
+          {0, 1, 2, 3, 3, 4, 4, 5, 6, 5, 5, 5, 5, 4, 3, 1},
+          {-0, -0, -1, -1, -1, -1, -1, -1, -2, -2, -2, -2, -2, -1, -1, -1}};
+
+  return vld1q_s8(kAbsHalfSubPixel8TapSignedFilterColumns[tap_index]);
+}
+
+// This filter is only possible when width >= 8.
+template <int grade_x>
+inline void ConvolveKernelHorizontalSigned8Tap(
+    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const int width, const int subpixel_x, const int step_x,
+    const int intermediate_height,
+    int16_t* LIBGAV1_RESTRICT const intermediate) {
+  const uint8x8_t filter_index_mask = vdup_n_u8(kSubPixelMask);
+  const int ref_x = subpixel_x >> kScaleSubPixelBits;
+  const int step_x8 = step_x << 3;
+  int8x16_t filter_taps[8];
+  for (int i = 0; i < 8; ++i) {
+    filter_taps[i] = GetSigned8TapFilter(i);
+  }
+  const uint16x8_t index_steps = vmulq_n_u16(
+      vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
+  int x = 0;
+  int p = subpixel_x;
+  do {
+    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
+                            (p >> kScaleSubPixelBits) - ref_x;
+    int16_t* intermediate_x = intermediate + x;
+    // Only add steps to the 10-bit truncated p to avoid overflow.
+    const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
+    const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
+
+    const uint8x8_t filter_indices =
+        vand_u8(vshrn_n_u16(subpel_index_offsets, kFilterIndexShift),
+                filter_index_mask);
+
+    // Lower byte of Nth value is at position 2*N.
+    const uint8x8_t src_indices0 = vshl_n_u8(
+        vmovn_u16(vshrq_n_u16(subpel_index_offsets, kScaleSubPixelBits)), 1);
+    // Upper byte of Nth value is at position 2*N+1.
+    const uint8x8_t src_indices1 = vadd_u8(src_indices0, vdup_n_u8(1));
+    const uint8x8x2_t src_indices_zip = vzip_u8(src_indices0, src_indices1);
+    const uint8x16_t src_indices_base =
+        vcombine_u8(src_indices_zip.val[0], src_indices_zip.val[1]);
+
+    uint8x16_t src_lookup[8];
+    const uint8x16_t two = vdupq_n_u8(2);
+    src_lookup[0] = src_indices_base;
+    for (int i = 1; i < 8; ++i) {
+      src_lookup[i] = vaddq_u8(src_lookup[i - 1], two);
+    }
+    // Each lane of lane of taps_(low|high)[k] corresponds to one output value
+    // along the row, containing kSubPixelFilters[filter_index][filter_id][k],
+    // where filter_id depends on x.
+    int16x4_t taps_low[8];
+    int16x4_t taps_high[8];
+    for (int i = 0; i < 8; ++i) {
+      const int16x8_t taps = vmovl_s8(VQTbl1S8(filter_taps[i], filter_indices));
+      taps_low[i] = vget_low_s16(taps);
+      taps_high[i] = vget_high_s16(taps);
+    }
+
+    int y = intermediate_height;
+    do {
+      // Load a pool of samples to select from using stepped indices.
+      const uint8x16x3_t src_bytes = LoadSrcVals<grade_x>(src_x);
+
+      uint16x4_t src_low[8];
+      uint16x4_t src_high[8];
+      for (int i = 0; i < 8; ++i) {
+        const uint16x8_t src_i =
+            PermuteSrcVals<grade_x>(src_bytes, src_lookup[i]);
+        src_low[i] = vget_low_u16(src_i);
+        src_high[i] = vget_high_u16(src_i);
+      }
+
+      vst1_s16(intermediate_x, vrshrn_n_s32(SumOnePassTaps</*filter_index=*/2>(
+                                                src_low, taps_low),
+                                            kInterRoundBitsHorizontal - 1));
+      vst1_s16(
+          intermediate_x + 4,
+          vrshrn_n_s32(SumOnePassTaps</*filter_index=*/2>(src_high, taps_high),
+                       kInterRoundBitsHorizontal - 1));
+      // Avoid right shifting the stride.
+      src_x = reinterpret_cast<const uint16_t*>(
+          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      intermediate_x += kIntermediateStride;
+    } while (--y != 0);
+    x += 8;
+    p += step_x8;
+  } while (x < width);
+}
+
+// Process 16 bit inputs and output 32 bits.
+template <int num_taps, bool is_compound>
+inline int16x4_t Sum2DVerticalTaps4(const int16x4_t* const src,
+                                    const int16x8_t taps) {
+  const int16x4_t taps_lo = vget_low_s16(taps);
+  const int16x4_t taps_hi = vget_high_s16(taps);
+  int32x4_t sum;
+  if (num_taps == 8) {
+    sum = vmull_lane_s16(src[0], taps_lo, 0);
+    sum = vmlal_lane_s16(sum, src[1], taps_lo, 1);
+    sum = vmlal_lane_s16(sum, src[2], taps_lo, 2);
+    sum = vmlal_lane_s16(sum, src[3], taps_lo, 3);
+    sum = vmlal_lane_s16(sum, src[4], taps_hi, 0);
+    sum = vmlal_lane_s16(sum, src[5], taps_hi, 1);
+    sum = vmlal_lane_s16(sum, src[6], taps_hi, 2);
+    sum = vmlal_lane_s16(sum, src[7], taps_hi, 3);
+  } else if (num_taps == 6) {
+    sum = vmull_lane_s16(src[0], taps_lo, 1);
+    sum = vmlal_lane_s16(sum, src[1], taps_lo, 2);
+    sum = vmlal_lane_s16(sum, src[2], taps_lo, 3);
+    sum = vmlal_lane_s16(sum, src[3], taps_hi, 0);
+    sum = vmlal_lane_s16(sum, src[4], taps_hi, 1);
+    sum = vmlal_lane_s16(sum, src[5], taps_hi, 2);
+  } else if (num_taps == 4) {
+    sum = vmull_lane_s16(src[0], taps_lo, 2);
+    sum = vmlal_lane_s16(sum, src[1], taps_lo, 3);
+    sum = vmlal_lane_s16(sum, src[2], taps_hi, 0);
+    sum = vmlal_lane_s16(sum, src[3], taps_hi, 1);
+  } else if (num_taps == 2) {
+    sum = vmull_lane_s16(src[0], taps_lo, 3);
+    sum = vmlal_lane_s16(sum, src[1], taps_hi, 0);
+  }
+
+  if (is_compound) {
+    return vrshrn_n_s32(sum, kInterRoundBitsCompoundVertical - 1);
+  }
+
+  return vreinterpret_s16_u16(vqrshrun_n_s32(sum, kInterRoundBitsVertical - 1));
+}
+
+template <int num_taps, bool is_compound>
+int16x8_t SimpleSum2DVerticalTaps(const int16x8_t* const src,
+                                  const int16x8_t taps) {
+  const int16x4_t taps_lo = vget_low_s16(taps);
+  const int16x4_t taps_hi = vget_high_s16(taps);
+  int32x4_t sum_lo, sum_hi;
+  if (num_taps == 8) {
+    sum_lo = vmull_lane_s16(vget_low_s16(src[0]), taps_lo, 0);
+    sum_hi = vmull_lane_s16(vget_high_s16(src[0]), taps_lo, 0);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[1]), taps_lo, 1);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[1]), taps_lo, 1);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[2]), taps_lo, 2);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[2]), taps_lo, 2);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[3]), taps_lo, 3);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[3]), taps_lo, 3);
+
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[4]), taps_hi, 0);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[4]), taps_hi, 0);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[5]), taps_hi, 1);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[5]), taps_hi, 1);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[6]), taps_hi, 2);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[6]), taps_hi, 2);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[7]), taps_hi, 3);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[7]), taps_hi, 3);
+  } else if (num_taps == 6) {
+    sum_lo = vmull_lane_s16(vget_low_s16(src[0]), taps_lo, 1);
+    sum_hi = vmull_lane_s16(vget_high_s16(src[0]), taps_lo, 1);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[1]), taps_lo, 2);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[1]), taps_lo, 2);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[2]), taps_lo, 3);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[2]), taps_lo, 3);
+
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[3]), taps_hi, 0);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[3]), taps_hi, 0);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[4]), taps_hi, 1);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[4]), taps_hi, 1);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[5]), taps_hi, 2);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[5]), taps_hi, 2);
+  } else if (num_taps == 4) {
+    sum_lo = vmull_lane_s16(vget_low_s16(src[0]), taps_lo, 2);
+    sum_hi = vmull_lane_s16(vget_high_s16(src[0]), taps_lo, 2);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[1]), taps_lo, 3);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[1]), taps_lo, 3);
+
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[2]), taps_hi, 0);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[2]), taps_hi, 0);
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[3]), taps_hi, 1);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[3]), taps_hi, 1);
+  } else if (num_taps == 2) {
+    sum_lo = vmull_lane_s16(vget_low_s16(src[0]), taps_lo, 3);
+    sum_hi = vmull_lane_s16(vget_high_s16(src[0]), taps_lo, 3);
+
+    sum_lo = vmlal_lane_s16(sum_lo, vget_low_s16(src[1]), taps_hi, 0);
+    sum_hi = vmlal_lane_s16(sum_hi, vget_high_s16(src[1]), taps_hi, 0);
+  }
+
+  if (is_compound) {
+    // Output is compound, so leave signed and do not saturate. Offset will
+    // accurately bring the value back into positive range.
+    return vcombine_s16(
+        vrshrn_n_s32(sum_lo, kInterRoundBitsCompoundVertical - 1),
+        vrshrn_n_s32(sum_hi, kInterRoundBitsCompoundVertical - 1));
+  }
+
+  // Output is pixel, so saturate to clip at 0.
+  return vreinterpretq_s16_u16(
+      vcombine_u16(vqrshrun_n_s32(sum_lo, kInterRoundBitsVertical - 1),
+                   vqrshrun_n_s32(sum_hi, kInterRoundBitsVertical - 1)));
+}
+
+template <int num_taps, int grade_y, int width, bool is_compound>
+void ConvolveVerticalScale2Or4xH(const int16_t* LIBGAV1_RESTRICT const src,
+                                 const int subpixel_y, const int filter_index,
+                                 const int step_y, const int height,
+                                 void* LIBGAV1_RESTRICT const dest,
+                                 const ptrdiff_t dest_stride) {
+  static_assert(width == 2 || width == 4, "");
+  // We increment stride with the 8-bit pointer and then reinterpret to avoid
+  // shifting |dest_stride|.
+  auto* dest_y = static_cast<uint8_t*>(dest);
+  // In compound mode, |dest_stride| is based on the size of uint16_t, rather
+  // than bytes.
+  auto* compound_dest_y = static_cast<uint16_t*>(dest);
+  // This stride always corresponds to int16_t.
+  constexpr ptrdiff_t src_stride = kIntermediateStride;
+  const int16_t* src_y = src;
+  int16x4_t s[num_taps + grade_y];
+
+  int p = subpixel_y & 1023;
+  int prev_p = p;
+  int y = height;
+  do {
+    for (int i = 0; i < num_taps; ++i) {
+      s[i] = vld1_s16(src_y + i * src_stride);
+    }
+    int filter_id = (p >> 6) & kSubPixelMask;
+    int16x8_t filter =
+        vmovl_s8(vld1_s8(kHalfSubPixelFilters[filter_index][filter_id]));
+    int16x4_t sums = Sum2DVerticalTaps4<num_taps, is_compound>(s, filter);
+    if (is_compound) {
+      assert(width != 2);
+      // This offset potentially overflows into the sign bit, but should yield
+      // the correct unsigned value.
+      const uint16x4_t result =
+          vreinterpret_u16_s16(vadd_s16(sums, vdup_n_s16(kCompoundOffset)));
+      vst1_u16(compound_dest_y, result);
+      compound_dest_y += dest_stride;
+    } else {
+      const uint16x4_t result = vmin_u16(vreinterpret_u16_s16(sums),
+                                         vdup_n_u16((1 << kBitdepth10) - 1));
+      if (width == 2) {
+        Store2<0>(reinterpret_cast<uint16_t*>(dest_y), result);
+      } else {
+        vst1_u16(reinterpret_cast<uint16_t*>(dest_y), result);
+      }
+      dest_y += dest_stride;
+    }
+    p += step_y;
+    const int p_diff =
+        (p >> kScaleSubPixelBits) - (prev_p >> kScaleSubPixelBits);
+    prev_p = p;
+    // Here we load extra source in case it is needed. If |p_diff| == 0, these
+    // values will be unused, but it's faster to load than to branch.
+    s[num_taps] = vld1_s16(src_y + num_taps * src_stride);
+    if (grade_y > 1) {
+      s[num_taps + 1] = vld1_s16(src_y + (num_taps + 1) * src_stride);
+    }
+
+    filter_id = (p >> 6) & kSubPixelMask;
+    filter = vmovl_s8(vld1_s8(kHalfSubPixelFilters[filter_index][filter_id]));
+    sums = Sum2DVerticalTaps4<num_taps, is_compound>(&s[p_diff], filter);
+    if (is_compound) {
+      assert(width != 2);
+      const uint16x4_t result =
+          vreinterpret_u16_s16(vadd_s16(sums, vdup_n_s16(kCompoundOffset)));
+      vst1_u16(compound_dest_y, result);
+      compound_dest_y += dest_stride;
+    } else {
+      const uint16x4_t result = vmin_u16(vreinterpret_u16_s16(sums),
+                                         vdup_n_u16((1 << kBitdepth10) - 1));
+      if (width == 2) {
+        Store2<0>(reinterpret_cast<uint16_t*>(dest_y), result);
+      } else {
+        vst1_u16(reinterpret_cast<uint16_t*>(dest_y), result);
+      }
+      dest_y += dest_stride;
+    }
+    p += step_y;
+    src_y = src + (p >> kScaleSubPixelBits) * src_stride;
+    prev_p = p;
+    y -= 2;
+  } while (y != 0);
+}
+
+template <int num_taps, int grade_y, bool is_compound>
+void ConvolveVerticalScale(const int16_t* LIBGAV1_RESTRICT const src,
+                           const int width, const int subpixel_y,
+                           const int filter_index, const int step_y,
+                           const int height, void* LIBGAV1_RESTRICT const dest,
+                           const ptrdiff_t dest_stride) {
+  // This stride always corresponds to int16_t.
+  constexpr ptrdiff_t src_stride = kIntermediateStride;
+
+  int16x8_t s[num_taps + 2];
+
+  int x = 0;
+  do {
+    const int16_t* const src_x = src + x;
+    const int16_t* src_y = src_x;
+    int p = subpixel_y & 1023;
+    int prev_p = p;
+    int y = height;
+    // We increment stride with the 8-bit pointer and then reinterpret to avoid
+    // shifting |dest_stride|.
+    auto* dest_y = reinterpret_cast<uint8_t*>(static_cast<uint16_t*>(dest) + x);
+    // In compound mode, |dest_stride| is based on the size of uint16_t, rather
+    // than bytes.
+    auto* compound_dest_y = static_cast<uint16_t*>(dest) + x;
+    do {
+      for (int i = 0; i < num_taps; ++i) {
+        s[i] = vld1q_s16(src_y + i * src_stride);
+      }
+      int filter_id = (p >> 6) & kSubPixelMask;
+      int16x8_t filter =
+          vmovl_s8(vld1_s8(kHalfSubPixelFilters[filter_index][filter_id]));
+      int16x8_t sums =
+          SimpleSum2DVerticalTaps<num_taps, is_compound>(s, filter);
+      if (is_compound) {
+        // This offset potentially overflows int16_t, but should yield the
+        // correct unsigned value.
+        const uint16x8_t result = vreinterpretq_u16_s16(
+            vaddq_s16(sums, vdupq_n_s16(kCompoundOffset)));
+        vst1q_u16(compound_dest_y, result);
+        compound_dest_y += dest_stride;
+      } else {
+        const uint16x8_t result = vminq_u16(
+            vreinterpretq_u16_s16(sums), vdupq_n_u16((1 << kBitdepth10) - 1));
+        vst1q_u16(reinterpret_cast<uint16_t*>(dest_y), result);
+        dest_y += dest_stride;
+      }
+      p += step_y;
+      const int p_diff =
+          (p >> kScaleSubPixelBits) - (prev_p >> kScaleSubPixelBits);
+      prev_p = p;
+      // Here we load extra source in case it is needed. If |p_diff| == 0, these
+      // values will be unused, but it's faster to load than to branch.
+      s[num_taps] = vld1q_s16(src_y + num_taps * src_stride);
+      if (grade_y > 1) {
+        s[num_taps + 1] = vld1q_s16(src_y + (num_taps + 1) * src_stride);
+      }
+
+      filter_id = (p >> 6) & kSubPixelMask;
+      filter = vmovl_s8(vld1_s8(kHalfSubPixelFilters[filter_index][filter_id]));
+      sums = SimpleSum2DVerticalTaps<num_taps, is_compound>(&s[p_diff], filter);
+      if (is_compound) {
+        assert(width != 2);
+        const uint16x8_t result = vreinterpretq_u16_s16(
+            vaddq_s16(sums, vdupq_n_s16(kCompoundOffset)));
+        vst1q_u16(compound_dest_y, result);
+        compound_dest_y += dest_stride;
+      } else {
+        const uint16x8_t result = vminq_u16(
+            vreinterpretq_u16_s16(sums), vdupq_n_u16((1 << kBitdepth10) - 1));
+        vst1q_u16(reinterpret_cast<uint16_t*>(dest_y), result);
+        dest_y += dest_stride;
+      }
+      p += step_y;
+      src_y = src_x + (p >> kScaleSubPixelBits) * src_stride;
+      prev_p = p;
+
+      y -= 2;
+    } while (y != 0);
+    x += 8;
+  } while (x < width);
+}
+
+template <bool is_compound>
+void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
+                          const ptrdiff_t reference_stride,
+                          const int horizontal_filter_index,
+                          const int vertical_filter_index, const int subpixel_x,
+                          const int subpixel_y, const int step_x,
+                          const int step_y, const int width, const int height,
+                          void* LIBGAV1_RESTRICT const prediction,
+                          const ptrdiff_t pred_stride) {
+  const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
+  const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
+  assert(step_x <= 2048);
+  assert(step_y <= 2048);
+  const int num_vert_taps = GetNumTapsInFilter(vert_filter_index);
+  const int intermediate_height =
+      (((height - 1) * step_y + (1 << kScaleSubPixelBits) - 1) >>
+       kScaleSubPixelBits) +
+      num_vert_taps;
+  int16_t intermediate_result[kMaxSuperBlockSizeInPixels *
+                              (2 * kMaxSuperBlockSizeInPixels + 8)];
+  // Horizontal filter.
+  // Filter types used for width <= 4 are different from those for width > 4.
+  // When width > 4, the valid filter index range is always [0, 3].
+  // When width <= 4, the valid filter index range is always [3, 5].
+  // The same applies to height and vertical filter index.
+  int filter_index = GetFilterIndex(horizontal_filter_index, width);
+  int16_t* intermediate = intermediate_result;
+  const ptrdiff_t src_stride = reference_stride;
+  const auto* src = static_cast<const uint8_t*>(reference);
+  const int vert_kernel_offset = (8 - num_vert_taps) / 2;
+  src += vert_kernel_offset * src_stride;
+
+  // Derive the maximum value of |step_x| at which all source values fit in one
+  // 16-byte (8-value) load. Final index is src_x + |num_taps| - 1 < 16
+  // step_x*7 is the final base subpel index for the shuffle mask for filter
+  // inputs in each iteration on large blocks. When step_x is large, we need a
+  // larger structure and use a larger table lookup in order to gather all
+  // filter inputs.
+  const int num_horiz_taps = GetNumTapsInFilter(horiz_filter_index);
+  // |num_taps| - 1 is the shuffle index of the final filter input.
+  const int kernel_start_ceiling = 16 - num_horiz_taps;
+  // This truncated quotient |grade_x_threshold| selects |step_x| such that:
+  // (step_x * 7) >> kScaleSubPixelBits < single load limit
+  const int grade_x_threshold =
+      (kernel_start_ceiling << kScaleSubPixelBits) / 7;
+
+  switch (filter_index) {
+    case 0:
+      if (step_x > grade_x_threshold) {
+        ConvolveKernelHorizontalSigned6Tap<2>(
+            src, src_stride, width, subpixel_x, step_x, intermediate_height,
+            intermediate);
+      } else {
+        ConvolveKernelHorizontalSigned6Tap<1>(
+            src, src_stride, width, subpixel_x, step_x, intermediate_height,
+            intermediate);
+      }
+      break;
+    case 1:
+      if (step_x > grade_x_threshold) {
+        ConvolveKernelHorizontalMixed6Tap<2>(src, src_stride, width, subpixel_x,
+                                             step_x, intermediate_height,
+                                             intermediate);
+
+      } else {
+        ConvolveKernelHorizontalMixed6Tap<1>(src, src_stride, width, subpixel_x,
+                                             step_x, intermediate_height,
+                                             intermediate);
+      }
+      break;
+    case 2:
+      if (step_x > grade_x_threshold) {
+        ConvolveKernelHorizontalSigned8Tap<2>(
+            src, src_stride, width, subpixel_x, step_x, intermediate_height,
+            intermediate);
+      } else {
+        ConvolveKernelHorizontalSigned8Tap<1>(
+            src, src_stride, width, subpixel_x, step_x, intermediate_height,
+            intermediate);
+      }
+      break;
+    case 3:
+      if (step_x > grade_x_threshold) {
+        ConvolveKernelHorizontal2Tap<2>(src, src_stride, width, subpixel_x,
+                                        step_x, intermediate_height,
+                                        intermediate);
+      } else {
+        ConvolveKernelHorizontal2Tap<1>(src, src_stride, width, subpixel_x,
+                                        step_x, intermediate_height,
+                                        intermediate);
+      }
+      break;
+    case 4:
+      assert(width <= 4);
+      ConvolveKernelHorizontalSigned4Tap(src, src_stride, subpixel_x, step_x,
+                                         intermediate_height, intermediate);
+      break;
+    default:
+      assert(filter_index == 5);
+      ConvolveKernelHorizontalPositive4Tap(src, src_stride, subpixel_x, step_x,
+                                           intermediate_height, intermediate);
+  }
+
+  // Vertical filter.
+  filter_index = GetFilterIndex(vertical_filter_index, height);
+  intermediate = intermediate_result;
+  switch (filter_index) {
+    case 0:
+    case 1:
+      if (step_y <= 1024) {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<6, 1, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<6, 1, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<6, 1, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      } else {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<6, 2, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<6, 2, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<6, 2, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      }
+      break;
+    case 2:
+      if (step_y <= 1024) {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<8, 1, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<8, 1, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<8, 1, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      } else {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<8, 2, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<8, 2, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<8, 2, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      }
+      break;
+    case 3:
+      if (step_y <= 1024) {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<2, 1, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<2, 1, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<2, 1, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      } else {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<2, 2, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<2, 2, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<2, 2, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      }
+      break;
+    default:
+      assert(filter_index == 4 || filter_index == 5);
+      assert(height <= 4);
+      if (step_y <= 1024) {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<4, 1, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<4, 1, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<4, 1, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      } else {
+        if (!is_compound && width == 2) {
+          ConvolveVerticalScale2Or4xH<4, 2, 2, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else if (width == 4) {
+          ConvolveVerticalScale2Or4xH<4, 2, 4, is_compound>(
+              intermediate, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        } else {
+          ConvolveVerticalScale<4, 2, is_compound>(
+              intermediate, width, subpixel_y, filter_index, step_y, height,
+              prediction, pred_stride);
+        }
+      }
+  }
+}
+
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
@@ -891,6 +2079,9 @@ void Init10bpp() {
   dsp->convolve[0][1][0][0] = ConvolveCompoundCopy_NEON;
   dsp->convolve[0][1][0][1] = ConvolveCompoundHorizontal_NEON;
   dsp->convolve[0][1][1][0] = ConvolveCompoundVertical_NEON;
+
+  dsp->convolve_scale[0] = ConvolveScale2D_NEON<false>;
+  dsp->convolve_scale[1] = ConvolveScale2D_NEON<true>;
 }
 
 }  // namespace

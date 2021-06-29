@@ -343,6 +343,40 @@ inline uint8x8_t VQTbl2U8(const uint8x16x2_t a, const uint8x8_t index) {
 #endif
 }
 
+// Shim vqtbl2q_u8 for armv7.
+inline uint8x16_t VQTbl2QU8(const uint8x16x2_t a, const uint8x16_t index) {
+#if defined(__aarch64__)
+  return vqtbl2q_u8(a, index);
+#else
+  return vcombine_u8(VQTbl2U8(a, vget_low_u8(index)),
+                     VQTbl2U8(a, vget_high_u8(index)));
+#endif
+}
+
+// Shim vqtbl3q_u8 for armv7.
+inline uint8x8_t VQTbl3U8(const uint8x16x3_t a, const uint8x8_t index) {
+#if defined(__aarch64__)
+  return vqtbl3_u8(a, index);
+#else
+  const uint8x8x4_t b = {vget_low_u8(a.val[0]), vget_high_u8(a.val[0]),
+                         vget_low_u8(a.val[1]), vget_high_u8(a.val[1])};
+  const uint8x8x2_t c = {vget_low_u8(a.val[2]), vget_high_u8(a.val[2])};
+  const uint8x8_t index_ext = vsub_u8(index, vdup_n_u8(32));
+  const uint8x8_t partial_lookup = vtbl4_u8(b, index);
+  return vtbx2_u8(partial_lookup, c, index_ext);
+#endif
+}
+
+// Shim vqtbl3q_u8 for armv7.
+inline uint8x16_t VQTbl3QU8(const uint8x16x3_t a, const uint8x16_t index) {
+#if defined(__aarch64__)
+  return vqtbl3q_u8(a, index);
+#else
+  return vcombine_u8(VQTbl3U8(a, vget_low_u8(index)),
+                     VQTbl3U8(a, vget_high_u8(index)));
+#endif
+}
+
 // Shim vqtbl1_s8 for armv7.
 inline int8x8_t VQTbl1S8(const int8x16_t a, const uint8x8_t index) {
 #if defined(__aarch64__)
