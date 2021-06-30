@@ -331,11 +331,8 @@ inline uint16x4_t VMulLaneQU16(const uint16x4_t a, const uint16x8_t b) {
 #if defined(__aarch64__)
   return vmul_laneq_u16(a, b, lane);
 #else
-  if (lane < 4) {
-    return vmul_lane_u16(a, vget_low_u16(b), lane & 0x3);
-  } else {
-    return vmul_lane_u16(a, vget_high_u16(b), (lane - 4) & 0x3);
-  }
+  if (lane < 4) return vmul_lane_u16(a, vget_low_u16(b), lane & 0x3);
+  return vmul_lane_u16(a, vget_high_u16(b), (lane - 4) & 0x3);
 #endif
 }
 
@@ -345,11 +342,8 @@ inline uint16x8_t VMulQLaneQU16(const uint16x8_t a, const uint16x8_t b) {
 #if defined(__aarch64__)
   return vmulq_laneq_u16(a, b, lane);
 #else
-  if (lane < 4) {
-    return vmulq_lane_u16(a, vget_low_u16(b), lane & 0x3);
-  } else {
-    return vmulq_lane_u16(a, vget_high_u16(b), (lane - 4) & 0x3);
-  }
+  if (lane < 4) return vmulq_lane_u16(a, vget_low_u16(b), lane & 0x3);
+  return vmulq_lane_u16(a, vget_high_u16(b), (lane - 4) & 0x3);
 #endif
 }
 
@@ -360,11 +354,8 @@ inline uint16x4_t VMlaLaneQU16(const uint16x4_t a, const uint16x4_t b,
 #if defined(__aarch64__)
   return vmla_laneq_u16(a, b, c, lane);
 #else
-  if (lane < 4) {
-    return vmla_lane_u16(a, b, vget_low_u16(c), lane & 0x3);
-  } else {
-    return vmla_lane_u16(a, b, vget_high_u16(c), (lane - 4) & 0x3);
-  }
+  if (lane < 4) return vmla_lane_u16(a, b, vget_low_u16(c), lane & 0x3);
+  return vmla_lane_u16(a, b, vget_high_u16(c), (lane - 4) & 0x3);
 #endif
 }
 
@@ -375,11 +366,8 @@ inline uint16x8_t VMlaQLaneQU16(const uint16x8_t a, const uint16x8_t b,
 #if defined(__aarch64__)
   return vmlaq_laneq_u16(a, b, c, lane);
 #else
-  if (lane < 4) {
-    return vmlaq_lane_u16(a, b, vget_low_u16(c), lane & 0x3);
-  } else {
-    return vmlaq_lane_u16(a, b, vget_high_u16(c), (lane - 4) & 0x3);
-  }
+  if (lane < 4) return vmlaq_lane_u16(a, b, vget_low_u16(c), lane & 0x3);
+  return vmlaq_lane_u16(a, b, vget_high_u16(c), (lane - 4) & 0x3);
 #endif
 }
 
