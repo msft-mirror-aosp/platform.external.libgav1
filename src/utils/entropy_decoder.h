@@ -25,18 +25,18 @@
 
 namespace libgav1 {
 
-class DaalaBitReader final : public BitReader {
+class EntropyDecoder final : public BitReader {
  public:
   // WindowSize must be an unsigned integer type with at least 32 bits. Use the
   // largest type with fast arithmetic. size_t should meet these requirements.
   using WindowSize = size_t;
 
-  DaalaBitReader(const uint8_t* data, size_t size, bool allow_update_cdf);
-  ~DaalaBitReader() override = default;
+  EntropyDecoder(const uint8_t* data, size_t size, bool allow_update_cdf);
+  ~EntropyDecoder() override = default;
 
   // Move only.
-  DaalaBitReader(DaalaBitReader&& rhs) noexcept;
-  DaalaBitReader& operator=(DaalaBitReader&& rhs) noexcept;
+  EntropyDecoder(EntropyDecoder&& rhs) noexcept;
+  EntropyDecoder& operator=(EntropyDecoder&& rhs) noexcept;
 
   int ReadBit() override;
   int64_t ReadLiteral(int num_bits) override;
@@ -104,19 +104,19 @@ class DaalaBitReader final : public BitReader {
   WindowSize window_diff_;
 };
 
-extern template int DaalaBitReader::ReadSymbol<3>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<4>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<5>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<6>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<7>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<8>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<9>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<10>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<11>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<12>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<13>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<14>(uint16_t* cdf);
-extern template int DaalaBitReader::ReadSymbol<16>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<3>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<4>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<5>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<6>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<7>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<8>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<9>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<10>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<11>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<12>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<13>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<14>(uint16_t* cdf);
+extern template int EntropyDecoder::ReadSymbol<16>(uint16_t* cdf);
 
 }  // namespace libgav1
 

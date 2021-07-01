@@ -673,7 +673,7 @@ class Tile : public Allocable {
   const std::array<uint8_t, kNumReferenceFrameTypes>& reference_order_hint_;
   const WedgeMaskArray& wedge_masks_;
   const QuantizerMatrix& quantizer_matrix_;
-  DaalaBitReader reader_;
+  EntropyDecoder reader_;
   SymbolDecoderContext symbol_decoder_context_;
   SymbolDecoderContext* const saved_symbol_decoder_context_;
   const SegmentationMap* prev_segment_ids_;
