@@ -25,7 +25,7 @@
 
 namespace libgav1 {
 
-class DaalaBitReader : public BitReader {
+class DaalaBitReader final : public BitReader {
  public:
   // WindowSize must be an unsigned integer type with at least 32 bits. Use the
   // largest type with fast arithmetic. size_t should meet these requirements.
@@ -38,7 +38,7 @@ class DaalaBitReader : public BitReader {
   DaalaBitReader(DaalaBitReader&& rhs) noexcept;
   DaalaBitReader& operator=(DaalaBitReader&& rhs) noexcept;
 
-  int ReadBit() final;
+  int ReadBit() override;
   int64_t ReadLiteral(int num_bits) override;
   // ReadSymbol() calls for which the |symbol_count| is only known at runtime
   // will use this variant.
