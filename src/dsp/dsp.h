@@ -764,9 +764,11 @@ using ConstructNoiseImageOverlapFunc =
 // zero.
 // |point_value| and |point_scaling| have |num_points| valid elements.
 // The pointer arguments do not alias one another.
-using InitializeScalingLutFunc = void (*)(
-    int num_points, const uint8_t point_value[], const uint8_t point_scaling[],
-    uint8_t scaling_lut[kScalingLookupTableSize]);
+using InitializeScalingLutFunc = void (*)(int num_points,
+                                          const uint8_t point_value[],
+                                          const uint8_t point_scaling[],
+                                          int16_t* scaling_lut,
+                                          const int scaling_lut_size);
 
 // Blend noise with image. Section 7.18.3.5, third code block.
 // |width| is the width of each row, while |height| is how many rows to compute.
@@ -784,18 +786,16 @@ using InitializeScalingLutFunc = void (*)(
 // down is possible. It is found in FilmGrainParams, but supplied directly to
 // BlendNoiseWithImageLumaFunc because it's the only member used.
 // The pointer arguments do not alias one another.
-using BlendNoiseWithImageLumaFunc =
-    void (*)(const void* noise_image_ptr, int min_value, int max_value,
-             int scaling_shift, int width, int height, int start_height,
-             const uint8_t scaling_lut_y[kScalingLookupTableSize],
-             const void* source_plane_y, ptrdiff_t source_stride_y,
-             void* dest_plane_y, ptrdiff_t dest_stride_y);
+using BlendNoiseWithImageLumaFunc = void (*)(
+    const void* noise_image_ptr, int min_value, int max_value,
+    int scaling_shift, int width, int height, int start_height,
+    const int16_t* scaling_lut_y, const void* source_plane_y,
+    ptrdiff_t source_stride_y, void* dest_plane_y, ptrdiff_t dest_stride_y);
 
 using BlendNoiseWithImageChromaFunc = void (*)(
     Plane plane, const FilmGrainParams& params, const void* noise_image_ptr,
     int min_value, int max_value, int width, int height, int start_height,
-    int subsampling_x, int subsampling_y,
-    const uint8_t scaling_lut[kScalingLookupTableSize],
+    int subsampling_x, int subsampling_y, const int16_t* scaling_lut,
     const void* source_plane_y, ptrdiff_t source_stride_y,
     const void* source_plane_uv, ptrdiff_t source_stride_uv,
     void* dest_plane_uv, ptrdiff_t dest_stride_uv);

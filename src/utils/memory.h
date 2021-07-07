@@ -101,6 +101,12 @@ inline void Memset(uint16_t* const dst, int value, size_t count) {
   }
 }
 
+inline void Memset(int16_t* const dst, int value, size_t count) {
+  for (size_t i = 0; i < count; ++i) {
+    dst[i] = static_cast<int16_t>(value);
+  }
+}
+
 struct MallocDeleter {
   void operator()(void* ptr) const { free(ptr); }
 };

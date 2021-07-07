@@ -126,12 +126,10 @@ inline __m128i Clip3(const __m128i value, const __m128i low,
 }
 
 template <int bitdepth, typename Pixel>
-inline __m128i GetScalingFactors(
-    const uint8_t scaling_lut[kScalingLookupTableSize], const Pixel* source) {
+inline __m128i GetScalingFactors(const int16_t* scaling_lut,
+                                 const Pixel* source) {
   alignas(16) int16_t start_vals[8];
   if (bitdepth == 8) {
-    // TODO(petersonab): Speed this up by creating a uint16_t scaling_lut.
-    // Currently this code results in a series of movzbl.
     for (int i = 0; i < 8; ++i) {
       start_vals[i] = scaling_lut[source[i]];
     }
@@ -164,9 +162,9 @@ template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageLuma_SSE4_1(
     const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_luma,
     int scaling_shift, int width, int height, int start_height,
-    const uint8_t scaling_lut_y[kScalingLookupTableSize],
-    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
-    void* LIBGAV1_RESTRICT dest_plane_y, ptrdiff_t dest_stride_y) {
+    const int16_t* scaling_lut_y, const void* LIBGAV1_RESTRICT source_plane_y,
+    ptrdiff_t source_stride_y, void* LIBGAV1_RESTRICT dest_plane_y,
+    ptrdiff_t dest_stride_y) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y_row = static_cast<const Pixel*>(source_plane_y);
@@ -217,8 +215,7 @@ void BlendNoiseWithImageLuma_SSE4_1(
 template <int bitdepth, typename GrainType, typename Pixel>
 inline __m128i BlendChromaValsWithCfl(
     const Pixel* LIBGAV1_RESTRICT average_luma_buffer,
-    const uint8_t scaling_lut[kScalingLookupTableSize],
-    const Pixel* LIBGAV1_RESTRICT chroma_cursor,
+    const int16_t* scaling_lut, const Pixel* LIBGAV1_RESTRICT chroma_cursor,
     const GrainType* LIBGAV1_RESTRICT noise_image_cursor,
     const __m128i scaling_shift) {
   const __m128i scaling =
@@ -233,8 +230,7 @@ template <int bitdepth, typename GrainType, typename Pixel>
 LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_SSE4_1(
     const Array2D<GrainType>& noise_image, int min_value, int max_chroma,
     int width, int height, int start_height, int subsampling_x,
-    int subsampling_y, int scaling_shift,
-    const uint8_t scaling_lut[kScalingLookupTableSize],
+    int subsampling_y, int scaling_shift, const int16_t* scaling_lut,
     const Pixel* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
     const Pixel* LIBGAV1_RESTRICT in_chroma_row, ptrdiff_t source_stride_chroma,
     Pixel* LIBGAV1_RESTRICT out_chroma_row, ptrdiff_t dest_stride) {
@@ -310,7 +306,7 @@ void BlendNoiseWithImageChromaWithCfl_SSE4_1(
     Plane plane, const FilmGrainParams& params,
     const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
     int width, int height, int start_height, int subsampling_x,
-    int subsampling_y, const uint8_t scaling_lut[kScalingLookupTableSize],
+    int subsampling_y, const int16_t* scaling_lut,
     const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
     const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
     void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
@@ -336,7 +332,7 @@ namespace {
 
 // |offset| is 32x4 packed to add with the result of _mm_madd_epi16.
 inline __m128i BlendChromaValsNoCfl8bpp(
-    const uint8_t scaling_lut[kScalingLookupTableSize], const __m128i& orig,
+    const int16_t* scaling_lut, const __m128i& orig,
     const int8_t* LIBGAV1_RESTRICT noise_image_cursor,
     const __m128i& average_luma, const __m128i& scaling_shift,
     const __m128i& offset, const __m128i& weights) {
@@ -362,8 +358,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_SSE4_1(
     const Array2D<int8_t>& noise_image, int min_value, int max_chroma,
     int width, int height, int start_height, int subsampling_x,
     int subsampling_y, int scaling_shift, int chroma_offset,
-    int chroma_multiplier, int luma_multiplier,
-    const uint8_t scaling_lut[kScalingLookupTableSize],
+    int chroma_multiplier, int luma_multiplier, const int16_t* scaling_lut,
     const uint8_t* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
     const uint8_t* LIBGAV1_RESTRICT in_chroma_row,
     ptrdiff_t source_stride_chroma, uint8_t* LIBGAV1_RESTRICT out_chroma_row,
@@ -437,7 +432,7 @@ void BlendNoiseWithImageChroma8bpp_SSE4_1(
     Plane plane, const FilmGrainParams& params,
     const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
     int width, int height, int start_height, int subsampling_x,
-    int subsampling_y, const uint8_t scaling_lut[kScalingLookupTableSize],
+    int subsampling_y, const int16_t* scaling_lut,
     const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
     const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
     void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {

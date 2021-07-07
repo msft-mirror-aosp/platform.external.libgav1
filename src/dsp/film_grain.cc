@@ -29,6 +29,7 @@
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/logging.h"
+#include "src/utils/memory.h"
 
 namespace libgav1 {
 namespace dsp {
@@ -40,18 +41,20 @@ namespace {
 // behavior by bitdepth, but because this one doesn't, it receives a dummy
 // parameter with one enforced value, ensuring only one copy is made.
 template <int singleton>
-void InitializeScalingLookupTable_C(
-    int num_points, const uint8_t point_value[], const uint8_t point_scaling[],
-    uint8_t scaling_lut[kScalingLookupTableSize]) {
+void InitializeScalingLookupTable_C(const int num_points,
+                                    const uint8_t point_value[],
+                                    const uint8_t point_scaling[],
+                                    int16_t* scaling_lut,
+                                    const int scaling_lut_size) {
   static_assert(singleton == 0,
                 "Improper instantiation of InitializeScalingLookupTable_C. "
                 "There should be only one copy of this function.");
   if (num_points == 0) {
-    memset(scaling_lut, 0, sizeof(scaling_lut[0]) * kScalingLookupTableSize);
+    memset(scaling_lut, 0, sizeof(scaling_lut[0]) * scaling_lut_size);
     return;
   }
-  static_assert(sizeof(scaling_lut[0]) == 1, "");
-  memset(scaling_lut, point_scaling[0], point_value[0]);
+  static_assert(sizeof(scaling_lut[0]) == 2, "");
+  Memset(scaling_lut, point_scaling[0], point_value[0]);
   for (int i = 0; i < num_points - 1; ++i) {
     const int delta_y = point_scaling[i + 1] - point_scaling[i];
     const int delta_x = point_value[i + 1] - point_value[i];
@@ -62,15 +65,15 @@ void InitializeScalingLookupTable_C(
       scaling_lut[point_value[i] + x] = v;
     }
   }
-  const uint8_t last_point_value = point_value[num_points - 1];
-  memset(&scaling_lut[last_point_value], point_scaling[num_points - 1],
-         kScalingLookupTableSize - last_point_value);
+  const int16_t last_point_value = point_value[num_points - 1];
+  Memset(&scaling_lut[last_point_value], point_scaling[num_points - 1],
+         scaling_lut_size - last_point_value);
 }
 
 // Section 7.18.3.5.
 // Performs a piecewise linear interpolation into the scaling table.
 template <int bitdepth>
-int ScaleLut(const uint8_t scaling_lut[kScalingLookupTableSize], int index) {
+int ScaleLut(const int16_t* scaling_lut, int index) {
   const int shift = bitdepth - 8;
   const int quotient = index >> shift;
   const int remainder = index - (quotient << shift);
@@ -497,12 +500,14 @@ void ConstructNoiseImageOverlap_C(
 }
 
 template <int bitdepth, typename GrainType, typename Pixel>
-void BlendNoiseWithImageLuma_C(
-    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_luma,
-    int scaling_shift, int width, int height, int start_height,
-    const uint8_t scaling_lut_y[kScalingLookupTableSize],
-    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
-    void* LIBGAV1_RESTRICT dest_plane_y, ptrdiff_t dest_stride_y) {
+void BlendNoiseWithImageLuma_C(const void* LIBGAV1_RESTRICT noise_image_ptr,
+                               int min_value, int max_luma, int scaling_shift,
+                               int width, int height, int start_height,
+                               const int16_t* scaling_lut_y,
+                               const void* LIBGAV1_RESTRICT source_plane_y,
+                               ptrdiff_t source_stride_y,
+                               void* LIBGAV1_RESTRICT dest_plane_y,
+                               ptrdiff_t dest_stride_y) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y = static_cast<const Pixel*>(source_plane_y);
@@ -529,7 +534,7 @@ void BlendNoiseWithImageChroma_C(
     Plane plane, const FilmGrainParams& params,
     const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
     int width, int height, int start_height, int subsampling_x,
-    int subsampling_y, const uint8_t scaling_lut_uv[kScalingLookupTableSize],
+    int subsampling_y, const int16_t* scaling_lut_uv,
     const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
     const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
     void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
@@ -591,7 +596,7 @@ void BlendNoiseWithImageChromaWithCfl_C(
     Plane plane, const FilmGrainParams& params,
     const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
     int width, int height, int start_height, int subsampling_x,
-    int subsampling_y, const uint8_t scaling_lut[kScalingLookupTableSize],
+    int subsampling_y, const int16_t* scaling_lut,
     const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
     const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
     void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
