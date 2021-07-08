@@ -404,6 +404,11 @@ TEST_P(CdefFilteringTest10bpp, DISABLED_Speed) {
 
 INSTANTIATE_TEST_SUITE_P(C, CdefFilteringTest10bpp,
                          testing::ValuesIn(cdef_test_param));
+
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, CdefFilteringTest10bpp,
+                         testing::ValuesIn(cdef_test_param));
+#endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
 }  // namespace
