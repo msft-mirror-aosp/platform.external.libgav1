@@ -159,6 +159,10 @@ TEST_P(CdefDirectionTest10bpp, DISABLED_Speed) {
 }
 
 INSTANTIATE_TEST_SUITE_P(C, CdefDirectionTest10bpp, testing::Values(0));
+
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, CdefDirectionTest10bpp, testing::Values(0));
+#endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
 const char* GetDigest8bpp(int id) {
