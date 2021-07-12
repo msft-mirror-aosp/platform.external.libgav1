@@ -334,7 +334,7 @@ int Tile::ReadAndClipDelta(uint16_t* const cdf, int delta_small, int scale,
     abs = abs_remaining_bits + (1 << remaining_bit_count) + 1;
   }
   if (abs != 0) {
-    const bool sign = static_cast<bool>(reader_.ReadBit());
+    const bool sign = reader_.ReadBit() != 0;
     const int scaled_abs = abs << scale;
     const int reduced_delta = sign ? -scaled_abs : scaled_abs;
     value += reduced_delta;
@@ -1268,8 +1268,7 @@ void Tile::ReadCompoundType(const Block& block, bool is_compound,
       prediction_parameters.wedge_sign = static_cast<int>(reader_.ReadBit());
     } else if (prediction_parameters.compound_prediction_type ==
                kCompoundPredictionTypeDiffWeighted) {
-      prediction_parameters.mask_is_inverse =
-          static_cast<bool>(reader_.ReadBit());
+      prediction_parameters.mask_is_inverse = reader_.ReadBit() != 0;
     }
     return;
   }

@@ -1306,7 +1306,7 @@ bool Tile::ReadSignAndApplyDequantization(
     int length = 0;
     bool golomb_length_bit = false;
     do {
-      golomb_length_bit = static_cast<bool>(reader_.ReadBit());
+      golomb_length_bit = reader_.ReadBit() != 0;
       ++length;
       if (length > 20) {
         LIBGAV1_DLOG(ERROR, "Invalid golomb_length %d", length);
@@ -1451,7 +1451,7 @@ int Tile::ReadTransformCoefficients(const Block& block, Plane plane,
     for (int i = 1; i < eob_pt - 2; ++i) {
       assert(eob_pt - i >= 3);
       assert(eob_pt <= kEobPt1024SymbolCount);
-      if (static_cast<bool>(reader_.ReadBit())) {
+      if (reader_.ReadBit() != 0) {
         eob += 1 << (eob_pt - i - 3);
       }
     }
