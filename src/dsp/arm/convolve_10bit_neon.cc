@@ -1501,6 +1501,138 @@ void ConvolveIntraBlockCopyHorizontal_NEON(
   }
 }
 
+template <int width>
+inline void IntraBlockCopyVertical(const uint16_t* LIBGAV1_RESTRICT src,
+                                   const ptrdiff_t src_stride, const int height,
+                                   uint16_t* LIBGAV1_RESTRICT dst,
+                                   const ptrdiff_t dst_stride) {
+  const ptrdiff_t src_remainder_stride = src_stride - (width - 8);
+  const ptrdiff_t dst_remainder_stride = dst_stride - (width - 8);
+  uint16x8_t row[8], below[8];
+
+  row[0] = vld1q_u16(src);
+  if (width >= 16) {
+    src += 8;
+    row[1] = vld1q_u16(src);
+    if (width >= 32) {
+      src += 8;
+      row[2] = vld1q_u16(src);
+      src += 8;
+      row[3] = vld1q_u16(src);
+      if (width == 64) {
+        src += 8;
+        row[4] = vld1q_u16(src);
+        src += 8;
+        row[5] = vld1q_u16(src);
+        src += 8;
+        row[6] = vld1q_u16(src);
+        src += 8;
+        row[7] = vld1q_u16(src);
+      }
+    }
+  }
+  src += src_remainder_stride;
+
+  int y = height;
+  do {
+    below[0] = vld1q_u16(src);
+    if (width >= 16) {
+      src += 8;
+      below[1] = vld1q_u16(src);
+      if (width >= 32) {
+        src += 8;
+        below[2] = vld1q_u16(src);
+        src += 8;
+        below[3] = vld1q_u16(src);
+        if (width == 64) {
+          src += 8;
+          below[4] = vld1q_u16(src);
+          src += 8;
+          below[5] = vld1q_u16(src);
+          src += 8;
+          below[6] = vld1q_u16(src);
+          src += 8;
+          below[7] = vld1q_u16(src);
+        }
+      }
+    }
+    src += src_remainder_stride;
+
+    vst1q_u16(dst, vrhaddq_u16(row[0], below[0]));
+    row[0] = below[0];
+    if (width >= 16) {
+      dst += 8;
+      vst1q_u16(dst, vrhaddq_u16(row[1], below[1]));
+      row[1] = below[1];
+      if (width >= 32) {
+        dst += 8;
+        vst1q_u16(dst, vrhaddq_u16(row[2], below[2]));
+        row[2] = below[2];
+        dst += 8;
+        vst1q_u16(dst, vrhaddq_u16(row[3], below[3]));
+        row[3] = below[3];
+        if (width >= 64) {
+          dst += 8;
+          vst1q_u16(dst, vrhaddq_u16(row[4], below[4]));
+          row[4] = below[4];
+          dst += 8;
+          vst1q_u16(dst, vrhaddq_u16(row[5], below[5]));
+          row[5] = below[5];
+          dst += 8;
+          vst1q_u16(dst, vrhaddq_u16(row[6], below[6]));
+          row[6] = below[6];
+          dst += 8;
+          vst1q_u16(dst, vrhaddq_u16(row[7], below[7]));
+          row[7] = below[7];
+        }
+      }
+    }
+    dst += dst_remainder_stride;
+  } while (--y != 0);
+}
+
+void ConvolveIntraBlockCopyVertical_NEON(
+    const void* LIBGAV1_RESTRICT const reference,
+    const ptrdiff_t reference_stride, const int /*horizontal_filter_index*/,
+    const int /*vertical_filter_index*/, const int /*horizontal_filter_id*/,
+    const int /*vertical_filter_id*/, const int width, const int height,
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride) {
+  assert(width >= 4 && width <= kMaxSuperBlockSizeInPixels);
+  assert(height >= 4 && height <= kMaxSuperBlockSizeInPixels);
+  const auto* src = static_cast<const uint16_t*>(reference);
+  auto* dest = static_cast<uint16_t*>(prediction);
+  const ptrdiff_t src_stride = reference_stride >> 1;
+  const ptrdiff_t dst_stride = pred_stride >> 1;
+
+  if (width == 128) {
+    // Due to register pressure, process two 64xH.
+    for (int i = 0; i < 2; ++i) {
+      IntraBlockCopyVertical<64>(src, src_stride, height, dest, dst_stride);
+      src += 64;
+      dest += 64;
+    }
+  } else if (width == 64) {
+    IntraBlockCopyVertical<64>(src, src_stride, height, dest, dst_stride);
+  } else if (width == 32) {
+    IntraBlockCopyVertical<32>(src, src_stride, height, dest, dst_stride);
+  } else if (width == 16) {
+    IntraBlockCopyVertical<16>(src, src_stride, height, dest, dst_stride);
+  } else if (width == 8) {
+    IntraBlockCopyVertical<8>(src, src_stride, height, dest, dst_stride);
+  } else {  // width == 4
+    uint16x4_t row = vld1_u16(src);
+    src += src_stride;
+    int y = height;
+    do {
+      const uint16x4_t below = vld1_u16(src);
+      src += src_stride;
+      vst1_u16(dest, vrhadd_u16(row, below));
+      dest += dst_stride;
+      row = below;
+    } while (--y != 0);
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Scaled Convolve
 
@@ -2623,6 +2755,7 @@ void Init10bpp() {
   dsp->convolve[0][1][1][1] = ConvolveCompound2D_NEON;
 
   dsp->convolve[1][0][0][1] = ConvolveIntraBlockCopyHorizontal_NEON;
+  dsp->convolve[1][0][1][0] = ConvolveIntraBlockCopyVertical_NEON;
 
   dsp->convolve_scale[0] = ConvolveScale2D_NEON<false>;
   dsp->convolve_scale[1] = ConvolveScale2D_NEON<true>;
