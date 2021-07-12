@@ -2632,6 +2632,8 @@ void ConvolveIntraBlockCopyHorizontal_NEON(
     const int /*vertical_filter_index*/, const int /*subpixel_x*/,
     const int /*subpixel_y*/, const int width, const int height,
     void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride) {
+  assert(width >= 4 && width <= kMaxSuperBlockSizeInPixels);
+  assert(height >= 4 && height <= kMaxSuperBlockSizeInPixels);
   const auto* src = static_cast<const uint8_t*>(reference);
   auto* dest = static_cast<uint8_t*>(prediction);
 
@@ -2657,7 +2659,7 @@ void ConvolveIntraBlockCopyHorizontal_NEON(
       src += reference_stride;
       dest += pred_stride;
     } while (--y != 0);
-  } else if (width == 4) {
+  } else {  // width == 4
     uint8x8_t left = vdup_n_u8(0);
     uint8x8_t right = vdup_n_u8(0);
     int y = height;
@@ -2674,27 +2676,6 @@ void ConvolveIntraBlockCopyHorizontal_NEON(
       StoreLo4(dest, result);
       dest += pred_stride;
       StoreHi4(dest, result);
-      dest += pred_stride;
-      y -= 2;
-    } while (y != 0);
-  } else {
-    assert(width == 2);
-    uint8x8_t left = vdup_n_u8(0);
-    uint8x8_t right = vdup_n_u8(0);
-    int y = height;
-    do {
-      left = Load2<0>(src, left);
-      right = Load2<0>(src + 1, right);
-      src += reference_stride;
-      left = Load2<1>(src, left);
-      right = Load2<1>(src + 1, right);
-      src += reference_stride;
-
-      const uint8x8_t result = vrhadd_u8(left, right);
-
-      Store2<0>(dest, result);
-      dest += pred_stride;
-      Store2<1>(dest, result);
       dest += pred_stride;
       y -= 2;
     } while (y != 0);
@@ -2797,6 +2778,8 @@ void ConvolveIntraBlockCopyVertical_NEON(
     const int /*vertical_filter_index*/, const int /*horizontal_filter_id*/,
     const int /*vertical_filter_id*/, const int width, const int height,
     void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride) {
+  assert(width >= 4 && width <= kMaxSuperBlockSizeInPixels);
+  assert(height >= 4 && height <= kMaxSuperBlockSizeInPixels);
   const auto* src = static_cast<const uint8_t*>(reference);
   auto* dest = static_cast<uint8_t*>(prediction);
 
@@ -2827,7 +2810,7 @@ void ConvolveIntraBlockCopyVertical_NEON(
 
       row = below;
     } while (--y != 0);
-  } else if (width == 4) {
+  } else {  // width == 4
     uint8x8_t row = Load4(src);
     uint8x8_t below = vdup_n_u8(0);
     src += reference_stride;
@@ -2838,22 +2821,6 @@ void ConvolveIntraBlockCopyVertical_NEON(
       src += reference_stride;
 
       StoreLo4(dest, vrhadd_u8(row, below));
-      dest += pred_stride;
-
-      row = below;
-    } while (--y != 0);
-  } else {
-    assert(width == 2);
-    uint8x8_t row = Load2(src);
-    uint8x8_t below = vdup_n_u8(0);
-    src += reference_stride;
-
-    int y = height;
-    do {
-      below = Load2<0>(src, below);
-      src += reference_stride;
-
-      Store2<0>(dest, vrhadd_u8(row, below));
       dest += pred_stride;
 
       row = below;
@@ -3030,6 +2997,8 @@ void ConvolveIntraBlockCopy2D_NEON(
     const int /*vertical_filter_index*/, const int /*horizontal_filter_id*/,
     const int /*vertical_filter_id*/, const int width, const int height,
     void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride) {
+  assert(width >= 4 && width <= kMaxSuperBlockSizeInPixels);
+  assert(height >= 4 && height <= kMaxSuperBlockSizeInPixels);
   const auto* src = static_cast<const uint8_t*>(reference);
   auto* dest = static_cast<uint8_t*>(prediction);
   // Note: allow vertical access to height + 1. Because this function is only
@@ -3046,7 +3015,7 @@ void ConvolveIntraBlockCopy2D_NEON(
     IntraBlockCopy2D<16>(src, reference_stride, height, dest, pred_stride);
   } else if (width == 8) {
     IntraBlockCopy2D<8>(src, reference_stride, height, dest, pred_stride);
-  } else if (width == 4) {
+  } else {  // width == 4
     uint8x8_t left = Load4(src);
     uint8x8_t right = Load4(src + 1);
     src += reference_stride;
@@ -3069,34 +3038,6 @@ void ConvolveIntraBlockCopy2D_NEON(
       StoreLo4(dest, result);
       dest += pred_stride;
       StoreHi4(dest, result);
-      dest += pred_stride;
-
-      row = vget_high_u16(below);
-      y -= 2;
-    } while (y != 0);
-  } else {
-    uint8x8_t left = Load2(src);
-    uint8x8_t right = Load2(src + 1);
-    src += reference_stride;
-
-    uint16x4_t row = vget_low_u16(vaddl_u8(left, right));
-
-    int y = height;
-    do {
-      left = Load2<0>(src, left);
-      right = Load2<0>(src + 1, right);
-      src += reference_stride;
-      left = Load2<2>(src, left);
-      right = Load2<2>(src + 1, right);
-      src += reference_stride;
-
-      const uint16x8_t below = vaddl_u8(left, right);
-
-      const uint8x8_t result = vrshrn_n_u16(
-          vaddq_u16(vcombine_u16(row, vget_low_u16(below)), below), 2);
-      Store2<0>(dest, result);
-      dest += pred_stride;
-      Store2<2>(dest, result);
       dest += pred_stride;
 
       row = vget_high_u16(below);
