@@ -56,6 +56,8 @@ void ConvolveInit10bpp_NEON();
 #define LIBGAV1_Dsp10bpp_ConvolveCompoundVertical LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp10bpp_ConvolveCompound2D LIBGAV1_CPU_NEON
 
+#define LIBGAV1_Dsp10bpp_ConvolveIntraBlockCopyHorizontal LIBGAV1_CPU_NEON
+
 #define LIBGAV1_Dsp10bpp_ConvolveScale2D LIBGAV1_CPU_NEON
 #define LIBGAV1_Dsp10bpp_ConvolveCompoundScale2D LIBGAV1_CPU_NEON
 #endif  // LIBGAV1_ENABLE_NEON
