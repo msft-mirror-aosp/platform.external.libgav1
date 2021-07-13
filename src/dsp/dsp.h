@@ -768,7 +768,7 @@ using InitializeScalingLutFunc = void (*)(int num_points,
                                           const uint8_t point_value[],
                                           const uint8_t point_scaling[],
                                           int16_t* scaling_lut,
-                                          const int scaling_lut_size);
+                                          const int scaling_lut_length);
 
 // Blend noise with image. Section 7.18.3.5, third code block.
 // |width| is the width of each row, while |height| is how many rows to compute.

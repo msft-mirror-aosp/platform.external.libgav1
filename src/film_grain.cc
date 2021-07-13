@@ -322,7 +322,7 @@ bool FilmGrain<bitdepth>::Init() {
   if (use_luma || params_.chroma_scaling_from_luma) {
     dsp.film_grain.initialize_scaling_lut(
         params_.num_y_points, params_.point_y_value, params_.point_y_scaling,
-        scaling_lut_y_, kScalingLookupTableSize);
+        scaling_lut_y_, kScalingLutLength);
   } else {
     ASAN_POISON_MEMORY_REGION(scaling_lut_y_, sizeof(scaling_lut_y_));
   }
@@ -332,9 +332,8 @@ bool FilmGrain<bitdepth>::Init() {
       scaling_lut_v_ = scaling_lut_y_;
     } else if (params_.num_u_points > 0 || params_.num_v_points > 0) {
       const size_t buffer_size =
-          (kScalingLookupTableSize + kScalingLookupTablePadding) *
-          (static_cast<int>(params_.num_u_points > 0) +
-           static_cast<int>(params_.num_v_points > 0));
+          kScalingLutLength * (static_cast<int>(params_.num_u_points > 0) +
+                               static_cast<int>(params_.num_v_points > 0));
       scaling_lut_chroma_buffer_.reset(new (std::nothrow) int16_t[buffer_size]);
       if (scaling_lut_chroma_buffer_ == nullptr) return false;
 
@@ -343,14 +342,14 @@ bool FilmGrain<bitdepth>::Init() {
         scaling_lut_u_ = buffer;
         dsp.film_grain.initialize_scaling_lut(
             params_.num_u_points, params_.point_u_value,
-            params_.point_u_scaling, scaling_lut_u_, kScalingLookupTableSize);
-        buffer += kScalingLookupTableSize + kScalingLookupTablePadding;
+            params_.point_u_scaling, scaling_lut_u_, kScalingLutLength);
+        buffer += kScalingLutLength;
       }
       if (params_.num_v_points > 0) {
         scaling_lut_v_ = buffer;
         dsp.film_grain.initialize_scaling_lut(
             params_.num_v_points, params_.point_v_value,
-            params_.point_v_scaling, scaling_lut_v_, kScalingLookupTableSize);
+            params_.point_v_scaling, scaling_lut_v_, kScalingLutLength);
       }
     }
   }

@@ -59,8 +59,9 @@ enum {
   // The two possible heights of the chroma noise array.
   kMinChromaHeight = 38,
   kMaxChromaHeight = 73,
-  // The scaling lookup table maps bytes to bytes, so only uses 256 elements,
-  // plus one for overflow in 10bit lookups.
+  // The standard scaling lookup table maps bytes to bytes, so only uses 256
+  // elements, plus one for overflow in 12bpp lookups. The size is scaled up for
+  // 10bpp.
   kScalingLookupTableSize = 257,
   // Padding is added to the scaling lookup table to permit overwrites by
   // InitializeScalingLookupTable_NEON.

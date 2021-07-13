@@ -129,25 +129,12 @@ template <int bitdepth, typename Pixel>
 inline __m128i GetScalingFactors(const int16_t* scaling_lut,
                                  const Pixel* source) {
   alignas(16) int16_t start_vals[8];
-  if (bitdepth == 8) {
-    for (int i = 0; i < 8; ++i) {
-      start_vals[i] = scaling_lut[source[i]];
-    }
-    return LoadAligned16(start_vals);
-  }
-  alignas(16) int16_t end_vals[8];
-  // TODO(petersonab): Precompute this into a larger table for direct lookups.
+  static_assert(bitdepth <= 10,
+                "SSE4 Film Grain is not yet implemented for 12bpp.");
   for (int i = 0; i < 8; ++i) {
-    const int index = source[i] >> 2;
-    start_vals[i] = scaling_lut[index];
-    end_vals[i] = scaling_lut[index + 1];
+    start_vals[i] = scaling_lut[source[i]];
   }
-  const __m128i start = LoadAligned16(start_vals);
-  const __m128i end = LoadAligned16(end_vals);
-  __m128i remainder = LoadSource(source);
-  remainder = _mm_srli_epi16(_mm_slli_epi16(remainder, 14), 1);
-  const __m128i delta = _mm_mulhrs_epi16(_mm_sub_epi16(end, start), remainder);
-  return _mm_add_epi16(start, delta);
+  return LoadAligned16(start_vals);
 }
 
 // |scaling_shift| is in range [8,11].

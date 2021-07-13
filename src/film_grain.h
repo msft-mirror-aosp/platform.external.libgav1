@@ -103,6 +103,8 @@ class FilmGrain {
  private:
   using Pixel =
       typename std::conditional<bitdepth == 8, uint8_t, uint16_t>::type;
+  static constexpr int kScalingLutLength =
+      (kScalingLookupTableSize + kScalingLookupTablePadding) << (bitdepth - 8);
 
   bool Init();
 
@@ -156,7 +158,7 @@ class FilmGrain {
   GrainType u_grain_[kMaxChromaHeight * kMaxChromaWidth];
   GrainType v_grain_[kMaxChromaHeight * kMaxChromaWidth];
   // Scaling lookup tables.
-  int16_t scaling_lut_y_[kScalingLookupTableSize + kScalingLookupTablePadding];
+  int16_t scaling_lut_y_[kScalingLutLength];
   int16_t* scaling_lut_u_ = nullptr;
   int16_t* scaling_lut_v_ = nullptr;
   // If allocated, this buffer is 256 * 2 values long and scaling_lut_u_ and

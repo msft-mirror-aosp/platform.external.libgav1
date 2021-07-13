@@ -560,56 +560,92 @@ void ApplyAutoRegressiveFilterToLumaGrain_NEON(const FilmGrainParams& params,
 #undef ACCUMULATE_WEIGHTED_GRAIN
 }
 
+template <int bitdepth>
 void InitializeScalingLookupTable_NEON(int num_points,
                                        const uint8_t point_value[],
                                        const uint8_t point_scaling[],
                                        int16_t* scaling_lut,
-                                       const int scaling_lut_size) {
+                                       const int scaling_lut_length) {
+  static_assert(bitdepth < 12,
+                "NEON Scaling lookup table only supports 8bpp and 10bpp.");
   if (num_points == 0) {
-    memset(scaling_lut, 0, sizeof(scaling_lut[0]) * scaling_lut_size);
+    memset(scaling_lut, 0, sizeof(scaling_lut[0]) * scaling_lut_length);
     return;
   }
   static_assert(sizeof(scaling_lut[0]) == 2, "");
-  Memset(scaling_lut, point_scaling[0], point_value[0]);
-  const uint32x4_t steps = vmovl_u16(vcreate_u16(0x0003000200010000));
-  const uint32x4_t offset = vdupq_n_u32(32768);
+  Memset(scaling_lut, point_scaling[0],
+         std::max(static_cast<int>(point_value[0]), 1) << (bitdepth - 8));
+  const int32x4_t steps = vmovl_s16(vcreate_s16(0x0003000200010000));
+  const int32x4_t rounding = vdupq_n_s32(32768);
   for (int i = 0; i < num_points - 1; ++i) {
     const int delta_y = point_scaling[i + 1] - point_scaling[i];
     const int delta_x = point_value[i + 1] - point_value[i];
     // |delta| corresponds to b, for the function y = a + b*x.
     const int delta = delta_y * ((65536 + (delta_x >> 1)) / delta_x);
     const int delta4 = delta << 2;
-    // vmlal_n_u16 will not work here because |delta| typically exceeds the
+    // vmull_n_u16 will not work here because |delta| typically exceeds the
     // range of uint16_t.
-    uint32x4_t upscaled_points0 = vmlaq_n_u32(offset, steps, delta);
-    const uint32x4_t line_increment4 = vdupq_n_u32(delta4);
+    int32x4_t upscaled_points0 = vmlaq_n_s32(rounding, steps, delta);
+    const int32x4_t line_increment4 = vdupq_n_s32(delta4);
     // Get the second set of 4 points by adding 4 steps to the first set.
-    uint32x4_t upscaled_points1 = vaddq_u32(upscaled_points0, line_increment4);
+    int32x4_t upscaled_points1 = vaddq_s32(upscaled_points0, line_increment4);
     // We obtain the next set of 8 points by adding 8 steps to each of the
     // current 8 points.
-    const uint32x4_t line_increment8 = vshlq_n_u32(line_increment4, 1);
-    const uint16x8_t base_point = vdupq_n_u16(point_scaling[i]);
+    const int32x4_t line_increment8 = vshlq_n_s32(line_increment4, 1);
+    const int16x8_t base_point = vdupq_n_s16(point_scaling[i]);
     int x = 0;
+    // Derive and write 8 values (or 32 values, for 10bpp).
     do {
-      const uint16x4_t interp_points0 = vshrn_n_u32(upscaled_points0, 16);
-      const uint16x4_t interp_points1 = vshrn_n_u32(upscaled_points1, 16);
-      const uint16x8_t interp_points =
-          vcombine_u16(interp_points0, interp_points1);
+      const int16x4_t interp_points0 = vshrn_n_s32(upscaled_points0, 16);
+      const int16x4_t interp_points1 = vshrn_n_s32(upscaled_points1, 16);
+      const int16x8_t interp_points =
+          vcombine_s16(interp_points0, interp_points1);
       // The spec guarantees that the max value of |point_value[i]| + x is 255.
       // Writing 8 values starting at the final table byte, leaves 7 values of
       // required padding.
-      const int16x8_t full_interp = vreinterpretq_s16_u16(
-          vmovl_u8(vmovn_u16(vaddq_u16(interp_points, base_point))));
-      vst1q_s16(&scaling_lut[point_value[i] + x], full_interp);
-
-      upscaled_points0 = vaddq_u32(upscaled_points0, line_increment8);
-      upscaled_points1 = vaddq_u32(upscaled_points1, line_increment8);
+      const int16x8_t full_interp = vaddq_s16(interp_points, base_point);
+      const int x_base = (point_value[i] + x) << (bitdepth - 8);
+      if (bitdepth == 10) {
+        const int16x8_t next_val = vaddq_s16(
+            base_point,
+            vdupq_n_s16((vgetq_lane_s32(upscaled_points1, 3) + delta) >> 16));
+        const int16x8_t start = full_interp;
+        const int16x8_t end = vextq_s16(full_interp, next_val, 1);
+        // lut[i << 2] = start;
+        // lut[(i << 2) + 1] = start + RightShiftWithRounding(start - end, 2)
+        // lut[(i << 2) + 2] = start +
+        //                      RightShiftWithRounding(2 * (start - end), 2)
+        // lut[(i << 2) + 3] = start +
+        //                      RightShiftWithRounding(3 * (start - end), 2)
+        const int16x8_t delta = vsubq_s16(end, start);
+        const int16x8_t double_delta = vshlq_n_s16(delta, 1);
+        const int16x8_t delta2 = vrshrq_n_s16(double_delta, 2);
+        const int16x8_t delta3 =
+            vrshrq_n_s16(vaddq_s16(delta, double_delta), 2);
+        const int16x8x4_t result = {
+            start, vaddq_s16(start, vrshrq_n_s16(delta, 2)),
+            vaddq_s16(start, delta2), vaddq_s16(start, delta3)};
+        vst4q_s16(&scaling_lut[x_base], result);
+      } else {
+        vst1q_s16(&scaling_lut[x_base], full_interp);
+      }
+      upscaled_points0 = vaddq_s32(upscaled_points0, line_increment8);
+      upscaled_points1 = vaddq_s32(upscaled_points1, line_increment8);
       x += 8;
     } while (x < delta_x);
   }
   const int16_t last_point_value = point_value[num_points - 1];
-  Memset(&scaling_lut[last_point_value], point_scaling[num_points - 1],
-         scaling_lut_size - last_point_value);
+  const int x_base = last_point_value << (bitdepth - 8);
+  Memset(&scaling_lut[x_base], point_scaling[num_points - 1],
+         scaling_lut_length - x_base);
+  if (bitdepth == 10 && x_base > 0) {
+    const int start = scaling_lut[x_base - 4];
+    const int end = point_scaling[num_points - 1];
+    const int delta = end - start;
+    scaling_lut[x_base - 3] = start + RightShiftWithRounding(delta, 2);
+    scaling_lut[x_base - 2] = start + RightShiftWithRounding(2 * delta, 2);
+    scaling_lut[x_base - 1] = start + RightShiftWithRounding(3 * delta, 2);
+  }
 }
 
 inline int16x8_t Clip3(const int16x8_t value, const int16x8_t low,
@@ -622,49 +658,17 @@ template <int bitdepth, typename Pixel>
 inline int16x8_t GetScalingFactors(
     const int16_t scaling_lut[kScalingLookupTableSize], const Pixel* source) {
   int16_t start_vals[8];
-  if (bitdepth == 8) {
-    start_vals[0] = scaling_lut[source[0]];
-    start_vals[1] = scaling_lut[source[1]];
-    start_vals[2] = scaling_lut[source[2]];
-    start_vals[3] = scaling_lut[source[3]];
-    start_vals[4] = scaling_lut[source[4]];
-    start_vals[5] = scaling_lut[source[5]];
-    start_vals[6] = scaling_lut[source[6]];
-    start_vals[7] = scaling_lut[source[7]];
-    return vld1q_s16(start_vals);
-  }
-  int16_t end_vals[8];
-  // TODO(petersonab): Precompute this into a larger table for direct lookups.
-  int index = source[0] >> 2;
-  start_vals[0] = scaling_lut[index];
-  end_vals[0] = scaling_lut[index + 1];
-  index = source[1] >> 2;
-  start_vals[1] = scaling_lut[index];
-  end_vals[1] = scaling_lut[index + 1];
-  index = source[2] >> 2;
-  start_vals[2] = scaling_lut[index];
-  end_vals[2] = scaling_lut[index + 1];
-  index = source[3] >> 2;
-  start_vals[3] = scaling_lut[index];
-  end_vals[3] = scaling_lut[index + 1];
-  index = source[4] >> 2;
-  start_vals[4] = scaling_lut[index];
-  end_vals[4] = scaling_lut[index + 1];
-  index = source[5] >> 2;
-  start_vals[5] = scaling_lut[index];
-  end_vals[5] = scaling_lut[index + 1];
-  index = source[6] >> 2;
-  start_vals[6] = scaling_lut[index];
-  end_vals[6] = scaling_lut[index + 1];
-  index = source[7] >> 2;
-  start_vals[7] = scaling_lut[index];
-  end_vals[7] = scaling_lut[index + 1];
-  const int16x8_t start = vld1q_s16(start_vals);
-  const int16x8_t end = vld1q_s16(end_vals);
-  int16x8_t remainder = GetSignedSource8(source);
-  remainder = vandq_s16(remainder, vdupq_n_s16(3));
-  const int16x8_t delta = vmulq_s16(vsubq_s16(end, start), remainder);
-  return vaddq_s16(start, vrshrq_n_s16(delta, 2));
+  static_assert(bitdepth <= 10,
+                "NEON Film Grain is not yet implemented for 12bpp.");
+  start_vals[0] = scaling_lut[source[0]];
+  start_vals[1] = scaling_lut[source[1]];
+  start_vals[2] = scaling_lut[source[2]];
+  start_vals[3] = scaling_lut[source[3]];
+  start_vals[4] = scaling_lut[source[4]];
+  start_vals[5] = scaling_lut[source[5]];
+  start_vals[6] = scaling_lut[source[6]];
+  start_vals[7] = scaling_lut[source[7]];
+  return vld1q_s16(start_vals);
 }
 
 inline int16x8_t ScaleNoise(const int16x8_t noise, const int16x8_t scaling,
@@ -1112,7 +1116,7 @@ void Init8bpp() {
   dsp->film_grain.construct_noise_image_overlap =
       ConstructNoiseImageOverlap8bpp_NEON;
 
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_NEON;
+  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_NEON<8>;
 
   dsp->film_grain.blend_noise_luma =
       BlendNoiseWithImageLuma_NEON<8, int8_t, uint8_t>;
@@ -1159,7 +1163,8 @@ void Init10bpp() {
   dsp->film_grain.chroma_auto_regression[1][3] =
       ApplyAutoRegressiveFilterToChromaGrains_NEON<10, int16_t, 3, true>;
 
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_NEON;
+  dsp->film_grain.initialize_scaling_lut =
+      InitializeScalingLookupTable_NEON<10>;
 
   dsp->film_grain.blend_noise_luma =
       BlendNoiseWithImageLuma_NEON<10, int16_t, uint16_t>;

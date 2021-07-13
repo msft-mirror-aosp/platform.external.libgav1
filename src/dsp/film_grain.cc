@@ -36,25 +36,19 @@ namespace dsp {
 namespace film_grain {
 namespace {
 
-// Making this a template function prevents it from adding to code size when it
-// is not placed in the DSP table. Most functions in the dsp directory change
-// behavior by bitdepth, but because this one doesn't, it receives a dummy
-// parameter with one enforced value, ensuring only one copy is made.
-template <int singleton>
-void InitializeScalingLookupTable_C(const int num_points,
-                                    const uint8_t point_value[],
+template <int bitdepth>
+void InitializeScalingLookupTable_C(int num_points, const uint8_t point_value[],
                                     const uint8_t point_scaling[],
                                     int16_t* scaling_lut,
-                                    const int scaling_lut_size) {
-  static_assert(singleton == 0,
-                "Improper instantiation of InitializeScalingLookupTable_C. "
-                "There should be only one copy of this function.");
+                                    const int scaling_lut_length) {
   if (num_points == 0) {
-    memset(scaling_lut, 0, sizeof(scaling_lut[0]) * scaling_lut_size);
+    memset(scaling_lut, 0, sizeof(scaling_lut[0]) * scaling_lut_length);
     return;
   }
+  constexpr int index_shift = bitdepth - 8;
   static_assert(sizeof(scaling_lut[0]) == 2, "");
-  Memset(scaling_lut, point_scaling[0], point_value[0]);
+  Memset(scaling_lut, point_scaling[0],
+         std::max(static_cast<int>(point_value[0]), 1) << index_shift);
   for (int i = 0; i < num_points - 1; ++i) {
     const int delta_y = point_scaling[i + 1] - point_scaling[i];
     const int delta_x = point_value[i + 1] - point_value[i];
@@ -62,25 +56,38 @@ void InitializeScalingLookupTable_C(const int num_points,
     for (int x = 0; x < delta_x; ++x) {
       const int v = point_scaling[i] + ((x * delta + 32768) >> 16);
       assert(v >= 0 && v <= UINT8_MAX);
-      scaling_lut[point_value[i] + x] = v;
+      const int lut_index = (point_value[i] + x) << index_shift;
+      scaling_lut[lut_index] = v;
     }
   }
   const int16_t last_point_value = point_value[num_points - 1];
-  Memset(&scaling_lut[last_point_value], point_scaling[num_points - 1],
-         scaling_lut_size - last_point_value);
+  const int x_base = last_point_value << index_shift;
+  Memset(&scaling_lut[x_base], point_scaling[num_points - 1],
+         scaling_lut_length - x_base);
+  // Fill in the gaps.
+  if (bitdepth == 10) {
+    for (int x = 4; x < x_base + 4; x += 4) {
+      const int start = scaling_lut[x - 4];
+      const int end = scaling_lut[x];
+      const int delta = end - start;
+      scaling_lut[x - 3] = start + RightShiftWithRounding(delta, 2);
+      scaling_lut[x - 2] = start + RightShiftWithRounding(2 * delta, 2);
+      scaling_lut[x - 1] = start + RightShiftWithRounding(3 * delta, 2);
+    }
+  }
 }
 
 // Section 7.18.3.5.
-// Performs a piecewise linear interpolation into the scaling table.
 template <int bitdepth>
 int ScaleLut(const int16_t* scaling_lut, int index) {
+  if (bitdepth <= 10) {
+    assert(index < kScalingLookupTableSize << (bitdepth - 2));
+    return scaling_lut[index];
+  }
+  // Performs a piecewise linear interpolation into the scaling table.
   const int shift = bitdepth - 8;
   const int quotient = index >> shift;
   const int remainder = index - (quotient << shift);
-  if (bitdepth == 8) {
-    assert(quotient < kScalingLookupTableSize);
-    return scaling_lut[quotient];
-  }
   assert(quotient + 1 < kScalingLookupTableSize);
   const int start = scaling_lut[quotient];
   const int end = scaling_lut[quotient + 1];
@@ -682,7 +689,7 @@ void Init8bpp() {
       ConstructNoiseImageOverlap_C<8, int8_t>;
 
   // InitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<0>;
+  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<8>;
 
   // BlendNoiseWithImageLumaFunc
   dsp->film_grain.blend_noise_luma =
@@ -733,7 +740,7 @@ void Init8bpp() {
       ConstructNoiseImageOverlap_C<8, int8_t>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainInitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<0>;
+  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<8>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainBlendNoiseLuma
   dsp->film_grain.blend_noise_luma =
@@ -794,7 +801,7 @@ void Init10bpp() {
       ConstructNoiseImageOverlap_C<10, int16_t>;
 
   // InitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<0>;
+  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<10>;
 
   // BlendNoiseWithImageLumaFunc
   dsp->film_grain.blend_noise_luma =
@@ -845,7 +852,7 @@ void Init10bpp() {
       ConstructNoiseImageOverlap_C<10, int16_t>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainInitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<0>;
+  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<10>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainBlendNoiseLuma
   dsp->film_grain.blend_noise_luma =
