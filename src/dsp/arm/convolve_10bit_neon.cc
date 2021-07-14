@@ -1633,6 +1633,226 @@ void ConvolveIntraBlockCopyVertical_NEON(
   }
 }
 
+template <int width>
+inline void IntraBlockCopy2D(const uint16_t* LIBGAV1_RESTRICT src,
+                             const ptrdiff_t src_stride, const int height,
+                             uint16_t* LIBGAV1_RESTRICT dst,
+                             const ptrdiff_t dst_stride) {
+  const ptrdiff_t src_remainder_stride = src_stride - (width - 8);
+  const ptrdiff_t dst_remainder_stride = dst_stride - (width - 8);
+  uint16x8_t row[16];
+  row[0] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+  if (width >= 16) {
+    src += 8;
+    row[1] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+    if (width >= 32) {
+      src += 8;
+      row[2] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+      src += 8;
+      row[3] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+      if (width >= 64) {
+        src += 8;
+        row[4] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+        src += 8;
+        row[5] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+        src += 8;
+        row[6] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+        src += 8;
+        row[7] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+        if (width == 128) {
+          src += 8;
+          row[8] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          src += 8;
+          row[9] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          src += 8;
+          row[10] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          src += 8;
+          row[11] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          src += 8;
+          row[12] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          src += 8;
+          row[13] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          src += 8;
+          row[14] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          src += 8;
+          row[15] = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+        }
+      }
+    }
+  }
+  src += src_remainder_stride;
+
+  int y = height;
+  do {
+    const uint16x8_t below_0 = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+    vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[0], below_0), 2));
+    row[0] = below_0;
+    if (width >= 16) {
+      src += 8;
+      dst += 8;
+
+      const uint16x8_t below_1 = vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+      vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[1], below_1), 2));
+      row[1] = below_1;
+      if (width >= 32) {
+        src += 8;
+        dst += 8;
+
+        const uint16x8_t below_2 =
+            vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+        vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[2], below_2), 2));
+        row[2] = below_2;
+        src += 8;
+        dst += 8;
+
+        const uint16x8_t below_3 =
+            vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+        vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[3], below_3), 2));
+        row[3] = below_3;
+        if (width >= 64) {
+          src += 8;
+          dst += 8;
+
+          const uint16x8_t below_4 =
+              vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[4], below_4), 2));
+          row[4] = below_4;
+          src += 8;
+          dst += 8;
+
+          const uint16x8_t below_5 =
+              vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[5], below_5), 2));
+          row[5] = below_5;
+          src += 8;
+          dst += 8;
+
+          const uint16x8_t below_6 =
+              vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[6], below_6), 2));
+          row[6] = below_6;
+          src += 8;
+          dst += 8;
+
+          const uint16x8_t below_7 =
+              vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+          vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[7], below_7), 2));
+          row[7] = below_7;
+          if (width == 128) {
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_8 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[8], below_8), 2));
+            row[8] = below_8;
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_9 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[9], below_9), 2));
+            row[9] = below_9;
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_10 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[10], below_10), 2));
+            row[10] = below_10;
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_11 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[11], below_11), 2));
+            row[11] = below_11;
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_12 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[12], below_12), 2));
+            row[12] = below_12;
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_13 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[13], below_13), 2));
+            row[13] = below_13;
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_14 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[14], below_14), 2));
+            row[14] = below_14;
+            src += 8;
+            dst += 8;
+
+            const uint16x8_t below_15 =
+                vaddq_u16(vld1q_u16(src), vld1q_u16(src + 1));
+            vst1q_u16(dst, vrshrq_n_u16(vaddq_u16(row[15], below_15), 2));
+            row[15] = below_15;
+          }
+        }
+      }
+    }
+    src += src_remainder_stride;
+    dst += dst_remainder_stride;
+  } while (--y != 0);
+}
+
+void ConvolveIntraBlockCopy2D_NEON(
+    const void* LIBGAV1_RESTRICT const reference,
+    const ptrdiff_t reference_stride, const int /*horizontal_filter_index*/,
+    const int /*vertical_filter_index*/, const int /*horizontal_filter_id*/,
+    const int /*vertical_filter_id*/, const int width, const int height,
+    void* LIBGAV1_RESTRICT const prediction, const ptrdiff_t pred_stride) {
+  assert(width >= 4 && width <= kMaxSuperBlockSizeInPixels);
+  assert(height >= 4 && height <= kMaxSuperBlockSizeInPixels);
+  const auto* src = static_cast<const uint16_t*>(reference);
+  auto* dest = static_cast<uint16_t*>(prediction);
+  const ptrdiff_t src_stride = reference_stride >> 1;
+  const ptrdiff_t dst_stride = pred_stride >> 1;
+
+  // Note: allow vertical access to height + 1. Because this function is only
+  // for u/v plane of intra block copy, such access is guaranteed to be within
+  // the prediction block.
+
+  if (width == 128) {
+    IntraBlockCopy2D<128>(src, src_stride, height, dest, dst_stride);
+  } else if (width == 64) {
+    IntraBlockCopy2D<64>(src, src_stride, height, dest, dst_stride);
+  } else if (width == 32) {
+    IntraBlockCopy2D<32>(src, src_stride, height, dest, dst_stride);
+  } else if (width == 16) {
+    IntraBlockCopy2D<16>(src, src_stride, height, dest, dst_stride);
+  } else if (width == 8) {
+    IntraBlockCopy2D<8>(src, src_stride, height, dest, dst_stride);
+  } else {  // width == 4
+    uint16x4_t row0 = vadd_u16(vld1_u16(src), vld1_u16(src + 1));
+    src += src_stride;
+
+    int y = height;
+    do {
+      const uint16x4_t row1 = vadd_u16(vld1_u16(src), vld1_u16(src + 1));
+      src += src_stride;
+      const uint16x4_t row2 = vadd_u16(vld1_u16(src), vld1_u16(src + 1));
+      src += src_stride;
+      const uint16x4_t result_01 = vrshr_n_u16(vadd_u16(row0, row1), 2);
+      const uint16x4_t result_12 = vrshr_n_u16(vadd_u16(row1, row2), 2);
+      vst1_u16(dest, result_01);
+      dest += dst_stride;
+      vst1_u16(dest, result_12);
+      dest += dst_stride;
+      row0 = row2;
+      y -= 2;
+    } while (y != 0);
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Scaled Convolve
 
@@ -2756,6 +2976,7 @@ void Init10bpp() {
 
   dsp->convolve[1][0][0][1] = ConvolveIntraBlockCopyHorizontal_NEON;
   dsp->convolve[1][0][1][0] = ConvolveIntraBlockCopyVertical_NEON;
+  dsp->convolve[1][0][1][1] = ConvolveIntraBlockCopy2D_NEON;
 
   dsp->convolve_scale[0] = ConvolveScale2D_NEON<false>;
   dsp->convolve_scale[1] = ConvolveScale2D_NEON<true>;
