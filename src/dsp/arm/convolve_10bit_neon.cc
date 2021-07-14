@@ -1922,7 +1922,7 @@ inline int8x16_t GetPositive2TapFilter(const int tap_index) {
 
 template <int grade_x>
 inline void ConvolveKernelHorizontal2Tap(
-    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const uint16_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
     const int width, const int subpixel_x, const int step_x,
     const int intermediate_height, int16_t* LIBGAV1_RESTRICT intermediate) {
   // Account for the 0-taps that precede the 2 nonzero taps in the spec.
@@ -1937,7 +1937,7 @@ inline void ConvolveKernelHorizontal2Tap(
 
   int p = subpixel_x;
   if (width <= 4) {
-    const uint8_t* src_y = src;
+    const uint16_t* src_y = src;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
     const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
@@ -1963,8 +1963,8 @@ inline void ConvolveKernelHorizontal2Tap(
 
     int y = intermediate_height;
     do {
-      const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src_y) +
-                              (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+      const uint16_t* src_x =
+          src_y + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
       // Load a pool of samples to select from using stepped indices.
       const uint8x16x3_t src_bytes = LoadSrcVals<1>(src_x);
       // Each lane corresponds to a different filter kernel.
@@ -1974,7 +1974,7 @@ inline void ConvolveKernelHorizontal2Tap(
       vst1_s16(intermediate,
                vrshrn_n_s32(SumOnePassTaps</*filter_index=*/3>(src, taps),
                             kInterRoundBitsHorizontal - 1));
-      src_y += src_stride;
+      src_y = AddByteStride(src_y, src_stride);
       intermediate += kIntermediateStride;
     } while (--y != 0);
     return;
@@ -1983,8 +1983,8 @@ inline void ConvolveKernelHorizontal2Tap(
   // |width| >= 8
   int x = 0;
   do {
-    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
-                            (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+    const uint16_t* src_x =
+        src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
     int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
@@ -2034,8 +2034,7 @@ inline void ConvolveKernelHorizontal2Tap(
           vrshrn_n_s32(SumOnePassTaps</*filter_index=*/3>(src_high, taps_high),
                        kInterRoundBitsHorizontal - 1));
       // Avoid right shifting the stride.
-      src_x = reinterpret_cast<const uint16_t*>(
-          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      src_x = AddByteStride(src_x, src_stride);
       intermediate_x += kIntermediateStride;
     } while (--y != 0);
     x += 8;
@@ -2058,7 +2057,7 @@ inline int8x16_t GetPositive4TapFilter(const int tap_index) {
 
 // This filter is only possible when width <= 4.
 inline void ConvolveKernelHorizontalPositive4Tap(
-    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const uint16_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
     const int subpixel_x, const int step_x, const int intermediate_height,
     int16_t* LIBGAV1_RESTRICT intermediate) {
   // Account for the 0-taps that precede the 2 nonzero taps in the spec.
@@ -2103,8 +2102,8 @@ inline void ConvolveKernelHorizontalPositive4Tap(
     src_lookup[i] = vadd_u8(src_lookup[i - 1], two);
   }
 
-  const uint16_t* src_y = reinterpret_cast<const uint16_t*>(src) +
-                          (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+  const uint16_t* src_y =
+      src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
   int y = intermediate_height;
   do {
     // Load a pool of samples to select from using stepped indices.
@@ -2118,8 +2117,7 @@ inline void ConvolveKernelHorizontalPositive4Tap(
     vst1_s16(intermediate,
              vrshrn_n_s32(SumOnePassTaps</*filter_index=*/5>(src, taps),
                           kInterRoundBitsHorizontal - 1));
-    src_y = reinterpret_cast<const uint16_t*>(
-        reinterpret_cast<const uint8_t*>(src_y) + src_stride);
+    src_y = AddByteStride(src_y, src_stride);
     intermediate += kIntermediateStride;
   } while (--y != 0);
 }
@@ -2139,7 +2137,7 @@ inline int8x16_t GetSigned4TapFilter(const int tap_index) {
 
 // This filter is only possible when width <= 4.
 inline void ConvolveKernelHorizontalSigned4Tap(
-    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const uint16_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
     const int subpixel_x, const int step_x, const int intermediate_height,
     int16_t* LIBGAV1_RESTRICT intermediate) {
   const int kernel_offset = 2;
@@ -2183,8 +2181,8 @@ inline void ConvolveKernelHorizontalSigned4Tap(
     src_lookup[i] = vadd_u8(src_lookup[i - 1], two);
   }
 
-  const uint16_t* src_y = reinterpret_cast<const uint16_t*>(src) +
-                          (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+  const uint16_t* src_y =
+      src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
   int y = intermediate_height;
   do {
     // Load a pool of samples to select from using stepped indices.
@@ -2198,8 +2196,7 @@ inline void ConvolveKernelHorizontalSigned4Tap(
     vst1_s16(intermediate,
              vrshrn_n_s32(SumOnePassTaps</*filter_index=*/4>(src, taps),
                           kInterRoundBitsHorizontal - 1));
-    src_y = reinterpret_cast<const uint16_t*>(
-        reinterpret_cast<const uint8_t*>(src_y) + src_stride);
+    src_y = AddByteStride(src_y, src_stride);
     intermediate += kIntermediateStride;
   } while (--y != 0);
 }
@@ -2222,7 +2219,7 @@ inline int8x16_t GetSigned6TapFilter(const int tap_index) {
 // This filter is only possible when width >= 8.
 template <int grade_x>
 inline void ConvolveKernelHorizontalSigned6Tap(
-    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const uint16_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
     const int width, const int subpixel_x, const int step_x,
     const int intermediate_height,
     int16_t* LIBGAV1_RESTRICT const intermediate) {
@@ -2240,8 +2237,8 @@ inline void ConvolveKernelHorizontalSigned6Tap(
   int x = 0;
   int p = subpixel_x;
   do {
-    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
-                            (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+    const uint16_t* src_x =
+        src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
     int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
@@ -2300,8 +2297,7 @@ inline void ConvolveKernelHorizontalSigned6Tap(
           vrshrn_n_s32(SumOnePassTaps</*filter_index=*/0>(src_high, taps_high),
                        kInterRoundBitsHorizontal - 1));
       // Avoid right shifting the stride.
-      src_x = reinterpret_cast<const uint16_t*>(
-          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      src_x = AddByteStride(src_x, src_stride);
       intermediate_x += kIntermediateStride;
     } while (--y != 0);
     x += 8;
@@ -2328,7 +2324,7 @@ inline int8x16_t GetMixed6TapFilter(const int tap_index) {
 // This filter is only possible when width >= 8.
 template <int grade_x>
 inline void ConvolveKernelHorizontalMixed6Tap(
-    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const uint16_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
     const int width, const int subpixel_x, const int step_x,
     const int intermediate_height,
     int16_t* LIBGAV1_RESTRICT const intermediate) {
@@ -2346,8 +2342,8 @@ inline void ConvolveKernelHorizontalMixed6Tap(
   int x = 0;
   int p = subpixel_x;
   do {
-    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
-                            (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
+    const uint16_t* src_x =
+        src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
     int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
@@ -2405,8 +2401,7 @@ inline void ConvolveKernelHorizontalMixed6Tap(
           vrshrn_n_s32(SumOnePassTaps</*filter_index=*/0>(src_high, taps_high),
                        kInterRoundBitsHorizontal - 1));
       // Avoid right shifting the stride.
-      src_x = reinterpret_cast<const uint16_t*>(
-          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      src_x = AddByteStride(src_x, src_stride);
       intermediate_x += kIntermediateStride;
     } while (--y != 0);
     x += 8;
@@ -2436,7 +2431,7 @@ inline int8x16_t GetSigned8TapFilter(const int tap_index) {
 // This filter is only possible when width >= 8.
 template <int grade_x>
 inline void ConvolveKernelHorizontalSigned8Tap(
-    const uint8_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
+    const uint16_t* LIBGAV1_RESTRICT const src, const ptrdiff_t src_stride,
     const int width, const int subpixel_x, const int step_x,
     const int intermediate_height,
     int16_t* LIBGAV1_RESTRICT const intermediate) {
@@ -2452,8 +2447,7 @@ inline void ConvolveKernelHorizontalSigned8Tap(
   int x = 0;
   int p = subpixel_x;
   do {
-    const uint16_t* src_x = reinterpret_cast<const uint16_t*>(src) +
-                            (p >> kScaleSubPixelBits) - ref_x;
+    const uint16_t* src_x = src + (p >> kScaleSubPixelBits) - ref_x;
     int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
@@ -2511,8 +2505,7 @@ inline void ConvolveKernelHorizontalSigned8Tap(
           vrshrn_n_s32(SumOnePassTaps</*filter_index=*/2>(src_high, taps_high),
                        kInterRoundBitsHorizontal - 1));
       // Avoid right shifting the stride.
-      src_x = reinterpret_cast<const uint16_t*>(
-          reinterpret_cast<const uint8_t*>(src_x) + src_stride);
+      src_x = AddByteStride(src_x, src_stride);
       intermediate_x += kIntermediateStride;
     } while (--y != 0);
     x += 8;
@@ -2569,7 +2562,7 @@ void ConvolveVerticalScale2Or4xH(const int16_t* LIBGAV1_RESTRICT const src,
   static_assert(width == 2 || width == 4, "");
   // We increment stride with the 8-bit pointer and then reinterpret to avoid
   // shifting |dest_stride|.
-  auto* dest_y = static_cast<uint8_t*>(dest);
+  auto* dest_y = static_cast<uint16_t*>(dest);
   // In compound mode, |dest_stride| is based on the size of uint16_t, rather
   // than bytes.
   auto* compound_dest_y = static_cast<uint16_t*>(dest);
@@ -2601,11 +2594,11 @@ void ConvolveVerticalScale2Or4xH(const int16_t* LIBGAV1_RESTRICT const src,
       const uint16x4_t result = vmin_u16(vreinterpret_u16_s16(sums),
                                          vdup_n_u16((1 << kBitdepth10) - 1));
       if (width == 2) {
-        Store2<0>(reinterpret_cast<uint16_t*>(dest_y), result);
+        Store2<0>(dest_y, result);
       } else {
-        vst1_u16(reinterpret_cast<uint16_t*>(dest_y), result);
+        vst1_u16(dest_y, result);
       }
-      dest_y += dest_stride;
+      dest_y = AddByteStride(dest_y, dest_stride);
     }
     p += step_y;
     const int p_diff =
@@ -2631,11 +2624,11 @@ void ConvolveVerticalScale2Or4xH(const int16_t* LIBGAV1_RESTRICT const src,
       const uint16x4_t result = vmin_u16(vreinterpret_u16_s16(sums),
                                          vdup_n_u16((1 << kBitdepth10) - 1));
       if (width == 2) {
-        Store2<0>(reinterpret_cast<uint16_t*>(dest_y), result);
+        Store2<0>(dest_y, result);
       } else {
-        vst1_u16(reinterpret_cast<uint16_t*>(dest_y), result);
+        vst1_u16(dest_y, result);
       }
-      dest_y += dest_stride;
+      dest_y = AddByteStride(dest_y, dest_stride);
     }
     p += step_y;
     src_y = src + (p >> kScaleSubPixelBits) * src_stride;
@@ -2664,7 +2657,7 @@ void ConvolveVerticalScale(const int16_t* LIBGAV1_RESTRICT const src,
     int y = height;
     // We increment stride with the 8-bit pointer and then reinterpret to avoid
     // shifting |dest_stride|.
-    auto* dest_y = reinterpret_cast<uint8_t*>(static_cast<uint16_t*>(dest) + x);
+    auto* dest_y = static_cast<uint16_t*>(dest) + x;
     // In compound mode, |dest_stride| is based on the size of uint16_t, rather
     // than bytes.
     auto* compound_dest_y = static_cast<uint16_t*>(dest) + x;
@@ -2687,8 +2680,8 @@ void ConvolveVerticalScale(const int16_t* LIBGAV1_RESTRICT const src,
       } else {
         const uint16x8_t result = vminq_u16(
             vreinterpretq_u16_s16(sums), vdupq_n_u16((1 << kBitdepth10) - 1));
-        vst1q_u16(reinterpret_cast<uint16_t*>(dest_y), result);
-        dest_y += dest_stride;
+        vst1q_u16(dest_y, result);
+        dest_y = AddByteStride(dest_y, dest_stride);
       }
       p += step_y;
       const int p_diff =
@@ -2713,8 +2706,8 @@ void ConvolveVerticalScale(const int16_t* LIBGAV1_RESTRICT const src,
       } else {
         const uint16x8_t result = vminq_u16(
             vreinterpretq_u16_s16(sums), vdupq_n_u16((1 << kBitdepth10) - 1));
-        vst1q_u16(reinterpret_cast<uint16_t*>(dest_y), result);
-        dest_y += dest_stride;
+        vst1q_u16(dest_y, result);
+        dest_y = AddByteStride(dest_y, dest_stride);
       }
       p += step_y;
       src_y = src_x + (p >> kScaleSubPixelBits) * src_stride;
@@ -2754,9 +2747,9 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
   int filter_index = GetFilterIndex(horizontal_filter_index, width);
   int16_t* intermediate = intermediate_result;
   const ptrdiff_t src_stride = reference_stride;
-  const auto* src = static_cast<const uint8_t*>(reference);
+  const auto* src = static_cast<const uint16_t*>(reference);
   const int vert_kernel_offset = (8 - num_vert_taps) / 2;
-  src += vert_kernel_offset * src_stride;
+  src = AddByteStride(src, vert_kernel_offset * src_stride);
 
   // Derive the maximum value of |step_x| at which all source values fit in one
   // 16-byte (8-value) load. Final index is src_x + |num_taps| - 1 < 16

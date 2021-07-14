@@ -23,6 +23,7 @@
 
 #include <arm_neon.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 
@@ -301,6 +302,17 @@ inline void Store4(void* const buf, const uint16x4_t val) {
 // Simplify code when caller has |buf| cast as uint8_t*.
 inline void Store8(void* const buf, const uint16x8_t val) {
   vst1q_u16(static_cast<uint16_t*>(buf), val);
+}
+
+//------------------------------------------------------------------------------
+// Pointer helpers.
+
+// This function adds |stride|, given as a number of bytes, to a pointer to a
+// larger type, using native pointer arithmetic.
+template <typename T>
+inline T* AddByteStride(T* ptr, const ptrdiff_t stride) {
+  return reinterpret_cast<T*>(
+      const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(ptr) + stride));
 }
 
 //------------------------------------------------------------------------------
