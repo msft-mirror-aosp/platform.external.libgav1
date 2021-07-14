@@ -1132,6 +1132,94 @@ void Init8bpp() {
 namespace high_bitdepth {
 namespace {
 
+inline void WriteOverlapLine10bpp_NEON(
+    const int16_t* LIBGAV1_RESTRICT noise_stripe_row,
+    const int16_t* LIBGAV1_RESTRICT noise_stripe_row_prev, int plane_width,
+    const int16x8_t grain_coeff, const int16x8_t old_coeff,
+    int16_t* LIBGAV1_RESTRICT noise_image_row) {
+  int x = 0;
+  do {
+    // Note that these reads may exceed noise_stripe_row's width by up to 7
+    // values.
+    const int16x8_t source_grain = vld1q_s16(noise_stripe_row + x);
+    const int16x8_t source_old = vld1q_s16(noise_stripe_row_prev + x);
+    // Maximum product is 511 * 27 = 0x35E5.
+    const int16x8_t weighted_grain = vmulq_s16(grain_coeff, source_grain);
+    // Maximum sum is 511 * (22 + 23) = 0x59D3.
+    const int16x8_t grain_sum =
+        vmlaq_s16(weighted_grain, old_coeff, source_old);
+    // Note that this write may exceed noise_image_row's width by up to 7
+    // values.
+    const int16x8_t grain = Clip3S16(vrshrq_n_s16(grain_sum, 5),
+                                     vdupq_n_s16(GetGrainMin<kBitdepth10>()),
+                                     vdupq_n_s16(GetGrainMax<kBitdepth10>()));
+    vst1q_s16(noise_image_row + x, grain);
+    x += 8;
+  } while (x < plane_width);
+}
+
+void ConstructNoiseImageOverlap10bpp_NEON(
+    const void* LIBGAV1_RESTRICT noise_stripes_buffer, int width, int height,
+    int subsampling_x, int subsampling_y,
+    void* LIBGAV1_RESTRICT noise_image_buffer) {
+  const auto* noise_stripes =
+      static_cast<const Array2DView<int16_t>*>(noise_stripes_buffer);
+  auto* noise_image = static_cast<Array2D<int16_t>*>(noise_image_buffer);
+  const int plane_width = (width + subsampling_x) >> subsampling_x;
+  const int plane_height = (height + subsampling_y) >> subsampling_y;
+  const int stripe_height = 32 >> subsampling_y;
+  const int stripe_mask = stripe_height - 1;
+  int y = stripe_height;
+  int luma_num = 1;
+  if (subsampling_y == 0) {
+    const int16x8_t first_row_grain_coeff = vdupq_n_s16(17);
+    const int16x8_t first_row_old_coeff = vdupq_n_s16(27);
+    const int16x8_t second_row_grain_coeff = first_row_old_coeff;
+    const int16x8_t second_row_old_coeff = first_row_grain_coeff;
+    for (; y < (plane_height & ~stripe_mask); ++luma_num, y += stripe_height) {
+      const int16_t* noise_stripe = (*noise_stripes)[luma_num];
+      const int16_t* noise_stripe_prev = (*noise_stripes)[luma_num - 1];
+      WriteOverlapLine10bpp_NEON(
+          noise_stripe, &noise_stripe_prev[32 * plane_width], plane_width,
+          first_row_grain_coeff, first_row_old_coeff, (*noise_image)[y]);
+
+      WriteOverlapLine10bpp_NEON(&noise_stripe[plane_width],
+                                 &noise_stripe_prev[(32 + 1) * plane_width],
+                                 plane_width, second_row_grain_coeff,
+                                 second_row_old_coeff, (*noise_image)[y + 1]);
+    }
+    // Either one partial stripe remains (remaining_height > 0),
+    // OR image is less than one stripe high (remaining_height < 0),
+    // OR all stripes are completed (remaining_height == 0).
+    const int remaining_height = plane_height - y;
+    if (remaining_height <= 0) {
+      return;
+    }
+    const int16_t* noise_stripe = (*noise_stripes)[luma_num];
+    const int16_t* noise_stripe_prev = (*noise_stripes)[luma_num - 1];
+    WriteOverlapLine10bpp_NEON(
+        noise_stripe, &noise_stripe_prev[32 * plane_width], plane_width,
+        first_row_grain_coeff, first_row_old_coeff, (*noise_image)[y]);
+
+    if (remaining_height > 1) {
+      WriteOverlapLine10bpp_NEON(&noise_stripe[plane_width],
+                                 &noise_stripe_prev[(32 + 1) * plane_width],
+                                 plane_width, second_row_grain_coeff,
+                                 second_row_old_coeff, (*noise_image)[y + 1]);
+    }
+  } else {  // subsampling_y == 1
+    const int16x8_t first_row_grain_coeff = vdupq_n_s16(22);
+    const int16x8_t first_row_old_coeff = vdupq_n_s16(23);
+    for (; y < plane_height; ++luma_num, y += stripe_height) {
+      const int16_t* noise_stripe = (*noise_stripes)[luma_num];
+      const int16_t* noise_stripe_prev = (*noise_stripes)[luma_num - 1];
+      WriteOverlapLine10bpp_NEON(
+          noise_stripe, &noise_stripe_prev[16 * plane_width], plane_width,
+          first_row_grain_coeff, first_row_old_coeff, (*noise_image)[y]);
+    }
+  }
+}
+
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
@@ -1162,6 +1250,9 @@ void Init10bpp() {
       ApplyAutoRegressiveFilterToChromaGrains_NEON<10, int16_t, 2, true>;
   dsp->film_grain.chroma_auto_regression[1][3] =
       ApplyAutoRegressiveFilterToChromaGrains_NEON<10, int16_t, 3, true>;
+
+  dsp->film_grain.construct_noise_image_overlap =
+      ConstructNoiseImageOverlap10bpp_NEON;
 
   dsp->film_grain.initialize_scaling_lut =
       InitializeScalingLookupTable_NEON<10>;
