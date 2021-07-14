@@ -1414,10 +1414,6 @@ StatusCode DecoderImpl::DecodeTiles(
     }
   }
 
-  PostFilter post_filter(frame_header, sequence_header, frame_scratch_buffer,
-                         current_frame->buffer(), dsp,
-                         settings_.post_filter_mask);
-
   if (is_frame_parallel_ && !IsIntraFrame(frame_header.frame_type)) {
     // We can parse the current frame if all the reference frames have been
     // parsed.
@@ -1486,6 +1482,9 @@ StatusCode DecoderImpl::DecodeTiles(
     }
   }
 
+  PostFilter post_filter(frame_header, sequence_header, frame_scratch_buffer,
+                         current_frame->buffer(), dsp,
+                         settings_.post_filter_mask);
   SymbolDecoderContext saved_symbol_decoder_context;
   BlockingCounterWithStatus pending_tiles(tile_count);
   for (int tile_number = 0; tile_number < tile_count; ++tile_number) {
