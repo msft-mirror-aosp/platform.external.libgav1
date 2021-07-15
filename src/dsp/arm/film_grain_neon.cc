@@ -1220,6 +1220,130 @@ void ConstructNoiseImageOverlap10bpp_NEON(
   }
 }
 
+inline int16x8_t BlendChromaValsNoCfl(
+    const int16_t* scaling_lut, const uint16_t* LIBGAV1_RESTRICT chroma_cursor,
+    const int16_t* LIBGAV1_RESTRICT noise_image_cursor,
+    const int16x8_t& average_luma, const int32x4_t& scaling_shift_vect,
+    const int32x4_t& offset, int luma_multiplier, int chroma_multiplier) {
+  uint16_t merged_buffer[8];
+  const int16x8_t orig = GetSignedSource8(chroma_cursor);
+  const int32x4_t weighted_luma_low =
+      vmull_n_s16(vget_low_s16(average_luma), luma_multiplier);
+  const int32x4_t weighted_luma_high =
+      vmull_n_s16(vget_high_s16(average_luma), luma_multiplier);
+  // Maximum value of combined is 127 * 1023 = 0x1FB81.
+  const int32x4_t combined_low =
+      vmlal_n_s16(weighted_luma_low, vget_low_s16(orig), chroma_multiplier);
+  const int32x4_t combined_high =
+      vmlal_n_s16(weighted_luma_high, vget_high_s16(orig), chroma_multiplier);
+  // Maximum value of offset is (255 << 8) = 0xFF00. Offset may be negative.
+  const uint16x4_t merged_low =
+      vqshrun_n_s32(vaddq_s32(offset, combined_low), 6);
+  const uint16x4_t merged_high =
+      vqshrun_n_s32(vaddq_s32(offset, combined_high), 6);
+  const uint16x8_t max_pixel = vdupq_n_u16((1 << kBitdepth10) - 1);
+  vst1q_u16(merged_buffer,
+            vminq_u16(vcombine_u16(merged_low, merged_high), max_pixel));
+  const int16x8_t scaling =
+      GetScalingFactors<10, uint16_t>(scaling_lut, merged_buffer);
+  const int16x8_t noise = GetSignedSource8(noise_image_cursor);
+  const int16x8_t scaled_noise = ScaleNoise(noise, scaling, scaling_shift_vect);
+  return vaddq_s16(orig, scaled_noise);
+}
+
+LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
+    const Array2D<int16_t>& noise_image, int min_value, int max_chroma,
+    int width, int height, int start_height, int subsampling_x,
+    int subsampling_y, int scaling_shift, int chroma_offset,
+    int chroma_multiplier, int luma_multiplier, const int16_t* scaling_lut,
+    const uint16_t* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
+    const uint16_t* LIBGAV1_RESTRICT in_chroma_row,
+    ptrdiff_t source_stride_chroma, uint16_t* LIBGAV1_RESTRICT out_chroma_row,
+    ptrdiff_t dest_stride) {
+  const int16x8_t floor = vdupq_n_s16(min_value);
+  const int16x8_t ceiling = vdupq_n_s16(max_chroma);
+  const int32x4_t scaling_shift_vect = vdupq_n_s32(-scaling_shift);
+
+  const int chroma_height = (height + subsampling_y) >> subsampling_y;
+  const int chroma_width = (width + subsampling_x) >> subsampling_x;
+  const int safe_chroma_width = chroma_width & ~7;
+  uint16_t luma_buffer[16];
+  // Offset is added before downshifting in order to take advantage of
+  // saturation, so it has to be upscaled by 6 bits, plus 2 bits for 10bpp.
+  const int32x4_t offset = vdupq_n_s32(chroma_offset << (6 + 2));
+
+  start_height >>= subsampling_y;
+  int y = 0;
+  do {
+    int x = 0;
+    do {
+      const int luma_x = x << subsampling_x;
+      const int16x8_t average_luma = vreinterpretq_s16_u16(
+          GetAverageLuma(&in_y_row[luma_x], subsampling_x));
+      const int16x8_t blended = BlendChromaValsNoCfl(
+          scaling_lut, &in_chroma_row[x], &(noise_image[y + start_height][x]),
+          average_luma, scaling_shift_vect, offset, luma_multiplier,
+          chroma_multiplier);
+      StoreUnsigned8(&out_chroma_row[x],
+                     vreinterpretq_u16_s16(Clip3(blended, floor, ceiling)));
+
+      x += 8;
+    } while (x < safe_chroma_width);
+
+    if (x < chroma_width) {
+      // Begin right edge iteration. Same as the normal iterations, but the
+      // |average_luma| computation requires a duplicated luma value at the
+      // end.
+      const int luma_x = x << subsampling_x;
+      const int valid_range = width - luma_x;
+      memcpy(luma_buffer, &in_y_row[luma_x], valid_range * sizeof(in_y_row[0]));
+      luma_buffer[valid_range] = in_y_row[width - 1];
+
+      const int16x8_t average_luma =
+          vreinterpretq_s16_u16(GetAverageLuma(luma_buffer, subsampling_x));
+      const int16x8_t blended = BlendChromaValsNoCfl(
+          scaling_lut, &in_chroma_row[x], &(noise_image[y + start_height][x]),
+          average_luma, scaling_shift_vect, offset, luma_multiplier,
+          chroma_multiplier);
+      StoreUnsigned8(&out_chroma_row[x],
+                     vreinterpretq_u16_s16(Clip3(blended, floor, ceiling)));
+      // End of right edge iteration.
+    }
+
+    in_y_row = AddByteStride(in_y_row, source_stride_y << subsampling_y);
+    in_chroma_row = AddByteStride(in_chroma_row, source_stride_chroma);
+    out_chroma_row = AddByteStride(out_chroma_row, dest_stride);
+  } while (++y < chroma_height);
+}
+
+// This function is for the case params_.chroma_scaling_from_luma == false.
+void BlendNoiseWithImageChroma10bpp_NEON(
+    Plane plane, const FilmGrainParams& params,
+    const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_chroma,
+    int width, int height, int start_height, int subsampling_x,
+    int subsampling_y, const int16_t* scaling_lut,
+    const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
+    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
+    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
+  assert(plane == kPlaneU || plane == kPlaneV);
+  const auto* noise_image =
+      static_cast<const Array2D<int16_t>*>(noise_image_ptr);
+  const auto* in_y = static_cast<const uint16_t*>(source_plane_y);
+  const auto* in_uv = static_cast<const uint16_t*>(source_plane_uv);
+  auto* out_uv = static_cast<uint16_t*>(dest_plane_uv);
+
+  const int offset = (plane == kPlaneU) ? params.u_offset : params.v_offset;
+  const int luma_multiplier =
+      (plane == kPlaneU) ? params.u_luma_multiplier : params.v_luma_multiplier;
+  const int multiplier =
+      (plane == kPlaneU) ? params.u_multiplier : params.v_multiplier;
+  BlendChromaPlane10bpp_NEON(
+      noise_image[plane], min_value, max_chroma, width, height, start_height,
+      subsampling_x, subsampling_y, params.chroma_scaling, offset, multiplier,
+      luma_multiplier, scaling_lut, in_y, source_stride_y, in_uv,
+      source_stride_uv, out_uv, dest_stride_uv);
+}
+
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
@@ -1259,6 +1383,7 @@ void Init10bpp() {
 
   dsp->film_grain.blend_noise_luma =
       BlendNoiseWithImageLuma_NEON<10, int16_t, uint16_t>;
+  dsp->film_grain.blend_noise_chroma[0] = BlendNoiseWithImageChroma10bpp_NEON;
   dsp->film_grain.blend_noise_chroma[1] =
       BlendNoiseWithImageChromaWithCfl_NEON<10, int16_t, uint16_t>;
 }
