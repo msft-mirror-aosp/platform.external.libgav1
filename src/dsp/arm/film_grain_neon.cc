@@ -671,31 +671,20 @@ inline int16x8_t GetScalingFactors(
   return vld1q_s16(start_vals);
 }
 
+template <int bitdepth>
 inline int16x8_t ScaleNoise(const int16x8_t noise, const int16x8_t scaling,
                             const int16x8_t scaling_shift_vect) {
-  const int16x8_t upscaled_noise = vmulq_s16(noise, scaling);
-  return vrshlq_s16(upscaled_noise, scaling_shift_vect);
+  if (bitdepth == 8) {
+    const int16x8_t upscaled_noise = vmulq_s16(noise, scaling);
+    return vrshlq_s16(upscaled_noise, scaling_shift_vect);
+  }
+  // Scaling shift is in the range [8, 11]. The doubling multiply returning high
+  // half is equivalent to a right shift by 15, so |scaling_shift_vect| should
+  // provide a left shift equal to 15 - s, where s is the original shift
+  // parameter.
+  const int16x8_t scaling_up = vshlq_s16(scaling, scaling_shift_vect);
+  return vqrdmulhq_s16(noise, scaling_up);
 }
-
-#if LIBGAV1_MAX_BITDEPTH >= 10
-inline int16x8_t ScaleNoise(const int16x8_t noise, const int16x8_t scaling,
-                            const int32x4_t scaling_shift_vect) {
-  // TODO(petersonab): Try refactoring scaling lookup table to int16_t and
-  // upscaling by 7 bits to permit high half multiply. This would eliminate
-  // the intermediate 32x4 registers. Also write the averaged values directly
-  // into the table so it doesn't have to be done for every pixel in
-  // the frame.
-  const int32x4_t upscaled_noise_lo =
-      vmull_s16(vget_low_s16(noise), vget_low_s16(scaling));
-  const int32x4_t upscaled_noise_hi =
-      vmull_s16(vget_high_s16(noise), vget_high_s16(scaling));
-  const int16x4_t noise_lo =
-      vmovn_s32(vrshlq_s32(upscaled_noise_lo, scaling_shift_vect));
-  const int16x4_t noise_hi =
-      vmovn_s32(vrshlq_s32(upscaled_noise_hi, scaling_shift_vect));
-  return vcombine_s16(noise_lo, noise_hi);
-}
-#endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
 template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageLuma_NEON(
@@ -715,10 +704,8 @@ void BlendNoiseWithImageLuma_NEON(
   // In 8bpp, the maximum upscaled noise is 127*255 = 0x7E81, which is safe
   // for 16 bit signed integers. In higher bitdepths, however, we have to
   // expand to 32 to protect the sign bit.
-  const int16x8_t scaling_shift_vect16 = vdupq_n_s16(-scaling_shift);
-#if LIBGAV1_MAX_BITDEPTH >= 10
-  const int32x4_t scaling_shift_vect32 = vdupq_n_s32(-scaling_shift);
-#endif  // LIBGAV1_MAX_BITDEPTH >= 10
+  const int16x8_t scaling_shift_vect =
+      vdupq_n_s16((bitdepth == 10) ? 15 - scaling_shift : -scaling_shift);
 
   int y = 0;
   do {
@@ -732,13 +719,7 @@ void BlendNoiseWithImageLuma_NEON(
       int16x8_t noise =
           GetSignedSource8(&(noise_image[kPlaneY][y + start_height][x]));
 
-      if (bitdepth == 8) {
-        noise = ScaleNoise(noise, scaling, scaling_shift_vect16);
-      } else {
-#if LIBGAV1_MAX_BITDEPTH >= 10
-        noise = ScaleNoise(noise, scaling, scaling_shift_vect32);
-#endif  // LIBGAV1_MAX_BITDEPTH >= 10
-      }
+      noise = ScaleNoise<bitdepth>(noise, scaling, scaling_shift_vect);
       const int16x8_t combined = vaddq_s16(orig, noise);
       // In 8bpp, when params_.clip_to_restricted_range == false, we can replace
       // clipping with vqmovun_s16, but it's not likely to be worth copying the
@@ -757,17 +738,12 @@ inline int16x8_t BlendChromaValsWithCfl(
     const Pixel* LIBGAV1_RESTRICT average_luma_buffer,
     const int16_t* scaling_lut, const Pixel* LIBGAV1_RESTRICT chroma_cursor,
     const GrainType* LIBGAV1_RESTRICT noise_image_cursor,
-    const int16x8_t scaling_shift_vect16,
-    const int32x4_t scaling_shift_vect32) {
+    const int16x8_t scaling_shift_vect) {
   const int16x8_t scaling =
       GetScalingFactors<bitdepth, Pixel>(scaling_lut, average_luma_buffer);
   const int16x8_t orig = GetSignedSource8(chroma_cursor);
   int16x8_t noise = GetSignedSource8(noise_image_cursor);
-  if (bitdepth == 8) {
-    noise = ScaleNoise(noise, scaling, scaling_shift_vect16);
-  } else {
-    noise = ScaleNoise(noise, scaling, scaling_shift_vect32);
-  }
+  noise = ScaleNoise<bitdepth>(noise, scaling, scaling_shift_vect);
   return vaddq_s16(orig, noise);
 }
 
@@ -786,8 +762,8 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
   // In 8bpp, the maximum upscaled noise is 127*255 = 0x7E81, which is safe
   // for 16 bit signed integers. In higher bitdepths, however, we have to
   // expand to 32 to protect the sign bit.
-  const int16x8_t scaling_shift_vect16 = vdupq_n_s16(-scaling_shift);
-  const int32x4_t scaling_shift_vect32 = vdupq_n_s32(-scaling_shift);
+  const int16x8_t scaling_shift_vect =
+      vdupq_n_s16((bitdepth == 10) ? 15 - scaling_shift : -scaling_shift);
 
   const int chroma_height = (height + subsampling_y) >> subsampling_y;
   const int chroma_width = (width + subsampling_x) >> subsampling_x;
@@ -812,8 +788,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
       const int16x8_t blended =
           BlendChromaValsWithCfl<bitdepth, GrainType, Pixel>(
               average_luma_buffer, scaling_lut, &in_chroma_row[x],
-              &(noise_image[y + start_height][x]), scaling_shift_vect16,
-              scaling_shift_vect32);
+              &(noise_image[y + start_height][x]), scaling_shift_vect);
 
       // In 8bpp, when params_.clip_to_restricted_range == false, we can replace
       // clipping with vqmovun_s16, but it's not likely to be worth copying the
@@ -835,8 +810,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
       const int16x8_t blended =
           BlendChromaValsWithCfl<bitdepth, GrainType, Pixel>(
               average_luma_buffer, scaling_lut, &in_chroma_row[x],
-              &(noise_image[y + start_height][x]), scaling_shift_vect16,
-              scaling_shift_vect32);
+              &(noise_image[y + start_height][x]), scaling_shift_vect);
       // In 8bpp, when params_.clip_to_restricted_range == false, we can replace
       // clipping with vqmovun_s16, but it's not likely to be worth copying the
       // function for just that case.
@@ -901,7 +875,7 @@ inline int16x8_t BlendChromaValsNoCfl(
   const int16x8_t scaling =
       GetScalingFactors<8, uint8_t>(scaling_lut, merged_buffer);
   int16x8_t noise = GetSignedSource8(noise_image_cursor);
-  noise = ScaleNoise(noise, scaling, scaling_shift_vect);
+  noise = ScaleNoise<kBitdepth8>(noise, scaling, scaling_shift_vect);
   return vaddq_s16(orig, noise);
 }
 
@@ -1223,7 +1197,7 @@ void ConstructNoiseImageOverlap10bpp_NEON(
 inline int16x8_t BlendChromaValsNoCfl(
     const int16_t* scaling_lut, const uint16_t* LIBGAV1_RESTRICT chroma_cursor,
     const int16_t* LIBGAV1_RESTRICT noise_image_cursor,
-    const int16x8_t& average_luma, const int32x4_t& scaling_shift_vect,
+    const int16x8_t& average_luma, const int16x8_t& scaling_shift_vect,
     const int32x4_t& offset, int luma_multiplier, int chroma_multiplier) {
   uint16_t merged_buffer[8];
   const int16x8_t orig = GetSignedSource8(chroma_cursor);
@@ -1247,7 +1221,8 @@ inline int16x8_t BlendChromaValsNoCfl(
   const int16x8_t scaling =
       GetScalingFactors<10, uint16_t>(scaling_lut, merged_buffer);
   const int16x8_t noise = GetSignedSource8(noise_image_cursor);
-  const int16x8_t scaled_noise = ScaleNoise(noise, scaling, scaling_shift_vect);
+  const int16x8_t scaled_noise =
+      ScaleNoise<kBitdepth10>(noise, scaling, scaling_shift_vect);
   return vaddq_s16(orig, scaled_noise);
 }
 
@@ -1262,7 +1237,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
     ptrdiff_t dest_stride) {
   const int16x8_t floor = vdupq_n_s16(min_value);
   const int16x8_t ceiling = vdupq_n_s16(max_chroma);
-  const int32x4_t scaling_shift_vect = vdupq_n_s32(-scaling_shift);
+  const int16x8_t scaling_shift_vect = vdupq_n_s16(15 - scaling_shift);
 
   const int chroma_height = (height + subsampling_y) >> subsampling_y;
   const int chroma_width = (width + subsampling_x) >> subsampling_x;
