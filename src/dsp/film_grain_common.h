@@ -68,7 +68,7 @@ enum {
   kScalingLookupTablePadding = 6,
   // Padding is added to each row of the noise image to permit overreads by
   // BlendNoiseWithImageLuma_NEON and overwrites by WriteOverlapLine8bpp_NEON.
-  kNoiseImagePadding = 7,
+  kNoiseImagePadding = 15,
   // Padding is added to the end of the |noise_stripes_| buffer to permit
   // overreads by WriteOverlapLine8bpp_NEON.
   kNoiseStripePadding = 7,

@@ -713,19 +713,35 @@ void BlendNoiseWithImageLuma_NEON(
     do {
       // This operation on the unsigned input is safe in 8bpp because the vector
       // is widened before it is reinterpreted.
-      const int16x8_t orig = GetSignedSource8(&in_y_row[x]);
-      const int16x8_t scaling =
+      const int16x8_t orig0 = GetSignedSource8(&in_y_row[x]);
+      const int16x8_t scaling0 =
           GetScalingFactors<bitdepth, Pixel>(scaling_lut_y, &in_y_row[x]);
       int16x8_t noise =
           GetSignedSource8(&(noise_image[kPlaneY][y + start_height][x]));
 
-      noise = ScaleNoise<bitdepth>(noise, scaling, scaling_shift_vect);
-      const int16x8_t combined = vaddq_s16(orig, noise);
+      noise = ScaleNoise<bitdepth>(noise, scaling0, scaling_shift_vect);
+      const int16x8_t combined0 = vaddq_s16(orig0, noise);
       // In 8bpp, when params_.clip_to_restricted_range == false, we can replace
       // clipping with vqmovun_s16, but it's not likely to be worth copying the
       // function for just that case, though the gain would be very small.
       StoreUnsigned8(&out_y_row[x],
-                     vreinterpretq_u16_s16(Clip3(combined, floor, ceiling)));
+                     vreinterpretq_u16_s16(Clip3(combined0, floor, ceiling)));
+      x += 8;
+
+      // This operation on the unsigned input is safe in 8bpp because the vector
+      // is widened before it is reinterpreted.
+      const int16x8_t orig1 = GetSignedSource8(&in_y_row[x]);
+      const int16x8_t scaling1 =
+          GetScalingFactors<bitdepth, Pixel>(scaling_lut_y, &in_y_row[x]);
+      noise = GetSignedSource8(&(noise_image[kPlaneY][y + start_height][x]));
+
+      noise = ScaleNoise<bitdepth>(noise, scaling1, scaling_shift_vect);
+      const int16x8_t combined1 = vaddq_s16(orig1, noise);
+      // In 8bpp, when params_.clip_to_restricted_range == false, we can replace
+      // clipping with vqmovun_s16, but it's not likely to be worth copying the
+      // function for just that case, though the gain would be very small.
+      StoreUnsigned8(&out_y_row[x],
+                     vreinterpretq_u16_s16(Clip3(combined1, floor, ceiling)));
       x += 8;
     } while (x < width);
     in_y_row += source_stride_y;
