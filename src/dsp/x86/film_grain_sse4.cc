@@ -129,7 +129,7 @@ template <int bitdepth, typename Pixel>
 inline __m128i GetScalingFactors(const int16_t* scaling_lut,
                                  const Pixel* source) {
   alignas(16) int16_t start_vals[8];
-  static_assert(bitdepth <= 10,
+  static_assert(bitdepth <= kBitdepth10,
                 "SSE4 Film Grain is not yet implemented for 12bpp.");
   for (int i = 0; i < 8; ++i) {
     start_vals[i] = scaling_lut[source[i]];
@@ -166,7 +166,6 @@ void BlendNoiseWithImageLuma_SSE4_1(
   do {
     int x = 0;
     for (; x < safe_width; x += 8) {
-      // TODO(b/133525232): Make 16-pixel version of loop body.
       const __m128i orig = LoadSource(&in_y_row[x]);
       const __m128i scaling =
           GetScalingFactors<bitdepth, Pixel>(scaling_lut_y, &in_y_row[x]);
@@ -242,8 +241,6 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_SSE4_1(
     int x = 0;
     for (; x < safe_chroma_width; x += 8) {
       const int luma_x = x << subsampling_x;
-      // TODO(petersonab): Consider specializing by subsampling_x. In the 444
-      // case &in_y_row[x] can be passed to GetScalingFactors directly.
       const __m128i average_luma =
           GetAverageLuma(&in_y_row[luma_x], subsampling_x);
       StoreUnsigned(average_luma_buffer, average_luma);
@@ -261,7 +258,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_SSE4_1(
       // Prevent huge indices from entering GetScalingFactors due to
       // uninitialized values. This is not a problem in 8bpp because the table
       // is made larger than 255 values.
-      if (bitdepth > 8) {
+      if (bitdepth > kBitdepth8) {
         memset(luma_buffer, 0, sizeof(luma_buffer));
       }
       const int luma_x = x << subsampling_x;
@@ -335,9 +332,9 @@ inline __m128i BlendChromaValsNoCfl8bpp(
 
   StoreLo8(merged_buffer, _mm_packus_epi16(merged, merged));
   const __m128i scaling =
-      GetScalingFactors<8, uint8_t>(scaling_lut, merged_buffer);
+      GetScalingFactors<kBitdepth8, uint8_t>(scaling_lut, merged_buffer);
   __m128i noise = LoadSource(noise_image_cursor);
-  noise = ScaleNoise<8>(noise, scaling, scaling_shift);
+  noise = ScaleNoise<kBitdepth8>(noise, scaling, scaling_shift);
   return _mm_add_epi16(orig, noise);
 }
 
@@ -447,10 +444,10 @@ void Init8bpp() {
   assert(dsp != nullptr);
 
   dsp->film_grain.blend_noise_luma =
-      BlendNoiseWithImageLuma_SSE4_1<8, int8_t, uint8_t>;
+      BlendNoiseWithImageLuma_SSE4_1<kBitdepth8, int8_t, uint8_t>;
   dsp->film_grain.blend_noise_chroma[0] = BlendNoiseWithImageChroma8bpp_SSE4_1;
   dsp->film_grain.blend_noise_chroma[1] =
-      BlendNoiseWithImageChromaWithCfl_SSE4_1<8, int8_t, uint8_t>;
+      BlendNoiseWithImageChromaWithCfl_SSE4_1<kBitdepth8, int8_t, uint8_t>;
 }
 
 }  // namespace
@@ -465,9 +462,9 @@ void Init10bpp() {
   assert(dsp != nullptr);
 
   dsp->film_grain.blend_noise_luma =
-      BlendNoiseWithImageLuma_SSE4_1<10, int16_t, uint16_t>;
+      BlendNoiseWithImageLuma_SSE4_1<kBitdepth10, int16_t, uint16_t>;
   dsp->film_grain.blend_noise_chroma[1] =
-      BlendNoiseWithImageChromaWithCfl_SSE4_1<10, int16_t, uint16_t>;
+      BlendNoiseWithImageChromaWithCfl_SSE4_1<kBitdepth10, int16_t, uint16_t>;
 }
 
 }  // namespace

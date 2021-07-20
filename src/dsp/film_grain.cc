@@ -45,7 +45,7 @@ void InitializeScalingLookupTable_C(int num_points, const uint8_t point_value[],
     memset(scaling_lut, 0, sizeof(scaling_lut[0]) * scaling_lut_length);
     return;
   }
-  constexpr int index_shift = bitdepth - 8;
+  constexpr int index_shift = bitdepth - kBitdepth8;
   static_assert(sizeof(scaling_lut[0]) == 2, "");
   Memset(scaling_lut, point_scaling[0],
          std::max(static_cast<int>(point_value[0]), 1) << index_shift);
@@ -65,7 +65,7 @@ void InitializeScalingLookupTable_C(int num_points, const uint8_t point_value[],
   Memset(&scaling_lut[x_base], point_scaling[num_points - 1],
          scaling_lut_length - x_base);
   // Fill in the gaps.
-  if (bitdepth == 10) {
+  if (bitdepth == kBitdepth10) {
     for (int x = 4; x < x_base + 4; x += 4) {
       const int start = scaling_lut[x - 4];
       const int end = scaling_lut[x];
@@ -80,12 +80,12 @@ void InitializeScalingLookupTable_C(int num_points, const uint8_t point_value[],
 // Section 7.18.3.5.
 template <int bitdepth>
 int ScaleLut(const int16_t* scaling_lut, int index) {
-  if (bitdepth <= 10) {
+  if (bitdepth <= kBitdepth10) {
     assert(index < kScalingLookupTableSize << (bitdepth - 2));
     return scaling_lut[index];
   }
   // Performs a piecewise linear interpolation into the scaling table.
-  const int shift = bitdepth - 8;
+  const int shift = bitdepth - kBitdepth8;
   const int quotient = index >> shift;
   const int remainder = index - (quotient << shift);
   assert(quotient + 1 < kScalingLookupTableSize);
@@ -282,8 +282,6 @@ void ConstructNoiseStripes_C(const void* LIBGAV1_RESTRICT grain_buffer,
         // Writes beyond the width of each row could happen below. To
         // prevent those writes, we clip the number of pixels to copy against
         // the remaining width.
-        // TODO(petersonab): Allocate aligned stripes with extra width to cover
-        // the size of the final stripe block, then remove this call to min.
         const int copy_size =
             std::min(kNoiseStripeHeight >> subsampling_x,
                      plane_width - (x << (1 - subsampling_x)));
@@ -336,8 +334,6 @@ void ConstructNoiseStripesWithOverlap_C(
     // The overlap computation only occurs when x > 0, so it is omitted here.
     int i = 0;
     do {
-      // TODO(petersonab): Allocate aligned stripes with extra width to cover
-      // the size of the final stripe block, then remove this call to min.
       const int copy_size =
           std::min(kNoiseStripeHeight >> subsampling_x, plane_width);
       memcpy(&noise_stripe[i * plane_width],
@@ -409,8 +405,6 @@ void ConstructNoiseStripesWithOverlap_C(
         // Writes beyond the width of each row could happen below. To
         // prevent those writes, we clip the number of pixels to copy against
         // the remaining width.
-        // TODO(petersonab): Allocate aligned stripes with extra width to cover
-        // the size of the final stripe block, then remove this call to min.
         const int copy_size =
             std::min(kNoiseStripeHeight >> subsampling_x,
                      plane_width - (x << (1 - subsampling_x))) -
@@ -585,7 +579,7 @@ void BlendNoiseWithImageChroma_C(
       const int orig = in_uv[y * source_stride_uv + x];
       const int combined = average_luma * luma_multiplier + orig * multiplier;
       const int merged =
-          Clip3((combined >> 6) + LeftShift(offset, bitdepth - 8), 0,
+          Clip3((combined >> 6) + LeftShift(offset, bitdepth - kBitdepth8), 0,
                 (1 << bitdepth) - 1);
       int noise = noise_image[plane][y + start_height][x];
       noise = RightShiftWithRounding(
@@ -653,106 +647,108 @@ void Init8bpp() {
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   // LumaAutoRegressionFunc
   dsp->film_grain.luma_auto_regression[0] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<8, int8_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth8, int8_t>;
   dsp->film_grain.luma_auto_regression[1] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<8, int8_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth8, int8_t>;
   dsp->film_grain.luma_auto_regression[2] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<8, int8_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth8, int8_t>;
 
   // ChromaAutoRegressionFunc
   // Chroma autoregression should never be called when lag is 0 and use_luma is
   // false.
   dsp->film_grain.chroma_auto_regression[0][0] = nullptr;
   dsp->film_grain.chroma_auto_regression[0][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 1, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 1, false>;
   dsp->film_grain.chroma_auto_regression[0][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 2, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 2, false>;
   dsp->film_grain.chroma_auto_regression[0][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 3, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 3, false>;
   dsp->film_grain.chroma_auto_regression[1][0] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 0, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 0, true>;
   dsp->film_grain.chroma_auto_regression[1][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 1, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 1, true>;
   dsp->film_grain.chroma_auto_regression[1][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 2, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 2, true>;
   dsp->film_grain.chroma_auto_regression[1][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 3, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 3, true>;
 
   // ConstructNoiseStripesFunc
   dsp->film_grain.construct_noise_stripes[0] =
-      ConstructNoiseStripes_C<8, int8_t>;
+      ConstructNoiseStripes_C<kBitdepth8, int8_t>;
   dsp->film_grain.construct_noise_stripes[1] =
-      ConstructNoiseStripesWithOverlap_C<8, int8_t>;
+      ConstructNoiseStripesWithOverlap_C<kBitdepth8, int8_t>;
 
   // ConstructNoiseImageOverlapFunc
   dsp->film_grain.construct_noise_image_overlap =
-      ConstructNoiseImageOverlap_C<8, int8_t>;
+      ConstructNoiseImageOverlap_C<kBitdepth8, int8_t>;
 
   // InitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<8>;
+  dsp->film_grain.initialize_scaling_lut =
+      InitializeScalingLookupTable_C<kBitdepth8>;
 
   // BlendNoiseWithImageLumaFunc
   dsp->film_grain.blend_noise_luma =
-      BlendNoiseWithImageLuma_C<8, int8_t, uint8_t>;
+      BlendNoiseWithImageLuma_C<kBitdepth8, int8_t, uint8_t>;
 
   // BlendNoiseWithImageChromaFunc
   dsp->film_grain.blend_noise_chroma[0] =
-      BlendNoiseWithImageChroma_C<8, int8_t, uint8_t>;
+      BlendNoiseWithImageChroma_C<kBitdepth8, int8_t, uint8_t>;
   dsp->film_grain.blend_noise_chroma[1] =
-      BlendNoiseWithImageChromaWithCfl_C<8, int8_t, uint8_t>;
+      BlendNoiseWithImageChromaWithCfl_C<kBitdepth8, int8_t, uint8_t>;
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   static_cast<void>(dsp);
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainAutoregressionLuma
   dsp->film_grain.luma_auto_regression[0] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<8, int8_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth8, int8_t>;
   dsp->film_grain.luma_auto_regression[1] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<8, int8_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth8, int8_t>;
   dsp->film_grain.luma_auto_regression[2] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<8, int8_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth8, int8_t>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainAutoregressionChroma
   // Chroma autoregression should never be called when lag is 0 and use_luma is
   // false.
   dsp->film_grain.chroma_auto_regression[0][0] = nullptr;
   dsp->film_grain.chroma_auto_regression[0][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 1, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 1, false>;
   dsp->film_grain.chroma_auto_regression[0][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 2, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 2, false>;
   dsp->film_grain.chroma_auto_regression[0][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 3, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 3, false>;
   dsp->film_grain.chroma_auto_regression[1][0] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 0, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 0, true>;
   dsp->film_grain.chroma_auto_regression[1][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 1, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 1, true>;
   dsp->film_grain.chroma_auto_regression[1][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 2, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 2, true>;
   dsp->film_grain.chroma_auto_regression[1][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<8, int8_t, 3, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth8, int8_t, 3, true>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainConstructNoiseStripes
   dsp->film_grain.construct_noise_stripes[0] =
-      ConstructNoiseStripes_C<8, int8_t>;
+      ConstructNoiseStripes_C<kBitdepth8, int8_t>;
   dsp->film_grain.construct_noise_stripes[1] =
-      ConstructNoiseStripesWithOverlap_C<8, int8_t>;
+      ConstructNoiseStripesWithOverlap_C<kBitdepth8, int8_t>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainConstructNoiseImageOverlap
   dsp->film_grain.construct_noise_image_overlap =
-      ConstructNoiseImageOverlap_C<8, int8_t>;
+      ConstructNoiseImageOverlap_C<kBitdepth8, int8_t>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainInitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<8>;
+  dsp->film_grain.initialize_scaling_lut =
+      InitializeScalingLookupTable_C<kBitdepth8>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainBlendNoiseLuma
   dsp->film_grain.blend_noise_luma =
-      BlendNoiseWithImageLuma_C<8, int8_t, uint8_t>;
+      BlendNoiseWithImageLuma_C<kBitdepth8, int8_t, uint8_t>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainBlendNoiseChroma
   dsp->film_grain.blend_noise_chroma[0] =
-      BlendNoiseWithImageChroma_C<8, int8_t, uint8_t>;
+      BlendNoiseWithImageChroma_C<kBitdepth8, int8_t, uint8_t>;
 #endif
 #ifndef LIBGAV1_Dsp8bpp_FilmGrainBlendNoiseChromaWithCfl
   dsp->film_grain.blend_noise_chroma[1] =
-      BlendNoiseWithImageChromaWithCfl_C<8, int8_t, uint8_t>;
+      BlendNoiseWithImageChromaWithCfl_C<kBitdepth8, int8_t, uint8_t>;
 #endif
 #endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }
@@ -765,106 +761,108 @@ void Init10bpp() {
 
   // LumaAutoRegressionFunc
   dsp->film_grain.luma_auto_regression[0] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<10, int16_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth10, int16_t>;
   dsp->film_grain.luma_auto_regression[1] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<10, int16_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth10, int16_t>;
   dsp->film_grain.luma_auto_regression[2] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<10, int16_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth10, int16_t>;
 
   // ChromaAutoRegressionFunc
   // Chroma autoregression should never be called when lag is 0 and use_luma is
   // false.
   dsp->film_grain.chroma_auto_regression[0][0] = nullptr;
   dsp->film_grain.chroma_auto_regression[0][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 1, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 1, false>;
   dsp->film_grain.chroma_auto_regression[0][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 2, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 2, false>;
   dsp->film_grain.chroma_auto_regression[0][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 3, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 3, false>;
   dsp->film_grain.chroma_auto_regression[1][0] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 0, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 0, true>;
   dsp->film_grain.chroma_auto_regression[1][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 1, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 1, true>;
   dsp->film_grain.chroma_auto_regression[1][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 2, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 2, true>;
   dsp->film_grain.chroma_auto_regression[1][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 3, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 3, true>;
 
   // ConstructNoiseStripesFunc
   dsp->film_grain.construct_noise_stripes[0] =
-      ConstructNoiseStripes_C<10, int16_t>;
+      ConstructNoiseStripes_C<kBitdepth10, int16_t>;
   dsp->film_grain.construct_noise_stripes[1] =
-      ConstructNoiseStripesWithOverlap_C<10, int16_t>;
+      ConstructNoiseStripesWithOverlap_C<kBitdepth10, int16_t>;
 
   // ConstructNoiseImageOverlapFunc
   dsp->film_grain.construct_noise_image_overlap =
-      ConstructNoiseImageOverlap_C<10, int16_t>;
+      ConstructNoiseImageOverlap_C<kBitdepth10, int16_t>;
 
   // InitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<10>;
+  dsp->film_grain.initialize_scaling_lut =
+      InitializeScalingLookupTable_C<kBitdepth10>;
 
   // BlendNoiseWithImageLumaFunc
   dsp->film_grain.blend_noise_luma =
-      BlendNoiseWithImageLuma_C<10, int16_t, uint16_t>;
+      BlendNoiseWithImageLuma_C<kBitdepth10, int16_t, uint16_t>;
 
   // BlendNoiseWithImageChromaFunc
   dsp->film_grain.blend_noise_chroma[0] =
-      BlendNoiseWithImageChroma_C<10, int16_t, uint16_t>;
+      BlendNoiseWithImageChroma_C<kBitdepth10, int16_t, uint16_t>;
   dsp->film_grain.blend_noise_chroma[1] =
-      BlendNoiseWithImageChromaWithCfl_C<10, int16_t, uint16_t>;
+      BlendNoiseWithImageChromaWithCfl_C<kBitdepth10, int16_t, uint16_t>;
 #else  // !LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
   static_cast<void>(dsp);
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainAutoregressionLuma
   dsp->film_grain.luma_auto_regression[0] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<10, int16_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth10, int16_t>;
   dsp->film_grain.luma_auto_regression[1] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<10, int16_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth10, int16_t>;
   dsp->film_grain.luma_auto_regression[2] =
-      ApplyAutoRegressiveFilterToLumaGrain_C<10, int16_t>;
+      ApplyAutoRegressiveFilterToLumaGrain_C<kBitdepth10, int16_t>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainAutoregressionChroma
   // Chroma autoregression should never be called when lag is 0 and use_luma is
   // false.
   dsp->film_grain.chroma_auto_regression[0][0] = nullptr;
   dsp->film_grain.chroma_auto_regression[0][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 1, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 1, false>;
   dsp->film_grain.chroma_auto_regression[0][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 2, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 2, false>;
   dsp->film_grain.chroma_auto_regression[0][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 3, false>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 3, false>;
   dsp->film_grain.chroma_auto_regression[1][0] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 0, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 0, true>;
   dsp->film_grain.chroma_auto_regression[1][1] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 1, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 1, true>;
   dsp->film_grain.chroma_auto_regression[1][2] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 2, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 2, true>;
   dsp->film_grain.chroma_auto_regression[1][3] =
-      ApplyAutoRegressiveFilterToChromaGrains_C<10, int16_t, 3, true>;
+      ApplyAutoRegressiveFilterToChromaGrains_C<kBitdepth10, int16_t, 3, true>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainConstructNoiseStripes
   dsp->film_grain.construct_noise_stripes[0] =
-      ConstructNoiseStripes_C<10, int16_t>;
+      ConstructNoiseStripes_C<kBitdepth10, int16_t>;
   dsp->film_grain.construct_noise_stripes[1] =
-      ConstructNoiseStripesWithOverlap_C<10, int16_t>;
+      ConstructNoiseStripesWithOverlap_C<kBitdepth10, int16_t>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainConstructNoiseImageOverlap
   dsp->film_grain.construct_noise_image_overlap =
-      ConstructNoiseImageOverlap_C<10, int16_t>;
+      ConstructNoiseImageOverlap_C<kBitdepth10, int16_t>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainInitializeScalingLutFunc
-  dsp->film_grain.initialize_scaling_lut = InitializeScalingLookupTable_C<10>;
+  dsp->film_grain.initialize_scaling_lut =
+      InitializeScalingLookupTable_C<kBitdepth10>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainBlendNoiseLuma
   dsp->film_grain.blend_noise_luma =
-      BlendNoiseWithImageLuma_C<10, int16_t, uint16_t>;
+      BlendNoiseWithImageLuma_C<kBitdepth10, int16_t, uint16_t>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainBlendNoiseChroma
   dsp->film_grain.blend_noise_chroma[0] =
-      BlendNoiseWithImageChroma_C<10, int16_t, uint16_t>;
+      BlendNoiseWithImageChroma_C<kBitdepth10, int16_t, uint16_t>;
 #endif
 #ifndef LIBGAV1_Dsp10bpp_FilmGrainBlendNoiseChromaWithCfl
   dsp->film_grain.blend_noise_chroma[1] =
-      BlendNoiseWithImageChromaWithCfl_C<10, int16_t, uint16_t>;
+      BlendNoiseWithImageChromaWithCfl_C<kBitdepth10, int16_t, uint16_t>;
 #endif
 #endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
 }

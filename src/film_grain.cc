@@ -364,7 +364,7 @@ void FilmGrain<bitdepth>::GenerateLumaGrain(const FilmGrainParams& params,
   // 7.18.3.3 says luma_grain "will never be read in this case". So we don't
   // call GenerateLumaGrain if params.num_y_points is equal to 0.
   assert(params.num_y_points > 0);
-  const int shift = 12 - bitdepth + params.grain_scale_shift;
+  const int shift = kBitdepth12 - bitdepth + params.grain_scale_shift;
   uint16_t seed = params.grain_seed;
   GrainType* luma_grain_row = luma_grain;
   for (int y = 0; y < kLumaHeight; ++y) {
@@ -382,7 +382,7 @@ void FilmGrain<bitdepth>::GenerateChromaGrains(const FilmGrainParams& params,
                                                int chroma_height,
                                                GrainType* u_grain,
                                                GrainType* v_grain) {
-  const int shift = 12 - bitdepth + params.grain_scale_shift;
+  const int shift = kBitdepth12 - bitdepth + params.grain_scale_shift;
   if (params.num_u_points == 0 && !params.chroma_scaling_from_luma) {
     memset(u_grain, 0, chroma_height * chroma_width * sizeof(*u_grain));
   } else {
@@ -689,16 +689,16 @@ bool FilmGrain<bitdepth>::AddNoise(
   int max_luma;
   int max_chroma;
   if (params_.clip_to_restricted_range) {
-    min_value = 16 << (bitdepth - 8);
-    max_luma = 235 << (bitdepth - 8);
+    min_value = 16 << (bitdepth - kBitdepth8);
+    max_luma = 235 << (bitdepth - kBitdepth8);
     if (color_matrix_is_identity_) {
       max_chroma = max_luma;
     } else {
-      max_chroma = 240 << (bitdepth - 8);
+      max_chroma = 240 << (bitdepth - kBitdepth8);
     }
   } else {
     min_value = 0;
-    max_luma = (256 << (bitdepth - 8)) - 1;
+    max_luma = (256 << (bitdepth - kBitdepth8)) - 1;
     max_chroma = max_luma;
   }
 
@@ -809,9 +809,9 @@ bool FilmGrain<bitdepth>::AddNoise(
 }
 
 // Explicit instantiations.
-template class FilmGrain<8>;
+template class FilmGrain<kBitdepth8>;
 #if LIBGAV1_MAX_BITDEPTH >= 10
-template class FilmGrain<10>;
+template class FilmGrain<kBitdepth10>;
 #endif
 
 }  // namespace libgav1
