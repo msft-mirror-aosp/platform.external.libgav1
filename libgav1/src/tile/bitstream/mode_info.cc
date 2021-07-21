@@ -44,7 +44,6 @@ namespace {
 
 constexpr int kDeltaQSmall = 3;
 constexpr int kDeltaLfSmall = 3;
-constexpr int kNoScale = 1 << kReferenceFrameScalePrecision;
 
 constexpr uint8_t kIntraYModeContext[kIntraPredictionModesY] = {
     0, 1, 2, 3, 4, 4, 4, 4, 3, 0, 1, 2, 0};
@@ -510,9 +509,9 @@ void Tile::ReadMotionVector(const Block& block, int index) {
   BlockParameters& bp = *block.bp;
   const int context =
       static_cast<int>(block.bp->prediction_parameters->use_intra_block_copy);
-  const auto mv_joint = static_cast<MvJointType>(
-      reader_.ReadSymbol(symbol_decoder_context_.mv_joint_cdf[context],
-                         static_cast<int>(kNumMvJointTypes)));
+  const auto mv_joint =
+      static_cast<MvJointType>(reader_.ReadSymbol<kNumMvJointTypes>(
+          symbol_decoder_context_.mv_joint_cdf[context]));
   if (mv_joint == kMvJointTypeHorizontalZeroVerticalNonZero ||
       mv_joint == kMvJointTypeNonZero) {
     bp.mv.mv[index].mv[0] = ReadMotionVectorComponent(block, 0);
@@ -1030,21 +1029,6 @@ void Tile::ReadInterIntraMode(const Block& block, bool is_compound) {
       reader_.ReadSymbol<kWedgeIndexSymbolCount>(
           symbol_decoder_context_.wedge_index_cdf[block.size]);
   prediction_parameters.wedge_sign = 0;
-}
-
-bool Tile::IsScaled(ReferenceFrameType type) const {
-  const int index =
-      frame_header_.reference_frame_index[type - kReferenceFrameLast];
-  const int x_scale = ((reference_frames_[index]->upscaled_width()
-                        << kReferenceFrameScalePrecision) +
-                       DivideBy2(frame_header_.width)) /
-                      frame_header_.width;
-  if (x_scale != kNoScale) return true;
-  const int y_scale = ((reference_frames_[index]->frame_height()
-                        << kReferenceFrameScalePrecision) +
-                       DivideBy2(frame_header_.height)) /
-                      frame_header_.height;
-  return y_scale != kNoScale;
 }
 
 void Tile::ReadMotionMode(const Block& block, bool is_compound) {
