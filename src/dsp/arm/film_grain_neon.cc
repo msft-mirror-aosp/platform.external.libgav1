@@ -732,8 +732,8 @@ void BlendNoiseWithImageLuma_NEON(
       // This operation on the unsigned input is safe in 8bpp because the vector
       // is widened before it is reinterpreted.
       const int16x8_t orig1 = GetSignedSource8(&in_y_row[x]);
-      const int16x8_t scaling1 =
-          GetScalingFactors<bitdepth, Pixel>(scaling_lut_y, &in_y_row[x]);
+      const int16x8_t scaling1 = GetScalingFactors<bitdepth, Pixel>(
+          scaling_lut_y, &in_y_row[std::min(x, width)]);
       noise = GetSignedSource8(&(noise_image[kPlaneY][y + start_height][x]));
 
       noise = ScaleNoise<bitdepth>(noise, scaling1, scaling_shift_vect);
