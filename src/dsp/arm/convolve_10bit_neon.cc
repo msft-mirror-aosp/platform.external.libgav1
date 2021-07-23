@@ -1981,11 +1981,11 @@ inline void ConvolveKernelHorizontal2Tap(
   }
 
   // |width| >= 8
+  int16_t* intermediate_x = intermediate;
   int x = 0;
   do {
     const uint16_t* src_x =
         src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
-    int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
     const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
@@ -2234,12 +2234,12 @@ inline void ConvolveKernelHorizontalSigned6Tap(
   const uint16x8_t index_steps = vmulq_n_u16(
       vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
 
+  int16_t* intermediate_x = intermediate;
   int x = 0;
   int p = subpixel_x;
   do {
     const uint16_t* src_x =
         src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
-    int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
     const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
@@ -2339,12 +2339,12 @@ inline void ConvolveKernelHorizontalMixed6Tap(
   const uint16x8_t index_steps = vmulq_n_u16(
       vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
 
+  int16_t* intermediate_x = intermediate;
   int x = 0;
   int p = subpixel_x;
   do {
     const uint16_t* src_x =
         src + (p >> kScaleSubPixelBits) - ref_x + kernel_offset;
-    int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
     const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
@@ -2444,11 +2444,11 @@ inline void ConvolveKernelHorizontalSigned8Tap(
   }
   const uint16x8_t index_steps = vmulq_n_u16(
       vmovl_u8(vcreate_u8(0x0706050403020100)), static_cast<uint16_t>(step_x));
+  int16_t* intermediate_x = intermediate;
   int x = 0;
   int p = subpixel_x;
   do {
     const uint16_t* src_x = src + (p >> kScaleSubPixelBits) - ref_x;
-    int16_t* intermediate_x = intermediate + x;
     // Only add steps to the 10-bit truncated p to avoid overflow.
     const uint16x8_t p_fraction = vdupq_n_u16(p & 1023);
     const uint16x8_t subpel_index_offsets = vaddq_u16(index_steps, p_fraction);
@@ -2638,29 +2638,30 @@ void ConvolveVerticalScale2Or4xH(const int16_t* LIBGAV1_RESTRICT const src,
 }
 
 template <int num_taps, int grade_y, bool is_compound>
-void ConvolveVerticalScale(const int16_t* LIBGAV1_RESTRICT const src,
-                           const int width, const int subpixel_y,
-                           const int filter_index, const int step_y,
-                           const int height, void* LIBGAV1_RESTRICT const dest,
+void ConvolveVerticalScale(const int16_t* LIBGAV1_RESTRICT const source,
+                           const int intermediate_height, const int width,
+                           const int subpixel_y, const int filter_index,
+                           const int step_y, const int height,
+                           void* LIBGAV1_RESTRICT const dest,
                            const ptrdiff_t dest_stride) {
   // This stride always corresponds to int16_t.
   constexpr ptrdiff_t src_stride = kIntermediateStride;
 
   int16x8_t s[num_taps + 2];
 
+  const int16_t* src = source;
   int x = 0;
   do {
-    const int16_t* const src_x = src + x;
-    const int16_t* src_y = src_x;
+    const int16_t* src_y = src;
     int p = subpixel_y & 1023;
     int prev_p = p;
-    int y = height;
     // We increment stride with the 8-bit pointer and then reinterpret to avoid
     // shifting |dest_stride|.
     auto* dest_y = static_cast<uint16_t*>(dest) + x;
     // In compound mode, |dest_stride| is based on the size of uint16_t, rather
     // than bytes.
     auto* compound_dest_y = static_cast<uint16_t*>(dest) + x;
+    int y = height;
     do {
       for (int i = 0; i < num_taps; ++i) {
         s[i] = vld1q_s16(src_y + i * src_stride);
@@ -2710,11 +2711,12 @@ void ConvolveVerticalScale(const int16_t* LIBGAV1_RESTRICT const src,
         dest_y = AddByteStride(dest_y, dest_stride);
       }
       p += step_y;
-      src_y = src_x + (p >> kScaleSubPixelBits) * src_stride;
+      src_y = src + (p >> kScaleSubPixelBits) * src_stride;
       prev_p = p;
 
       y -= 2;
     } while (y != 0);
+    src += kIntermediateStride * intermediate_height;
     x += 8;
   } while (x < width);
 }
@@ -2737,8 +2739,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
       (((height - 1) * step_y + (1 << kScaleSubPixelBits) - 1) >>
        kScaleSubPixelBits) +
       num_vert_taps;
-  int16_t intermediate_result[kMaxSuperBlockSizeInPixels *
-                              (2 * kMaxSuperBlockSizeInPixels + 8)];
+  int16_t intermediate_result[kIntermediateAllocWidth *
+                              (2 * kIntermediateAllocWidth + 8)];
   // Horizontal filter.
   // Filter types used for width <= 4 are different from those for width > 4.
   // When width > 4, the valid filter index range is always [0, 3].
@@ -2839,8 +2841,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<6, 1, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       } else {
         if (!is_compound && width == 2) {
@@ -2853,8 +2855,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<6, 2, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       }
       break;
@@ -2870,8 +2872,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<8, 1, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       } else {
         if (!is_compound && width == 2) {
@@ -2884,8 +2886,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<8, 2, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       }
       break;
@@ -2901,8 +2903,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<2, 1, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       } else {
         if (!is_compound && width == 2) {
@@ -2915,8 +2917,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<2, 2, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       }
       break;
@@ -2934,8 +2936,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<4, 1, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       } else {
         if (!is_compound && width == 2) {
@@ -2948,8 +2950,8 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
               prediction, pred_stride);
         } else {
           ConvolveVerticalScale<4, 2, is_compound>(
-              intermediate, width, subpixel_y, filter_index, step_y, height,
-              prediction, pred_stride);
+              intermediate, intermediate_height, width, subpixel_y,
+              filter_index, step_y, height, prediction, pred_stride);
         }
       }
   }
