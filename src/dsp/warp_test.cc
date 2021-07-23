@@ -638,6 +638,11 @@ TEST_P(WarpTest10bpp, RandomValues) { TestRandomValues(); }
 TEST_P(WarpTest10bpp, DISABLED_Speed) { TestSpeed(); }
 
 INSTANTIATE_TEST_SUITE_P(C, WarpTest10bpp, testing::ValuesIn(warp_test_param));
+
+#if LIBGAV1_ENABLE_NEON
+INSTANTIATE_TEST_SUITE_P(NEON, WarpTest10bpp,
+                         testing::ValuesIn(warp_test_param));
+#endif
 #endif
 
 std::ostream& operator<<(std::ostream& os, const WarpTestParam& warp_param) {

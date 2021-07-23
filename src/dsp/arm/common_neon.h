@@ -327,6 +327,15 @@ inline uint32x4_t VMullHighU16(const uint16x8_t a, const uint16x8_t b) {
 #endif
 }
 
+// Shim vmull_high_s16 for armv7.
+inline int32x4_t VMullHighS16(const int16x8_t a, const int16x8_t b) {
+#if defined(__aarch64__)
+  return vmull_high_s16(a, b);
+#else
+  return vmull_s16(vget_high_s16(a), vget_high_s16(b));
+#endif
+}
+
 // Shim vmlal_high_u16 for armv7.
 inline uint32x4_t VMlalHighU16(const uint32x4_t a, const uint16x8_t b,
                                const uint16x8_t c) {
@@ -334,6 +343,16 @@ inline uint32x4_t VMlalHighU16(const uint32x4_t a, const uint16x8_t b,
   return vmlal_high_u16(a, b, c);
 #else
   return vmlal_u16(a, vget_high_u16(b), vget_high_u16(c));
+#endif
+}
+
+// Shim vmlal_high_s16 for armv7.
+inline int32x4_t VMlalHighS16(const int32x4_t a, const int16x8_t b,
+                              const int16x8_t c) {
+#if defined(__aarch64__)
+  return vmlal_high_s16(a, b, c);
+#else
+  return vmlal_s16(a, vget_high_s16(b), vget_high_s16(c));
 #endif
 }
 
