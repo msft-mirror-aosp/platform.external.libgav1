@@ -1388,8 +1388,10 @@ void Init10bpp() {
   dsp->film_grain.initialize_scaling_lut =
       InitializeScalingLookupTable_NEON<kBitdepth10>;
 
-  dsp->film_grain.blend_noise_luma =
-      BlendNoiseWithImageLuma_NEON<kBitdepth10, int16_t, uint16_t>;
+  // TODO(b/194442742): reenable this function after segfault under armv7 ASan
+  // is fixed.
+  // dsp->film_grain.blend_noise_luma =
+  //     BlendNoiseWithImageLuma_NEON<kBitdepth10, int16_t, uint16_t>;
   dsp->film_grain.blend_noise_chroma[0] = BlendNoiseWithImageChroma10bpp_NEON;
   dsp->film_grain.blend_noise_chroma[1] =
       BlendNoiseWithImageChromaWithCfl_NEON<kBitdepth10, int16_t, uint16_t>;
