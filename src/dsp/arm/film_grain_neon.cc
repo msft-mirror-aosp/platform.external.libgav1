@@ -52,6 +52,10 @@ inline int16x8_t GetSignedSource8(const uint8_t* src) {
   return ZeroExtend(vld1_u8(src));
 }
 
+inline int16x8_t GetSignedSource8Msan(const uint8_t* src, int valid_range) {
+  return ZeroExtend(Load1MsanU8(src, 8 - valid_range));
+}
+
 inline void StoreUnsigned8(uint8_t* dest, const uint16x8_t data) {
   vst1_u8(dest, vmovn_u16(data));
 }
@@ -61,6 +65,10 @@ inline int16x8_t GetSignedSource8(const int16_t* src) { return vld1q_s16(src); }
 
 inline int16x8_t GetSignedSource8(const uint16_t* src) {
   return vreinterpretq_s16_u16(vld1q_u16(src));
+}
+
+inline int16x8_t GetSignedSource8Msan(const uint16_t* src, int valid_range) {
+  return vreinterpretq_s16_u16(Load1QMsanU16(src, 16 - valid_range));
 }
 
 inline void StoreUnsigned8(uint16_t* dest, const uint16x8_t data) {
@@ -184,6 +192,16 @@ inline uint16x8_t GetAverageLuma(const uint8_t* const luma, int subsampling_x) {
   return vmovl_u8(vld1_u8(luma));
 }
 
+inline uint16x8_t GetAverageLumaMsan(const uint8_t* const luma,
+                                     int subsampling_x, int valid_range) {
+  if (subsampling_x != 0) {
+    const uint8x16_t src = Load1QMsanU8(luma, 16 - valid_range);
+
+    return vrshrq_n_u16(vpaddlq_u8(src), 1);
+  }
+  return vmovl_u8(Load1MsanU8(luma, 8 - valid_range));
+}
+
 #if LIBGAV1_MAX_BITDEPTH >= 10
 // Computes subsampled luma for use with chroma, by averaging in the x direction
 // or y direction when applicable.
@@ -222,6 +240,15 @@ inline uint16x8_t GetAverageLuma(const uint16_t* const luma,
     return vrhaddq_u16(src.val[0], src.val[1]);
   }
   return vld1q_u16(luma);
+}
+
+inline uint16x8_t GetAverageLumaMsan(const uint16_t* const luma,
+                                     int subsampling_x, int valid_range) {
+  if (subsampling_x != 0) {
+    const uint16x8x2_t src = Load2QMsanU16(luma, 32 - valid_range);
+    return vrhaddq_u16(src.val[0], src.val[1]);
+  }
+  return Load1QMsanU16(luma, 16 - valid_range);
 }
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
@@ -817,11 +844,13 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
 
     if (x < chroma_width) {
       const int luma_x = x << subsampling_x;
-      const int valid_range = width - luma_x;
-      memcpy(luma_buffer, &in_y_row[luma_x], valid_range * sizeof(in_y_row[0]));
-      luma_buffer[valid_range] = in_y_row[width - 1];
-      const uint16x8_t average_luma =
-          GetAverageLuma(luma_buffer, subsampling_x);
+      const int valid_range_pixels = width - luma_x;
+      const int valid_range_bytes = valid_range_pixels * sizeof(in_y_row[0]);
+      memcpy(luma_buffer, &in_y_row[luma_x], valid_range_bytes);
+      luma_buffer[valid_range_pixels] = in_y_row[width - 1];
+      const uint16x8_t average_luma = GetAverageLumaMsan(
+          luma_buffer, subsampling_x, valid_range_bytes + sizeof(in_y_row[0]));
+
       StoreUnsigned8(average_luma_buffer, average_luma);
 
       const int16x8_t blended =
@@ -875,13 +904,11 @@ namespace low_bitdepth {
 namespace {
 
 inline int16x8_t BlendChromaValsNoCfl(
-    const int16_t* LIBGAV1_RESTRICT scaling_lut,
-    const uint8_t* LIBGAV1_RESTRICT chroma_cursor,
+    const int16_t* LIBGAV1_RESTRICT scaling_lut, const int16x8_t orig,
     const int8_t* LIBGAV1_RESTRICT noise_image_cursor,
     const int16x8_t& average_luma, const int16x8_t& scaling_shift_vect,
     const int16x8_t& offset, int luma_multiplier, int chroma_multiplier) {
   uint8_t merged_buffer[8];
-  const int16x8_t orig = GetSignedSource8(chroma_cursor);
   const int16x8_t weighted_luma = vmulq_n_s16(average_luma, luma_multiplier);
   const int16x8_t weighted_chroma = vmulq_n_s16(orig, chroma_multiplier);
   // Maximum value of |combined_u| is 127*255 = 0x7E81.
@@ -926,10 +953,13 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
     int x = 0;
     do {
       const int luma_x = x << subsampling_x;
+      const int valid_range = width - luma_x;
+
+      const int16x8_t orig_chroma = GetSignedSource8(&in_chroma_row[x]);
       const int16x8_t average_luma = vreinterpretq_s16_u16(
-          GetAverageLuma(&in_y_row[luma_x], subsampling_x));
+          GetAverageLumaMsan(&in_y_row[luma_x], subsampling_x, valid_range));
       const int16x8_t blended = BlendChromaValsNoCfl(
-          scaling_lut, &in_chroma_row[x], &(noise_image[y + start_height][x]),
+          scaling_lut, orig_chroma, &(noise_image[y + start_height][x]),
           average_luma, scaling_shift_vect, offset, luma_multiplier,
           chroma_multiplier);
       // In 8bpp, when params_.clip_to_restricted_range == false, we can
@@ -945,14 +975,21 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
       // |average_luma| computation requires a duplicated luma value at the
       // end.
       const int luma_x = x << subsampling_x;
-      const int valid_range = width - luma_x;
-      memcpy(luma_buffer, &in_y_row[luma_x], valid_range * sizeof(in_y_row[0]));
-      luma_buffer[valid_range] = in_y_row[width - 1];
+      const int valid_range_pixels = width - luma_x;
+      const int valid_range_bytes = valid_range_pixels * sizeof(in_y_row[0]);
+      memcpy(luma_buffer, &in_y_row[luma_x], valid_range_bytes);
+      luma_buffer[valid_range_pixels] = in_y_row[width - 1];
+      const int valid_range_chroma_bytes =
+          (chroma_width - x) * sizeof(in_chroma_row[0]);
+      uint8_t chroma_buffer[8];
+      memcpy(chroma_buffer, &in_chroma_row[x], valid_range_chroma_bytes);
 
-      const int16x8_t average_luma =
-          vreinterpretq_s16_u16(GetAverageLuma(luma_buffer, subsampling_x));
+      const int16x8_t orig_chroma =
+          GetSignedSource8Msan(chroma_buffer, valid_range_chroma_bytes);
+      const int16x8_t average_luma = vreinterpretq_s16_u16(GetAverageLumaMsan(
+          luma_buffer, subsampling_x, valid_range_bytes + sizeof(in_y_row[0])));
       const int16x8_t blended = BlendChromaValsNoCfl(
-          scaling_lut, &in_chroma_row[x], &(noise_image[y + start_height][x]),
+          scaling_lut, orig_chroma, &(noise_image[y + start_height][x]),
           average_luma, scaling_shift_vect, offset, luma_multiplier,
           chroma_multiplier);
       StoreUnsigned8(&out_chroma_row[x],
@@ -1218,13 +1255,11 @@ void ConstructNoiseImageOverlap10bpp_NEON(
 }
 
 inline int16x8_t BlendChromaValsNoCfl(
-    const int16_t* LIBGAV1_RESTRICT scaling_lut,
-    const uint16_t* LIBGAV1_RESTRICT chroma_cursor,
+    const int16_t* LIBGAV1_RESTRICT scaling_lut, const int16x8_t orig,
     const int16_t* LIBGAV1_RESTRICT noise_image_cursor,
     const int16x8_t& average_luma, const int16x8_t& scaling_shift_vect,
     const int32x4_t& offset, int luma_multiplier, int chroma_multiplier) {
   uint16_t merged_buffer[8];
-  const int16x8_t orig = GetSignedSource8(chroma_cursor);
   const int32x4_t weighted_luma_low =
       vmull_n_s16(vget_low_s16(average_luma), luma_multiplier);
   const int32x4_t weighted_luma_high =
@@ -1280,8 +1315,9 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
       const int luma_x = x << subsampling_x;
       const int16x8_t average_luma = vreinterpretq_s16_u16(
           GetAverageLuma(&in_y_row[luma_x], subsampling_x));
+      const int16x8_t orig_chroma = GetSignedSource8(&in_chroma_row[x]);
       const int16x8_t blended = BlendChromaValsNoCfl(
-          scaling_lut, &in_chroma_row[x], &(noise_image[y + start_height][x]),
+          scaling_lut, orig_chroma, &(noise_image[y + start_height][x]),
           average_luma, scaling_shift_vect, offset, luma_multiplier,
           chroma_multiplier);
       StoreUnsigned8(&out_chroma_row[x],
@@ -1295,14 +1331,21 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
       // |average_luma| computation requires a duplicated luma value at the
       // end.
       const int luma_x = x << subsampling_x;
-      const int valid_range = width - luma_x;
-      memcpy(luma_buffer, &in_y_row[luma_x], valid_range * sizeof(in_y_row[0]));
-      luma_buffer[valid_range] = in_y_row[width - 1];
+      const int valid_range_pixels = width - luma_x;
+      const int valid_range_bytes = valid_range_pixels * sizeof(in_y_row[0]);
+      memcpy(luma_buffer, &in_y_row[luma_x], valid_range_bytes);
+      luma_buffer[valid_range_pixels] = in_y_row[width - 1];
+      const int valid_range_chroma_bytes =
+          (chroma_width - x) * sizeof(in_chroma_row[0]);
+      uint16_t chroma_buffer[8];
+      memcpy(chroma_buffer, &in_chroma_row[x], valid_range_chroma_bytes);
+      const int16x8_t orig_chroma =
+          GetSignedSource8Msan(chroma_buffer, valid_range_chroma_bytes);
 
-      const int16x8_t average_luma =
-          vreinterpretq_s16_u16(GetAverageLuma(luma_buffer, subsampling_x));
+      const int16x8_t average_luma = vreinterpretq_s16_u16(GetAverageLumaMsan(
+          luma_buffer, subsampling_x, valid_range_bytes + sizeof(in_y_row[0])));
       const int16x8_t blended = BlendChromaValsNoCfl(
-          scaling_lut, &in_chroma_row[x], &(noise_image[y + start_height][x]),
+          scaling_lut, orig_chroma, &(noise_image[y + start_height][x]),
           average_luma, scaling_shift_vect, offset, luma_multiplier,
           chroma_multiplier);
       StoreUnsigned8(&out_chroma_row[x],
