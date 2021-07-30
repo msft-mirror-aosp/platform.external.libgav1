@@ -718,9 +718,8 @@ template <int bitdepth, typename GrainType, typename Pixel>
 void BlendNoiseWithImageLuma_NEON(
     const void* LIBGAV1_RESTRICT noise_image_ptr, int min_value, int max_luma,
     int scaling_shift, int width, int height, int start_height,
-    const int16_t* scaling_lut_y, const void* LIBGAV1_RESTRICT source_plane_y,
-    ptrdiff_t source_stride_y, void* LIBGAV1_RESTRICT dest_plane_y,
-    ptrdiff_t dest_stride_y) {
+    const int16_t* scaling_lut_y, const void* source_plane_y,
+    ptrdiff_t source_stride_y, void* dest_plane_y, ptrdiff_t dest_stride_y) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y_row = static_cast<const Pixel*>(source_plane_y);
@@ -799,8 +798,8 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
     int subsampling_y, int scaling_shift,
     const int16_t* LIBGAV1_RESTRICT scaling_lut,
     const Pixel* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
-    const Pixel* LIBGAV1_RESTRICT in_chroma_row, ptrdiff_t source_stride_chroma,
-    Pixel* LIBGAV1_RESTRICT out_chroma_row, ptrdiff_t dest_stride) {
+    const Pixel* in_chroma_row, ptrdiff_t source_stride_chroma,
+    Pixel* out_chroma_row, ptrdiff_t dest_stride) {
   const int16x8_t floor = vdupq_n_s16(min_value);
   const int16x8_t ceiling = vdupq_n_s16(max_chroma);
   Pixel luma_buffer[16];
@@ -879,8 +878,8 @@ void BlendNoiseWithImageChromaWithCfl_NEON(
     int width, int height, int start_height, int subsampling_x,
     int subsampling_y, const int16_t* LIBGAV1_RESTRICT scaling_lut,
     const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
-    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
-    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
+    const void* source_plane_uv, ptrdiff_t source_stride_uv,
+    void* dest_plane_uv, ptrdiff_t dest_stride_uv) {
   const auto* noise_image =
       static_cast<const Array2D<GrainType>*>(noise_image_ptr);
   const auto* in_y = static_cast<const Pixel*>(source_plane_y);
@@ -931,9 +930,8 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
     int chroma_multiplier, int luma_multiplier,
     const int16_t* LIBGAV1_RESTRICT scaling_lut,
     const uint8_t* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
-    const uint8_t* LIBGAV1_RESTRICT in_chroma_row,
-    ptrdiff_t source_stride_chroma, uint8_t* LIBGAV1_RESTRICT out_chroma_row,
-    ptrdiff_t dest_stride) {
+    const uint8_t* in_chroma_row, ptrdiff_t source_stride_chroma,
+    uint8_t* out_chroma_row, ptrdiff_t dest_stride) {
   const int16x8_t floor = vdupq_n_s16(min_value);
   const int16x8_t ceiling = vdupq_n_s16(max_chroma);
   // In 8bpp, the maximum upscaled noise is 127*255 = 0x7E81, which is safe
@@ -1010,8 +1008,8 @@ void BlendNoiseWithImageChroma8bpp_NEON(
     int width, int height, int start_height, int subsampling_x,
     int subsampling_y, const int16_t* LIBGAV1_RESTRICT scaling_lut,
     const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
-    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
-    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
+    const void* source_plane_uv, ptrdiff_t source_stride_uv,
+    void* dest_plane_uv, ptrdiff_t dest_stride_uv) {
   assert(plane == kPlaneU || plane == kPlaneV);
   const auto* noise_image =
       static_cast<const Array2D<int8_t>*>(noise_image_ptr);
@@ -1292,9 +1290,8 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
     int chroma_multiplier, int luma_multiplier,
     const int16_t* LIBGAV1_RESTRICT scaling_lut,
     const uint16_t* LIBGAV1_RESTRICT in_y_row, ptrdiff_t source_stride_y,
-    const uint16_t* LIBGAV1_RESTRICT in_chroma_row,
-    ptrdiff_t source_stride_chroma, uint16_t* LIBGAV1_RESTRICT out_chroma_row,
-    ptrdiff_t dest_stride) {
+    const uint16_t* in_chroma_row, ptrdiff_t source_stride_chroma,
+    uint16_t* out_chroma_row, ptrdiff_t dest_stride) {
   const int16x8_t floor = vdupq_n_s16(min_value);
   const int16x8_t ceiling = vdupq_n_s16(max_chroma);
   const int16x8_t scaling_shift_vect = vdupq_n_s16(15 - scaling_shift);
@@ -1366,8 +1363,8 @@ void BlendNoiseWithImageChroma10bpp_NEON(
     int width, int height, int start_height, int subsampling_x,
     int subsampling_y, const int16_t* LIBGAV1_RESTRICT scaling_lut,
     const void* LIBGAV1_RESTRICT source_plane_y, ptrdiff_t source_stride_y,
-    const void* LIBGAV1_RESTRICT source_plane_uv, ptrdiff_t source_stride_uv,
-    void* LIBGAV1_RESTRICT dest_plane_uv, ptrdiff_t dest_stride_uv) {
+    const void* source_plane_uv, ptrdiff_t source_stride_uv,
+    void* dest_plane_uv, ptrdiff_t dest_stride_uv) {
   assert(plane == kPlaneU || plane == kPlaneV);
   const auto* noise_image =
       static_cast<const Array2D<int16_t>*>(noise_image_ptr);
