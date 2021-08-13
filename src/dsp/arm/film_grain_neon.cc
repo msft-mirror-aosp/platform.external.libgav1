@@ -979,11 +979,9 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
       luma_buffer[valid_range_pixels] = in_y_row[width - 1];
       const int valid_range_chroma_bytes =
           (chroma_width - x) * sizeof(in_chroma_row[0]);
-      uint8_t chroma_buffer[8];
-      memcpy(chroma_buffer, &in_chroma_row[x], valid_range_chroma_bytes);
 
       const int16x8_t orig_chroma =
-          GetSignedSource8Msan(chroma_buffer, valid_range_chroma_bytes);
+          GetSignedSource8Msan(&in_chroma_row[x], valid_range_chroma_bytes);
       const int16x8_t average_luma = vreinterpretq_s16_u16(GetAverageLumaMsan(
           luma_buffer, subsampling_x, valid_range_bytes + sizeof(in_y_row[0])));
       const int16x8_t blended = BlendChromaValsNoCfl(
@@ -1334,10 +1332,8 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
       luma_buffer[valid_range_pixels] = in_y_row[width - 1];
       const int valid_range_chroma_bytes =
           (chroma_width - x) * sizeof(in_chroma_row[0]);
-      uint16_t chroma_buffer[8];
-      memcpy(chroma_buffer, &in_chroma_row[x], valid_range_chroma_bytes);
       const int16x8_t orig_chroma =
-          GetSignedSource8Msan(chroma_buffer, valid_range_chroma_bytes);
+          GetSignedSource8Msan(&in_chroma_row[x], valid_range_chroma_bytes);
 
       const int16x8_t average_luma = vreinterpretq_s16_u16(GetAverageLumaMsan(
           luma_buffer, subsampling_x, valid_range_bytes + sizeof(in_y_row[0])));
