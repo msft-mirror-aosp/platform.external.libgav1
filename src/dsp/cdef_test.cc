@@ -54,6 +54,8 @@ const char* GetDirectionDigest(const int bitdepth, const int num_runs) {
   return kDigest[bitdepth_index][run_index];
 }
 
+// The 'int' parameter is unused but required to allow for instantiations of C,
+// NEON, etc.
 template <int bitdepth, typename Pixel>
 class CdefDirectionTest : public testing::TestWithParam<int> {
  public:
