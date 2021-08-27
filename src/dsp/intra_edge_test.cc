@@ -141,9 +141,11 @@ void IntraEdgeFilterTest<bitdepth, Pixel>::TestRandomValues(int num_runs) {
   libvpx_test::ACMRandom rnd(libvpx_test::ACMRandom::DeterministicSeed());
   absl::Duration elapsed_time;
   absl::Duration base_elapsed_time;
+  memset(base_buffer_, 0, sizeof(base_buffer_));
+  memset(buffer_, 0, sizeof(buffer_));
   for (int num_tests = 0; num_tests < num_runs; ++num_tests) {
-    for (int i = 0; i < kIntraEdgeFilterTestMaxSize; ++i) {
-      const Pixel val = rnd(bitdepth);
+    for (int i = 0; i < size_; ++i) {
+      const Pixel val = rnd(1 << bitdepth);
       buffer_[i] = val;
       base_buffer_[i] = val;
     }
@@ -382,7 +384,7 @@ void IntraEdgeUpsamplerTest<bitdepth, Pixel>::TestRandomValues(int num_runs) {
     buffer_[0] = 0;
     base_buffer_[0] = 0;
     for (int i = 1; i < size_ + 2; ++i) {
-      const Pixel val = rnd(bitdepth);
+      const Pixel val = rnd(1 << bitdepth);
       buffer_[i] = val;
       base_buffer_[i] = val;
     }
