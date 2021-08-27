@@ -46,7 +46,10 @@ using IntraPredictionBuffer =
 
 // Buffer to facilitate decoding a frame. This struct is used only within
 // DecoderImpl::DecodeTiles().
-struct FrameScratchBuffer {
+// The alignment requirement is due to the SymbolDecoderContext member
+// symbol_decoder_context and the TileScratchBufferPool member
+// tile_scratch_buffer_pool.
+struct FrameScratchBuffer : public MaxAlignedAllocable {
   LoopRestorationInfo loop_restoration_info;
   Array2D<int8_t> cdef_index;
   // Encodes the block skip information as a bitmask for the entire frame which
