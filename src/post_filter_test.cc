@@ -513,7 +513,7 @@ void PostFilterSuperResTest<bitdepth, Pixel>::TestApplySuperRes(
         frame_header.rows4x4 * 4,
         (frame_header.rows4x4 * 4) >> frame_size_.subsampling_y,
         (frame_header.rows4x4 * 4) >> frame_size_.subsampling_y};
-    post_filter.ApplySuperRes(buffers, rows, /*line_buffer_row=*/0, dst);
+    post_filter.ApplySuperRes(buffers, rows, /*line_buffer_row=*/-1, dst);
   }
 
   // Check md5.
