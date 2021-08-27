@@ -123,6 +123,8 @@ list(
   APPEND libgav1_quantizer_test_sources "${libgav1_source}/quantizer_test.cc")
 list(APPEND libgav1_reconstruction_test_sources
             "${libgav1_source}/reconstruction_test.cc")
+list(APPEND libgav1_residual_buffer_pool_test_sources
+            "${libgav1_source}/residual_buffer_pool_test.cc")
 list(APPEND libgav1_warp_test_sources "${libgav1_source}/dsp/warp_test.cc")
 
 macro(libgav1_add_tests_targets)
@@ -761,6 +763,25 @@ macro(libgav1_add_tests_targets)
                          ${libgav1_test_objlib_deps}
                          LIB_DEPS
                          absl::strings
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         residual_buffer_pool_test
+                         SOURCES
+                         ${libgav1_residual_buffer_pool_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_decoder
+                         libgav1_dsp
+                         libgav1_utils
+                         ${libgav1_test_objlib_deps}
+                         LIB_DEPS
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest
                          libgav1_gtest_main)
