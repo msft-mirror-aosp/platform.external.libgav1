@@ -236,7 +236,7 @@ TEST_P(IntraEdgeFilterTest8bpp, Correctness) {
   TestRandomValues(1);
 }
 
-TEST_P(IntraEdgeFilterTest8bpp, DISABLED_Speed) { TestRandomValues(5e7); }
+TEST_P(IntraEdgeFilterTest8bpp, DISABLED_Speed) { TestRandomValues(1e7); }
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
 using IntraEdgeFilterTest10bpp = IntraEdgeFilterTest<10, uint16_t>;
@@ -305,7 +305,7 @@ TEST_P(IntraEdgeFilterTest10bpp, FixedInput) {
   TestRandomValues(1);
 }
 
-TEST_P(IntraEdgeFilterTest10bpp, DISABLED_Speed) { TestRandomValues(5e7); }
+TEST_P(IntraEdgeFilterTest10bpp, DISABLED_Speed) { TestRandomValues(1e7); }
 #endif
 
 template <int bitdepth, typename Pixel>
