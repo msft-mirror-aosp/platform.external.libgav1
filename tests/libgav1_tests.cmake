@@ -128,6 +128,8 @@ list(APPEND libgav1_residual_buffer_pool_test_sources
 list(APPEND libgav1_scan_test_sources "${libgav1_source}/scan_test.cc")
 list(APPEND libgav1_symbol_decoder_context_test_sources
             "${libgav1_source}/symbol_decoder_context_test.cc")
+list(APPEND libgav1_threading_strategy_test_sources
+            "${libgav1_source}/threading_strategy_test.cc")
 list(APPEND libgav1_warp_test_sources "${libgav1_source}/dsp/warp_test.cc")
 
 macro(libgav1_add_tests_targets)
@@ -840,6 +842,26 @@ macro(libgav1_add_tests_targets)
                          LIB_DEPS
                          absl::str_format_internal
                          absl::time
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         threading_strategy_test
+                         SOURCES
+                         ${libgav1_threading_strategy_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_decoder
+                         libgav1_dsp
+                         libgav1_utils
+                         ${libgav1_test_objlib_deps}
+                         LIB_DEPS
+                         absl::str_format_internal
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest
                          libgav1_gtest_main)
