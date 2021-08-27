@@ -27,9 +27,11 @@
 #endif  // defined(_M_X64) || defined(_M_ARM) || defined(_M_ARM64)
 #endif  // defined(_MSC_VER)
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <type_traits>
 
