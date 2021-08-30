@@ -73,6 +73,8 @@ list(APPEND libgav1_array_2d_test_sources
             "${libgav1_source}/utils/array_2d_test.cc")
 list(APPEND libgav1_average_blend_test_sources
             "${libgav1_source}/dsp/average_blend_test.cc")
+list(APPEND libgav1_block_parameters_holder_test_sources
+            "${libgav1_source}/utils/block_parameters_holder_test.cc")
 list(APPEND libgav1_blocking_counter_test_sources
             "${libgav1_source}/utils/blocking_counter_test.cc")
 list(APPEND libgav1_buffer_pool_test_sources
@@ -193,6 +195,22 @@ macro(libgav1_add_tests_targets)
                          array_2d_test
                          SOURCES
                          ${libgav1_array_2d_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_utils
+                         LIB_DEPS
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         block_parameters_holder_test
+                         SOURCES
+                         ${libgav1_block_parameters_holder_test_sources}
                          DEFINES
                          ${libgav1_defines}
                          INCLUDES
