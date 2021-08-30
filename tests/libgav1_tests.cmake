@@ -124,6 +124,8 @@ list(APPEND libgav1_super_res_test_sources
             "${libgav1_source}/dsp/super_res_test.cc")
 list(APPEND libgav1_weight_mask_test_sources
             "${libgav1_source}/dsp/weight_mask_test.cc")
+list(
+  APPEND libgav1_memory_test_sources "${libgav1_source}/utils/memory_test.cc")
 list(APPEND libgav1_obmc_test_sources "${libgav1_source}/dsp/obmc_test.cc")
 list(APPEND libgav1_obu_parser_test_sources
             "${libgav1_source}/obu_parser_test.cc")
@@ -313,6 +315,20 @@ macro(libgav1_add_tests_targets)
                          absl::str_format_internal
                          absl::time
                          ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         memory_test
+                         SOURCES
+                         ${libgav1_memory_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         LIB_DEPS
+                         absl::base
                          libgav1_gtest
                          libgav1_gtest_main)
 
