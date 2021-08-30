@@ -91,6 +91,9 @@ list(APPEND libgav1_decoder_buffer_test_sources
 list(APPEND libgav1_distance_weighted_blend_test_sources
             "${libgav1_source}/dsp/distance_weighted_blend_test.cc")
 list(APPEND libgav1_dsp_test_sources "${libgav1_source}/dsp/dsp_test.cc")
+list(APPEND libgav1_entropy_decoder_test_sources
+            "${libgav1_source}/utils/entropy_decoder_test.cc"
+            "${libgav1_source}/utils/entropy_decoder_test_data.inc")
 list(APPEND libgav1_film_grain_test_sources
             "${libgav1_source}/film_grain_test.cc")
 list(APPEND libgav1_internal_frame_buffer_list_test_sources
@@ -270,6 +273,23 @@ macro(libgav1_add_tests_targets)
                          OBJLIB_DEPS
                          libgav1_utils
                          LIB_DEPS
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         entropy_decoder_test
+                         SOURCES
+                         ${libgav1_entropy_decoder_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_utils
+                         LIB_DEPS
+                         absl::time
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest
                          libgav1_gtest_main)
