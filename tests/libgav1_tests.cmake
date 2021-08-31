@@ -154,6 +154,8 @@ list(APPEND libgav1_threadpool_test_sources
             "${libgav1_source}/utils/threadpool_test.cc")
 list(APPEND libgav1_threading_strategy_test_sources
             "${libgav1_source}/threading_strategy_test.cc")
+list(APPEND libgav1_unbounded_queue_test_sources
+            "${libgav1_source}/utils/unbounded_queue_test.cc")
 list(APPEND libgav1_version_test_sources "${libgav1_source}/version_test.cc")
 list(APPEND libgav1_warp_test_sources "${libgav1_source}/dsp/warp_test.cc")
 list(APPEND libgav1_warp_prediction_test_sources
@@ -439,6 +441,23 @@ macro(libgav1_add_tests_targets)
                          absl::synchronization
                          libgav1_gtest
                          libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         unbounded_queue_test
+                         SOURCES
+                         ${libgav1_unbounded_queue_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_utils
+                         LIB_DEPS
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
   libgav1_add_executable(TEST
                          NAME
                          tests_utils_test
