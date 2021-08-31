@@ -143,6 +143,8 @@ list(APPEND libgav1_reconstruction_test_sources
 list(APPEND libgav1_residual_buffer_pool_test_sources
             "${libgav1_source}/residual_buffer_pool_test.cc")
 list(APPEND libgav1_scan_test_sources "${libgav1_source}/scan_test.cc")
+list(APPEND libgav1_segmentation_map_test_sources
+            "${libgav1_source}/utils/segmentation_map_test.cc")
 list(APPEND libgav1_symbol_decoder_context_test_sources
             "${libgav1_source}/symbol_decoder_context_test.cc")
 list(APPEND libgav1_threading_strategy_test_sources
@@ -340,6 +342,22 @@ macro(libgav1_add_tests_targets)
                          queue_test
                          SOURCES
                          ${libgav1_queue_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_utils
+                         LIB_DEPS
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         segmentation_map_test
+                         SOURCES
+                         ${libgav1_segmentation_map_test_sources}
                          DEFINES
                          ${libgav1_defines}
                          INCLUDES
