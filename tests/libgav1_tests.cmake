@@ -135,6 +135,7 @@ list(APPEND libgav1_prediction_mask_test_sources
             "${libgav1_source}/prediction_mask_test.cc")
 list(
   APPEND libgav1_quantizer_test_sources "${libgav1_source}/quantizer_test.cc")
+list(APPEND libgav1_queue_test_sources "${libgav1_source}/utils/queue_test.cc")
 list(APPEND libgav1_reconstruction_test_sources
             "${libgav1_source}/reconstruction_test.cc")
 list(APPEND libgav1_residual_buffer_pool_test_sources
@@ -329,6 +330,22 @@ macro(libgav1_add_tests_targets)
                          ${libgav1_test_include_paths}
                          LIB_DEPS
                          absl::base
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         queue_test
+                         SOURCES
+                         ${libgav1_queue_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_utils
+                         LIB_DEPS
+                         ${libgav1_common_test_absl_deps}
                          libgav1_gtest
                          libgav1_gtest_main)
 
