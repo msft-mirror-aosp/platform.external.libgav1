@@ -150,6 +150,8 @@ list(APPEND libgav1_segmentation_test_sources
 list(APPEND libgav1_stack_test_sources "${libgav1_source}/utils/stack_test.cc")
 list(APPEND libgav1_symbol_decoder_context_test_sources
             "${libgav1_source}/symbol_decoder_context_test.cc")
+list(APPEND libgav1_threadpool_test_sources
+            "${libgav1_source}/utils/threadpool_test.cc")
 list(APPEND libgav1_threading_strategy_test_sources
             "${libgav1_source}/threading_strategy_test.cc")
 list(APPEND libgav1_version_test_sources "${libgav1_source}/version_test.cc")
@@ -419,6 +421,22 @@ macro(libgav1_add_tests_targets)
                          libgav1_utils
                          LIB_DEPS
                          ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
+                         threadpool_test
+                         SOURCES
+                         ${libgav1_threadpool_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_utils
+                         LIB_DEPS
+                         absl::synchronization
                          libgav1_gtest
                          libgav1_gtest_main)
   libgav1_add_executable(TEST
