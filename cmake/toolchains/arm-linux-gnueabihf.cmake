@@ -23,7 +23,7 @@ if("${CROSS}" STREQUAL "")
   set(CROSS arm-linux-gnueabihf-)
 endif()
 
-# For c_decoder_test.c.
+# For c_decoder_test.c and c_version_test.c.
 if(NOT CMAKE_C_COMPILER)
   set(CMAKE_C_COMPILER ${CROSS}gcc)
 endif()
