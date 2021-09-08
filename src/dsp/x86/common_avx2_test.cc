@@ -14,11 +14,12 @@
 
 #include "src/dsp/x86/common_avx2.h"
 
+#include "gtest/gtest.h"
+
 #if LIBGAV1_TARGETING_AVX2
 
 #include <cstdint>
 
-#include "gtest/gtest.h"
 #include "src/utils/common.h"
 
 namespace libgav1 {
@@ -55,5 +56,12 @@ TEST(CommonDspTest, AVX2RightShiftWithRoundingS16) {
 }  // namespace
 }  // namespace dsp
 }  // namespace libgav1
+
+#else  // !LIBGAV1_TARGETING_AVX2
+
+TEST(CommonDspTest, AVX2) {
+  GTEST_SKIP() << "Build this module for x86(-64) with AVX2 enabled to enable "
+                  "the tests.";
+}
 
 #endif  // LIBGAV1_TARGETING_AVX2

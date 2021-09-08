@@ -14,12 +14,12 @@
 
 #include "src/dsp/arm/common_neon.h"
 
+#include "gtest/gtest.h"
 #include "src/utils/cpu.h"
 
 #if LIBGAV1_ENABLE_NEON
 #include <cstdint>
 
-#include "gtest/gtest.h"
 #include "tests/block_utils.h"
 
 namespace libgav1 {
@@ -197,4 +197,12 @@ TEST_F(TransposeTestHighBitdepth, Transpose8x8SignedTest) {
 }  // namespace
 }  // namespace dsp
 }  // namespace libgav1
+
+#else  // !LIBGAV1_ENABLE_NEON
+
+TEST(CommonDspTest, NEON) {
+  GTEST_SKIP()
+      << "Build this module for Arm with NEON enabled to enable the tests.";
+}
+
 #endif  // LIBGAV1_ENABLE_NEON

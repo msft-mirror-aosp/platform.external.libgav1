@@ -14,11 +14,12 @@
 
 #include "src/dsp/x86/common_sse4.h"
 
+#include "gtest/gtest.h"
+
 #if LIBGAV1_TARGETING_SSE4_1
 
 #include <cstdint>
 
-#include "gtest/gtest.h"
 #include "src/utils/common.h"
 
 namespace libgav1 {
@@ -52,5 +53,12 @@ TEST(CommonDspTest, SSE4RightShiftWithRoundingS16) {
 }  // namespace
 }  // namespace dsp
 }  // namespace libgav1
+
+#else  // !LIBGAV1_TARGETING_SSE4_1
+
+TEST(CommonDspTest, SSE4) {
+  GTEST_SKIP() << "Build this module for x86(-64) with SSE4 enabled to enable "
+                  "the tests.";
+}
 
 #endif  // LIBGAV1_TARGETING_SSE4_1
