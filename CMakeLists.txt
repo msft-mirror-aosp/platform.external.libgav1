@@ -128,6 +128,7 @@ if(NOT EXISTS "${libgav1_abseil}")
       "    clone \\\n"
       "    https://github.com/abseil/abseil-cpp.git third_party/abseil-cpp")
 endif()
+set(ABSL_PROPAGATE_CXX_STD ON)
 add_subdirectory("${libgav1_abseil}" "${libgav1_abseil_build}" EXCLUDE_FROM_ALL)
 
 libgav1_reset_target_lists()
