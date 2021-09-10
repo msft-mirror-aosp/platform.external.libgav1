@@ -107,6 +107,10 @@ list(APPEND libgav1_dsp_test_sources "${libgav1_source}/dsp/dsp_test.cc")
 list(APPEND libgav1_entropy_decoder_test_sources
             "${libgav1_source}/utils/entropy_decoder_test.cc"
             "${libgav1_source}/utils/entropy_decoder_test_data.inc")
+list(APPEND libgav1_file_reader_test_sources
+            "${libgav1_examples}/file_reader_test.cc"
+            "${libgav1_examples}/file_reader_test_common.cc"
+            "${libgav1_examples}/file_reader_test_common.h")
 list(APPEND libgav1_film_grain_test_sources
             "${libgav1_source}/film_grain_test.cc")
 list(APPEND libgav1_file_reader_factory_test_sources
@@ -377,6 +381,27 @@ macro(libgav1_add_tests_targets)
 
   libgav1_add_executable(TEST
                          NAME
+                         file_reader_test
+                         SOURCES
+                         ${libgav1_file_reader_test_sources}
+                         DEFINES
+                         ${libgav1_defines}
+                         INCLUDES
+                         ${libgav1_test_include_paths}
+                         OBJLIB_DEPS
+                         libgav1_dsp
+                         libgav1_file_reader
+                         libgav1_utils
+                         libgav1_tests_utils
+                         LIB_DEPS
+                         absl::strings
+                         absl::time
+                         ${libgav1_common_test_absl_deps}
+                         libgav1_gtest
+                         libgav1_gtest_main)
+
+  libgav1_add_executable(TEST
+                         NAME
                          file_reader_factory_test
                          SOURCES
                          ${libgav1_file_reader_factory_test_sources}
@@ -557,6 +582,7 @@ macro(libgav1_add_tests_targets)
                          libgav1_tests_utils
                          libgav1_utils
                          LIB_DEPS
+                         absl::strings
                          absl::time
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest
@@ -1122,6 +1148,7 @@ macro(libgav1_add_tests_targets)
                          libgav1_tests_utils
                          libgav1_utils
                          LIB_DEPS
+                         absl::strings
                          absl::time
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest

@@ -21,6 +21,7 @@
 #include <memory>
 #include <string>
 
+#include "absl/strings/string_view.h"
 #include "absl/time/time.h"
 #include "gtest/gtest.h"
 #include "src/dsp/dsp.h"
@@ -114,6 +115,26 @@ void CheckMd5Digest(const char name[], const char function_name[],
          static_cast<int>(absl::ToInt64Microseconds(elapsed_time)),
          actual_digest);
   EXPECT_STREQ(expected_digest, actual_digest);
+}
+
+namespace {
+
+std::string GetSourceDir() {
+#if defined(__ANDROID__)
+  // Test files must be manually supplied. This path is frequently
+  // available on development devices.
+  return std::string("/data/local/tmp/tests/data");
+#elif defined(LIBGAV1_FLAGS_SRCDIR)
+  return std::string(LIBGAV1_FLAGS_SRCDIR) + "/tests/data";
+#else
+  return std::string(".");
+#endif  // defined(__ANDROID__)
+}
+
+}  // namespace
+
+std::string GetTestInputFilePath(absl::string_view file_name) {
+  return GetSourceDir() + "/" + std::string(file_name);
 }
 
 }  // namespace test_utils
