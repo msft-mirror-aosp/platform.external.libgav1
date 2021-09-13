@@ -58,6 +58,12 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Enable generators like Xcode and Visual Studio to place projects in folders.
+get_property(use_folders_is_set GLOBAL PROPERTY USE_FOLDERS SET)
+if(NOT use_folders_is_set)
+  set_property(GLOBAL PROPERTY USE_FOLDERS TRUE)
+endif()
+
 include(FindThreads)
 
 include("${libgav1_examples}/libgav1_examples.cmake")
