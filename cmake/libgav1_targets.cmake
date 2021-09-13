@@ -100,6 +100,9 @@ macro(libgav1_add_executable)
   endif()
 
   add_executable(${exe_NAME} ${exe_SOURCES})
+  if(exe_TEST)
+    add_test(NAME ${exe_NAME} COMMAND ${exe_NAME})
+  endif()
 
   if(exe_OUTPUT_NAME)
     set_target_properties(${exe_NAME} PROPERTIES OUTPUT_NAME ${exe_OUTPUT_NAME})

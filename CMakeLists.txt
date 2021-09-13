@@ -139,6 +139,12 @@ libgav1_add_tests_targets()
 libgav1_add_utils_targets()
 libgav1_setup_install_target()
 
+if(LIBGAV1_ENABLE_TESTS)
+  # include(CTest) or -DBUILD_TESTING=1 aren't used to avoid enabling abseil
+  # tests.
+  enable_testing()
+endif()
+
 if(LIBGAV1_VERBOSE)
   libgav1_dump_cmake_flag_variables()
   libgav1_dump_tracked_configuration_variables()
