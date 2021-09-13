@@ -172,6 +172,10 @@ std::string GetTempDir() {
 }  // namespace
 
 std::string GetTestInputFilePath(absl::string_view file_name) {
+  const char* const path = getenv("LIBGAV1_TEST_DATA_PATH");
+  if (path != nullptr && path[0] != '\0') {
+    return std::string(path) + "/" + std::string(file_name);
+  }
   return GetSourceDir() + "/" + std::string(file_name);
 }
 
