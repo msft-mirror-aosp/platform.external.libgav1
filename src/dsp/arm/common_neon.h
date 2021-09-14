@@ -339,6 +339,12 @@ inline uint16x8x2_t Load2QMsanU16(const uint16_t* const source,
   return dst;
 }
 
+inline uint32x4_t Load1QMsanU32(const uint32_t* const source,
+                                const ptrdiff_t over_read_in_bytes) {
+  return vreinterpretq_u32_u8(MaskOverreadsQ(
+      vreinterpretq_u8_u32(vld1q_u32(source)), over_read_in_bytes));
+}
+
 //------------------------------------------------------------------------------
 // Store functions.
 
