@@ -21,10 +21,10 @@
 #include <intrin.h>
 #pragma intrinsic(_BitScanForward)
 #pragma intrinsic(_BitScanReverse)
-#if defined(_M_X64) || defined(_M_ARM) || defined(_M_ARM64)
+#if defined(_M_X64) || defined(_M_ARM64)
 #pragma intrinsic(_BitScanReverse64)
 #define HAVE_BITSCANREVERSE64
-#endif  // defined(_M_X64) || defined(_M_ARM) || defined(_M_ARM64)
+#endif  // defined(_M_X64) || defined(_M_ARM64)
 #endif  // defined(_MSC_VER)
 
 #include <algorithm>
