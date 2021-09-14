@@ -53,7 +53,8 @@ macro(libgav1_set_build_definitions)
               "LIBGAV1_FLAGS_TMPDIR=\"/tmp\"")
 
   if(MSVC OR WIN32)
-    list(APPEND libgav1_defines "_CRT_SECURE_NO_DEPRECATE=1" "NOMINMAX=1")
+    list(APPEND libgav1_defines "_CRT_SECURE_NO_WARNINGS" "NOMINMAX"
+                "_SCL_SECURE_NO_WARNINGS")
   endif()
 
   if(ANDROID)
