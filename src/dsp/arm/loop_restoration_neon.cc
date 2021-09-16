@@ -641,6 +641,8 @@ inline void StoreAligned64U32(uint32_t* const dst, const uint32x4x2_t src[2]) {
   vst1q_u32(dst + 12, src[1].val[1]);
 }
 
+inline uint16x8_t SquareLo8(const uint8x8_t src) { return vmull_u8(src, src); }
+
 inline uint16x8_t SquareLo8(const uint8x16_t src) {
   return vmull_u8(vget_low_u8(src), vget_low_u8(src));
 }
@@ -962,7 +964,8 @@ inline uint32x4x2_t Sum565W(const uint16x8_t src[2]) {
 }
 
 inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
-                   const ptrdiff_t sum_stride, uint16_t* sum3, uint16_t* sum5,
+                   const ptrdiff_t /*width*/, const ptrdiff_t sum_stride,
+                   const ptrdiff_t sum_width, uint16_t* sum3, uint16_t* sum5,
                    uint32_t* square_sum3, uint32_t* square_sum5) {
   int y = 2;
   // Don't change loop width to 16, which is even slower.
@@ -970,35 +973,39 @@ inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
     uint8x8_t s[2];
     uint16x8_t sq[2];
     s[0] = vld1_u8(src);
-    sq[0] = vmull_u8(s[0], s[0]);
-    ptrdiff_t x = 0;
+    sq[0] = SquareLo8(s[0]);
+    ptrdiff_t x = sum_width;
     do {
       uint16x8_t row3, row5;
       uint32x4x2_t row_sq3, row_sq5;
-      s[1] = vld1_u8(src + x + 8);
-      sq[1] = vmull_u8(s[1], s[1]);
+      x -= 8;
+      src += 8;
+      s[1] = vld1_u8(src);
+      sq[1] = SquareLo8(s[1]);
       SumHorizontal(s, sq, &row3, &row5, &row_sq3, &row_sq5);
       vst1q_u16(sum3, row3);
       vst1q_u16(sum5, row5);
-      vst1q_u32(square_sum3 + 0, row_sq3.val[0]);
-      vst1q_u32(square_sum3 + 4, row_sq3.val[1]);
-      vst1q_u32(square_sum5 + 0, row_sq5.val[0]);
-      vst1q_u32(square_sum5 + 4, row_sq5.val[1]);
+      StoreAligned32U32(square_sum3 + 0, row_sq3);
+      StoreAligned32U32(square_sum5 + 0, row_sq5);
       s[0] = s[1];
       sq[0] = sq[1];
       sum3 += 8;
       sum5 += 8;
       square_sum3 += 8;
       square_sum5 += 8;
-      x += 8;
-    } while (x < sum_stride);
-    src += src_stride;
+    } while (x != 0);
+    src += src_stride - sum_width;
+    sum3 += sum_stride - sum_width;
+    sum5 += sum_stride - sum_width;
+    square_sum3 += sum_stride - sum_width;
+    square_sum5 += sum_stride - sum_width;
   } while (--y != 0);
 }
 
 template <int size>
 inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
-                   const ptrdiff_t sum_stride, uint16_t* sums,
+                   const ptrdiff_t /*width*/, const ptrdiff_t sum_stride,
+                   const ptrdiff_t sum_width, uint16_t* sums,
                    uint32_t* square_sums) {
   static_assert(size == 3 || size == 5, "");
   int y = 2;
@@ -1007,13 +1014,15 @@ inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
     uint8x8_t s[2];
     uint16x8_t sq[2];
     s[0] = vld1_u8(src);
-    sq[0] = vmull_u8(s[0], s[0]);
-    ptrdiff_t x = 0;
+    sq[0] = SquareLo8(s[0]);
+    ptrdiff_t x = sum_width;
     do {
       uint16x8_t row;
       uint32x4x2_t row_sq;
-      s[1] = vld1_u8(src + x + 8);
-      sq[1] = vmull_u8(s[1], s[1]);
+      x -= 8;
+      src += 8;
+      s[1] = vld1_u8(src);
+      sq[1] = SquareLo8(s[1]);
       if (size == 3) {
         row = Sum3Horizontal(s);
         row_sq = Sum3WHorizontal(sq);
@@ -1022,15 +1031,15 @@ inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
         row_sq = Sum5WHorizontal(sq);
       }
       vst1q_u16(sums, row);
-      vst1q_u32(square_sums + 0, row_sq.val[0]);
-      vst1q_u32(square_sums + 4, row_sq.val[1]);
+      StoreAligned32U32(square_sums, row_sq);
       s[0] = s[1];
       sq[0] = sq[1];
       sums += 8;
       square_sums += 8;
-      x += 8;
-    } while (x < sum_stride);
-    src += src_stride;
+    } while (x != 0);
+    src += src_stride - sum_width;
+    sums += sum_stride - sum_width;
+    square_sums += sum_stride - sum_width;
   } while (--y != 0);
 }
 
@@ -2075,6 +2084,7 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterProcess(
     const ptrdiff_t bottom_border_stride, const int width, const int height,
     SgrBuffer* const sgr_buffer, uint8_t* dst) {
   const auto temp_stride = Align<ptrdiff_t>(width, 16);
+  const auto sum_width = Align<ptrdiff_t>(width + 8, 16);
   const ptrdiff_t sum_stride = temp_stride + 8;
   const int sgr_proj_index = restoration_info.sgr_proj_info.index;
   const uint16_t* const scales = kSgrScaleParameter[sgr_proj_index];  // < 2^12.
@@ -2111,8 +2121,8 @@ LIBGAV1_ALWAYS_INLINE void BoxFilterProcess(
   b565[1] = b565[0] + temp_stride;
   assert(scales[0] != 0);
   assert(scales[1] != 0);
-  BoxSum(top_border, top_border_stride, sum_stride, sum3[0], sum5[1],
-         square_sum3[0], square_sum5[1]);
+  BoxSum(top_border, top_border_stride, width, sum_stride, sum_width, sum3[0],
+         sum5[1], square_sum3[0], square_sum5[1]);
   sum5[0] = sum5[1];
   square_sum5[0] = square_sum5[1];
   const uint8_t* const s = (height > 1) ? src + stride : bottom_border;
@@ -2188,6 +2198,7 @@ inline void BoxFilterProcessPass1(const RestorationUnitInfo& restoration_info,
                                   const int width, const int height,
                                   SgrBuffer* const sgr_buffer, uint8_t* dst) {
   const auto temp_stride = Align<ptrdiff_t>(width, 16);
+  const auto sum_width = Align<ptrdiff_t>(width + 8, 16);
   const ptrdiff_t sum_stride = temp_stride + 8;
   const int sgr_proj_index = restoration_info.sgr_proj_info.index;
   const uint32_t scale = kSgrScaleParameter[sgr_proj_index][0];  // < 2^12.
@@ -2205,7 +2216,8 @@ inline void BoxFilterProcessPass1(const RestorationUnitInfo& restoration_info,
   b565[0] = sgr_buffer->b565;
   b565[1] = b565[0] + temp_stride;
   assert(scale != 0);
-  BoxSum<5>(top_border, top_border_stride, sum_stride, sum5[1], square_sum5[1]);
+  BoxSum<5>(top_border, top_border_stride, width, sum_stride, sum_width,
+            sum5[1], square_sum5[1]);
   sum5[0] = sum5[1];
   square_sum5[0] = square_sum5[1];
   const uint8_t* const s = (height > 1) ? src + stride : bottom_border;
@@ -2263,6 +2275,7 @@ inline void BoxFilterProcessPass2(const RestorationUnitInfo& restoration_info,
                                   SgrBuffer* const sgr_buffer, uint8_t* dst) {
   assert(restoration_info.sgr_proj_info.multiplier[0] == 0);
   const auto temp_stride = Align<ptrdiff_t>(width, 16);
+  const auto sum_width = Align<ptrdiff_t>(width + 8, 16);
   const ptrdiff_t sum_stride = temp_stride + 8;
   const int16_t w1 = restoration_info.sgr_proj_info.multiplier[1];
   const int16_t w0 = (1 << kSgrProjPrecisionBits) - w1;
@@ -2285,7 +2298,8 @@ inline void BoxFilterProcessPass2(const RestorationUnitInfo& restoration_info,
   b444[0] = sgr_buffer->b444;
   b444[1] = b444[0] + temp_stride;
   assert(scale != 0);
-  BoxSum<3>(top_border, top_border_stride, sum_stride, sum3[0], square_sum3[0]);
+  BoxSum<3>(top_border, top_border_stride, width, sum_stride, sum_width,
+            sum3[0], square_sum3[0]);
   BoxSumFilterPreProcess3<false>(src, width, scale, sum3, square_sum3, ma343[0],
                                  nullptr, b343[0], nullptr);
   Circulate3PointersBy1<uint16_t>(sum3);
