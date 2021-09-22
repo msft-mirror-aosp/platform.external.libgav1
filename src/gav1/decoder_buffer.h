@@ -129,19 +129,9 @@ typedef struct Libgav1DecoderBuffer {
   Libgav1TransferCharacteristics transfer_characteristics;
   Libgav1MatrixCoefficients matrix_coefficients;
 
-  // Image storage dimensions.
-  // NOTE: These fields are named w and h in vpx_image_t and aom_image_t.
-  // uint32_t width;  // Stored image width.
-  // uint32_t height;  // Stored image height.
   int bitdepth;  // Stored image bitdepth.
 
-  // Image display dimensions.
-  // NOTES:
-  // 1. These fields are named d_w and d_h in vpx_image_t and aom_image_t.
-  // 2. libvpx and libaom clients use d_w and d_h much more often than w and h.
-  // 3. These fields can just be stored for the Y plane and the clients can
-  //    calculate the values for the U and V planes if the image format or
-  //    subsampling is exposed.
+  // Image display dimensions in Y/U/V order.
   int displayed_width[3];   // Displayed image width.
   int displayed_height[3];  // Displayed image height.
 
