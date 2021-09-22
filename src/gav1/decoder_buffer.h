@@ -135,8 +135,11 @@ typedef struct Libgav1DecoderBuffer {
   int displayed_width[3];   // Displayed image width.
   int displayed_height[3];  // Displayed image height.
 
-  int stride[3];
-  uint8_t* plane[3];
+  // Values are given in Y/U/V order.
+  int stride[3];      // The width in bytes of one row of the |plane| buffer.
+                      // This may include padding bytes for alignment or
+                      // internal use by the decoder.
+  uint8_t* plane[3];  // The reconstructed image plane(s).
 
   // Spatial id of this frame.
   int spatial_id;
