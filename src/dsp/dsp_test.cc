@@ -203,7 +203,11 @@ void CheckTables(bool c_only) {
     EXPECT_NE(dsp->film_grain.initialize_scaling_lut, nullptr);
     EXPECT_NE(dsp->film_grain.blend_noise_luma, nullptr);
 
-    EXPECT_NE(dsp->motion_field_projection_kernel, nullptr);
+    if (bitdepth == 8) {
+      EXPECT_NE(dsp->motion_field_projection_kernel, nullptr);
+    } else {
+      EXPECT_EQ(dsp->motion_field_projection_kernel, nullptr);
+    }
     EXPECT_NE(dsp->mv_projection_compound[0], nullptr);
     EXPECT_NE(dsp->mv_projection_compound[1], nullptr);
     EXPECT_NE(dsp->mv_projection_compound[2], nullptr);

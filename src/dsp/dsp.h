@@ -827,6 +827,8 @@ struct FilmGrainFuncs {
 // tile.
 // |motion_field| is the output which saves the projected motion field
 // information.
+// Note: Only the entry from the 8-bit Dsp table is used as this function is
+// bitdepth agnostic.
 using MotionFieldProjectionKernelFunc = void (*)(
     const ReferenceInfo& reference_info, int reference_to_current_with_sign,
     int dst_sign, int y8_start, int y8_end, int x8_start, int x8_end,
