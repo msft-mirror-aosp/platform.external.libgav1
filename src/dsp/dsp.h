@@ -844,6 +844,8 @@ using MotionFieldProjectionKernelFunc = void (*)(
 // |count| is the number of the temporal motion vectors.
 // |candidate_mvs| is the aligned set of projected motion vectors.
 // The pointer arguments do not alias one another.
+// Note: Only the entry from the 8-bit Dsp table is used as this function is
+// bitdepth agnostic.
 using MvProjectionCompoundFunc = void (*)(
     const MotionVector* temporal_mvs, const int8_t* temporal_reference_offsets,
     const int reference_offsets[2], int count,
@@ -859,6 +861,8 @@ using MvProjectionCompoundFunc = void (*)(
 // |count| is the number of the temporal motion vectors.
 // |candidate_mvs| is the aligned set of projected motion vectors.
 // The pointer arguments do not alias one another.
+// Note: Only the entry from the 8-bit Dsp table is used as this function is
+// bitdepth agnostic.
 using MvProjectionSingleFunc = void (*)(
     const MotionVector* temporal_mvs, const int8_t* temporal_reference_offsets,
     int reference_offset, int count, MotionVector* candidate_mvs);
