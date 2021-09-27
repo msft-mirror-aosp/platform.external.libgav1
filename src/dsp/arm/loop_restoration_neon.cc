@@ -28,6 +28,7 @@
 #include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/utils/common.h"
+#include "src/utils/compiler_attributes.h"
 #include "src/utils/constants.h"
 
 namespace libgav1 {
@@ -2373,6 +2374,12 @@ void SelfGuidedFilter_NEON(
   const auto* bottom = static_cast<const uint8_t*>(bottom_border);
   auto* const dst = static_cast<uint8_t*>(dest);
   SgrBuffer* const sgr_buffer = &restoration_buffer->sgr_buffer;
+
+#if LIBGAV1_MSAN
+  // Initialize to prevent msan warnings when intermediate overreads occur.
+  memset(sgr_buffer, 0, sizeof(SgrBuffer));
+#endif
+
   if (radius_pass_1 == 0) {
     // |radius_pass_0| and |radius_pass_1| cannot both be 0, so we have the
     // following assertion.

@@ -20,6 +20,7 @@
 
 #include "src/frame_buffer_utils.h"
 #include "src/utils/common.h"
+#include "src/utils/compiler_attributes.h"
 #include "src/utils/logging.h"
 
 namespace libgav1 {
@@ -194,6 +195,30 @@ bool YuvBuffer::Realloc(int bitdepth, bool is_monochrome, int width, int height,
   assert(!is_monochrome || stride_[kPlaneV] == 0);
   assert(!is_monochrome || buffer_[kPlaneU] == nullptr);
   assert(!is_monochrome || buffer_[kPlaneV] == nullptr);
+
+#if LIBGAV1_MSAN
+  // The optimized loop restoration code will overread the visible frame buffer
+  // into the right border. Initialize the right border to prevent msan
+  // warnings.
+  constexpr uint8_t right_val = 0x55;
+  uint8_t* rb = buffer_[kPlaneY] + width;
+  for (int i = 0; i < height; ++i) {
+    memset(rb, right_val, right_border);
+    rb += stride_[kPlaneY];
+  }
+  if (!is_monochrome) {
+    rb = buffer_[kPlaneU] + uv_width;
+    for (int i = 0; i < uv_height; ++i) {
+      memset(rb, right_val, uv_right_border);
+      rb += stride_[kPlaneU];
+    }
+    rb = buffer_[kPlaneV] + uv_width;
+    for (int i = 0; i < uv_height; ++i) {
+      memset(rb, right_val, uv_right_border);
+      rb += stride_[kPlaneV];
+    }
+  }
+#endif
 
   return true;
 }
