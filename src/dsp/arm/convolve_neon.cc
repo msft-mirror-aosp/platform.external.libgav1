@@ -784,6 +784,12 @@ void Convolve2D_NEON(const void* LIBGAV1_RESTRICT const reference,
   uint16_t
       intermediate_result[kMaxSuperBlockSizeInPixels *
                           (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1)];
+#if LIBGAV1_MSAN
+  // Quiet msan warnings. Set with random non-zero value to aid in debugging.
+  memset(intermediate_result, 0x33,
+         kMaxSuperBlockSizeInPixels *
+             (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1));
+#endif
   const int intermediate_height = height + vertical_taps - 1;
   const ptrdiff_t src_stride = reference_stride;
   const auto* const src = static_cast<const uint8_t*>(reference) -

@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>
@@ -57,6 +58,13 @@ struct TileScratchBuffer : public MaxAlignedAllocable {
 
     convolve_block_buffer = MakeAlignedUniquePtr<uint8_t>(
         kMaxAlignment, convolve_buffer_height * convolve_block_buffer_stride);
+#if LIBGAV1_MSAN
+    // Quiet msan warnings in ConvolveScale2D_NEON(). Set with random non-zero
+    // value to aid in future debugging.
+    memset(convolve_block_buffer.get(), 0x66,
+           convolve_buffer_height * convolve_block_buffer_stride);
+#endif
+
     return convolve_block_buffer != nullptr;
   }
 
