@@ -56,6 +56,17 @@ void SuperResCoefficients_NEON(const int upscaled_width,
     vst1q_u8(dst, d[3]);
     dst += 16;
   } while (--x != 0);
+#if LIBGAV1_MSAN
+  // Check for extra upscaled pixel calculations. (see SuperRes_NEON)
+  if (upscaled_width & 0xf) {
+    // If calculating extra pixels, zero out the coefficients to quiet msan
+    // warnings.
+    for (int i = 0; i < 4; ++i) {
+      vst1q_u8(dst, vdupq_n_u8(0));
+      dst += 16;
+    }
+  }
+#endif
 }
 
 // Maximum sum of positive taps: 171 = 7 + 86 + 71 + 7
