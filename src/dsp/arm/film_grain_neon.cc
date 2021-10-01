@@ -688,14 +688,10 @@ inline int16x8_t GetScalingFactors(
   int16_t start_vals[8];
   static_assert(bitdepth <= kBitdepth10,
                 "NEON Film Grain is not yet implemented for 12bpp.");
-  start_vals[0] = scaling_lut[source[0]];
-  start_vals[1] = scaling_lut[source[1]];
-  start_vals[2] = scaling_lut[source[2]];
-  start_vals[3] = scaling_lut[source[3]];
-  start_vals[4] = scaling_lut[source[4]];
-  start_vals[5] = scaling_lut[source[5]];
-  start_vals[6] = scaling_lut[source[6]];
-  start_vals[7] = scaling_lut[source[7]];
+  for (int i = 0; i < 8; ++i) {
+    assert(source[i] < kScalingLookupTableSize << (bitdepth - 2));
+    start_vals[i] = scaling_lut[source[i]];
+  }
   return vld1q_s16(start_vals);
 }
 
