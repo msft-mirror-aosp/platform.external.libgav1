@@ -218,6 +218,15 @@ bool YuvBuffer::Realloc(int bitdepth, bool is_monochrome, int width, int height,
       rb += stride_[kPlaneV];
     }
   }
+
+  // The optimized cfl subsampler will overread (to the right of the current
+  // block) into the uninitialized visible area. Initialize the visible area to
+  // quiet msan warnings.
+  uint8_t* y_visible = buffer_[kPlaneY];
+  for (int i = 0; i < height; ++i) {
+    memset(y_visible, right_val, width);
+    y_visible += stride_[kPlaneY];
+  }
 #endif
 
   return true;
