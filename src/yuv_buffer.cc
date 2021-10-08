@@ -198,23 +198,28 @@ bool YuvBuffer::Realloc(int bitdepth, bool is_monochrome, int width, int height,
 
 #if LIBGAV1_MSAN
   // The optimized loop restoration code will overread the visible frame buffer
-  // into the right border. Initialize the right border to prevent msan
-  // warnings.
+  // into the right border. Initialize the right border and padding to prevent
+  // msan warnings.
+  const int padded_right_border_size = stride_[kPlaneY] - width - left_border;
   constexpr uint8_t right_val = 0x55;
   uint8_t* rb = buffer_[kPlaneY] + width;
   for (int i = 0; i < height; ++i) {
-    memset(rb, right_val, right_border);
+    memset(rb, right_val, padded_right_border_size);
     rb += stride_[kPlaneY];
   }
   if (!is_monochrome) {
+    const int u_padded_right_border_size =
+        stride_[kPlaneU] - uv_width - uv_left_border;
     rb = buffer_[kPlaneU] + uv_width;
     for (int i = 0; i < uv_height; ++i) {
-      memset(rb, right_val, uv_right_border);
+      memset(rb, right_val, u_padded_right_border_size);
       rb += stride_[kPlaneU];
     }
+    const int v_padded_right_border_size =
+        stride_[kPlaneV] - uv_width - uv_left_border;
     rb = buffer_[kPlaneV] + uv_width;
     for (int i = 0; i < uv_height; ++i) {
-      memset(rb, right_val, uv_right_border);
+      memset(rb, right_val, v_padded_right_border_size);
       rb += stride_[kPlaneV];
     }
   }
