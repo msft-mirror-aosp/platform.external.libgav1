@@ -786,9 +786,7 @@ void Convolve2D_NEON(const void* LIBGAV1_RESTRICT const reference,
                           (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1)];
 #if LIBGAV1_MSAN
   // Quiet msan warnings. Set with random non-zero value to aid in debugging.
-  memset(intermediate_result, 0x33,
-         kMaxSuperBlockSizeInPixels *
-             (kMaxSuperBlockSizeInPixels + kSubPixelTaps - 1));
+  memset(intermediate_result, 0x33, sizeof(intermediate_result));
 #endif
   const int intermediate_height = height + vertical_taps - 1;
   const ptrdiff_t src_stride = reference_stride;
@@ -833,6 +831,10 @@ inline uint8x8x3_t LoadSrcVals(const uint8_t* const src_x) {
   const uint8x16_t src_val = vld1q_u8(src_x);
   ret.val[0] = vget_low_u8(src_val);
   ret.val[1] = vget_high_u8(src_val);
+#if LIBGAV1_MSAN
+  // Initialize to quiet msan warnings when grade_x <= 1.
+  ret.val[2] = vdup_n_u8(0);
+#endif
   if (grade_x > 1) {
     ret.val[2] = vld1_u8(src_x + 16);
   }
@@ -1523,7 +1525,10 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
   // guaranteed to fit in int16_t.
   int16_t intermediate_result[kIntermediateAllocWidth *
                               (2 * kIntermediateAllocWidth + 8)];
-
+#if LIBGAV1_MSAN
+  // Quiet msan warnings. Set with random non-zero value to aid in debugging.
+  memset(intermediate_result, 0x44, sizeof(intermediate_result));
+#endif
   // Horizontal filter.
   // Filter types used for width <= 4 are different from those for width > 4.
   // When width > 4, the valid filter index range is always [0, 3].
