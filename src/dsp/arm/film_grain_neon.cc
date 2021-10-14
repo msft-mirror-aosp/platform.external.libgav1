@@ -52,8 +52,10 @@ inline int16x8_t GetSignedSource8(const uint8_t* src) {
   return ZeroExtend(vld1_u8(src));
 }
 
-inline int16x8_t GetSignedSource8Msan(const uint8_t* src, int valid_range) {
-  return ZeroExtend(Load1MsanU8(src, 8 - valid_range));
+inline int16x8_t GetSignedSource8Msan(const uint8_t* src, int /*valid_range*/) {
+  // TODO(b/194217060): restore |valid_range| usage after correcting call sites
+  // causing test vector failures.
+  return ZeroExtend(Load1MsanU8(src, 0));
 }
 
 inline void StoreUnsigned8(uint8_t* dest, const uint16x8_t data) {
@@ -67,8 +69,11 @@ inline int16x8_t GetSignedSource8(const uint16_t* src) {
   return vreinterpretq_s16_u16(vld1q_u16(src));
 }
 
-inline int16x8_t GetSignedSource8Msan(const uint16_t* src, int valid_range) {
-  return vreinterpretq_s16_u16(Load1QMsanU16(src, 16 - valid_range));
+inline int16x8_t GetSignedSource8Msan(const uint16_t* src,
+                                      int /*valid_range*/) {
+  // TODO(b/194217060): restore |valid_range| usage after correcting call sites
+  // causing test vector failures.
+  return vreinterpretq_s16_u16(Load1QMsanU16(src, 0));
 }
 
 inline void StoreUnsigned8(uint16_t* dest, const uint16x8_t data) {
@@ -193,13 +198,17 @@ inline uint16x8_t GetAverageLuma(const uint8_t* const luma, int subsampling_x) {
 }
 
 inline uint16x8_t GetAverageLumaMsan(const uint8_t* const luma,
-                                     int subsampling_x, int valid_range) {
+                                     int subsampling_x, int /*valid_range*/) {
   if (subsampling_x != 0) {
-    const uint8x16_t src = Load1QMsanU8(luma, 16 - valid_range);
+    // TODO(b/194217060): restore |valid_range| usage after correcting call
+    // sites causing test vector failures.
+    const uint8x16_t src = Load1QMsanU8(luma, 0);
 
     return vrshrq_n_u16(vpaddlq_u8(src), 1);
   }
-  return vmovl_u8(Load1MsanU8(luma, 8 - valid_range));
+  // TODO(b/194217060): restore |valid_range| usage after correcting call sites
+  // causing test vector failures.
+  return vmovl_u8(Load1MsanU8(luma, 0));
 }
 
 #if LIBGAV1_MAX_BITDEPTH >= 10
@@ -243,12 +252,16 @@ inline uint16x8_t GetAverageLuma(const uint16_t* const luma,
 }
 
 inline uint16x8_t GetAverageLumaMsan(const uint16_t* const luma,
-                                     int subsampling_x, int valid_range) {
+                                     int subsampling_x, int /*valid_range*/) {
   if (subsampling_x != 0) {
-    const uint16x8x2_t src = Load2QMsanU16(luma, 32 - valid_range);
+    // TODO(b/194217060): restore |valid_range| usage after correcting call
+    // sites causing test vector failures.
+    const uint16x8x2_t src = Load2QMsanU16(luma, 0);
     return vrhaddq_u16(src.val[0], src.val[1]);
   }
-  return Load1QMsanU16(luma, 16 - valid_range);
+  // TODO(b/194217060): restore |valid_range| usage after correcting call sites
+  // causing test vector failures.
+  return Load1QMsanU16(luma, 0);
 }
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
