@@ -952,6 +952,10 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
   const int chroma_width = (width + subsampling_x) >> subsampling_x;
   const int safe_chroma_width = chroma_width & ~7;
   uint8_t luma_buffer[16];
+#if LIBGAV1_MSAN
+  // Quiet msan warnings.
+  memset(luma_buffer, 0, sizeof(luma_buffer));
+#endif
   const int16x8_t offset = vdupq_n_s16(chroma_offset << 5);
 
   start_height >>= subsampling_y;

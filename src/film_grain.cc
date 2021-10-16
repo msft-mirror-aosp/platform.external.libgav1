@@ -460,22 +460,25 @@ bool FilmGrain<bitdepth>::AllocateNoiseStripes() {
 
 template <int bitdepth>
 bool FilmGrain<bitdepth>::AllocateNoiseImage() {
+  // When LIBGAV1_MSAN is enabled, zero initialize to quiet optimized film grain
+  // msan warnings.
+  constexpr bool zero_initialize = LIBGAV1_MSAN == 1;
   if (params_.num_y_points > 0 &&
       !noise_image_[kPlaneY].Reset(height_, width_ + kNoiseImagePadding,
-                                   /*zero_initialize=*/false)) {
+                                   zero_initialize)) {
     return false;
   }
   if (!is_monochrome_) {
     if (!noise_image_[kPlaneU].Reset(
             (height_ + subsampling_y_) >> subsampling_y_,
             ((width_ + subsampling_x_) >> subsampling_x_) + kNoiseImagePadding,
-            /*zero_initialize=*/false)) {
+            zero_initialize)) {
       return false;
     }
     if (!noise_image_[kPlaneV].Reset(
             (height_ + subsampling_y_) >> subsampling_y_,
             ((width_ + subsampling_x_) >> subsampling_x_) + kNoiseImagePadding,
-            /*zero_initialize=*/false)) {
+            zero_initialize)) {
       return false;
     }
   }
