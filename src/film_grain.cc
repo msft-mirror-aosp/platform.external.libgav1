@@ -342,6 +342,10 @@ bool FilmGrain<bitdepth>::Init() {
       if (scaling_lut_chroma_buffer_ == nullptr) return false;
 
       int16_t* buffer = scaling_lut_chroma_buffer_.get();
+#if LIBGAV1_MSAN
+      // Quiet film grain / md5 msan warnings.
+      memset(buffer, 0, buffer_size * 2);
+#endif
       if (params_.num_u_points > 0) {
         scaling_lut_u_ = buffer;
         dsp.film_grain.initialize_scaling_lut(
