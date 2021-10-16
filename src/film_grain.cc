@@ -319,6 +319,10 @@ bool FilmGrain<bitdepth>::Init() {
   //
   // Note: Although it does not seem to make sense, there are test vectors
   // with chroma_scaling_from_luma=true and params_.num_y_points=0.
+#if LIBGAV1_MSAN
+  // Quiet film grain / md5 msan warnings.
+  memset(scaling_lut_y_, 0, sizeof(scaling_lut_y_));
+#endif
   if (use_luma || params_.chroma_scaling_from_luma) {
     dsp.film_grain.initialize_scaling_lut(
         params_.num_y_points, params_.point_y_value, params_.point_y_scaling,
