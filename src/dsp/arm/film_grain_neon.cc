@@ -1311,6 +1311,11 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
   const int chroma_width = (width + subsampling_x) >> subsampling_x;
   const int safe_chroma_width = chroma_width & ~7;
   uint16_t luma_buffer[16];
+#if LIBGAV1_MSAN
+  // TODO(b/194217060): This can be removed if the range calculations below are
+  // fixed.
+  memset(luma_buffer, 0, sizeof(luma_buffer));
+#endif
   // Offset is added before downshifting in order to take advantage of
   // saturation, so it has to be upscaled by 6 bits, plus 2 bits for 10bpp.
   const int32x4_t offset = vdupq_n_s32(chroma_offset << (6 + 2));
