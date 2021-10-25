@@ -1515,12 +1515,12 @@ void ConvolveScale2D_NEON(const void* LIBGAV1_RESTRICT const reference,
   const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
   const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
   assert(step_x <= 2048);
+  assert(step_y <= 2048);
   const int num_vert_taps = GetNumTapsInFilter(vert_filter_index);
   const int intermediate_height =
       (((height - 1) * step_y + (1 << kScaleSubPixelBits) - 1) >>
        kScaleSubPixelBits) +
       num_vert_taps;
-  assert(step_x <= 2048);
   // The output of the horizontal filter, i.e. the intermediate_result, is
   // guaranteed to fit in int16_t.
   int16_t intermediate_result[kIntermediateAllocWidth *
