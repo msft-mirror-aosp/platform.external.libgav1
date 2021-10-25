@@ -47,9 +47,10 @@ struct TileScratchBuffer : public MaxAlignedAllocable {
     const int pixel_size = 1;
 #endif
 
+    static_assert(kConvolveScaleBorderRight >= kConvolveBorderRight, "");
     constexpr int unaligned_convolve_buffer_stride =
         kMaxScaledSuperBlockSizeInPixels + kConvolveBorderLeftTop +
-        kConvolveBorderRight;
+        kConvolveScaleBorderRight;
     convolve_block_buffer_stride = Align<ptrdiff_t>(
         unaligned_convolve_buffer_stride * pixel_size, kMaxAlignment);
     constexpr int convolve_buffer_height = kMaxScaledSuperBlockSizeInPixels +
