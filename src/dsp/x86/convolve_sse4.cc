@@ -329,13 +329,12 @@ void Convolve2D_SSE4_1(const void* LIBGAV1_RESTRICT const reference,
   }
 }
 
-template <int filter_index, bool is_compound = false>
+template <int num_taps, bool is_compound = false>
 void FilterVertical(const uint8_t* LIBGAV1_RESTRICT src,
                     const ptrdiff_t src_stride,
                     void* LIBGAV1_RESTRICT const dst,
                     const ptrdiff_t dst_stride, const int width,
                     const int height, const __m128i* const v_tap) {
-  const int num_taps = GetNumTapsInFilter(filter_index);
   const int next_row = num_taps - 1;
   auto* dst8 = static_cast<uint8_t*>(dst);
   auto* dst16 = static_cast<uint16_t*>(dst);
@@ -373,7 +372,7 @@ void FilterVertical(const uint8_t* LIBGAV1_RESTRICT src,
       srcs[next_row] = LoadLo8(src_x);
       src_x += src_stride;
 
-      const __m128i sums = SumVerticalTaps<filter_index>(srcs, v_tap);
+      const __m128i sums = SumVerticalTaps<num_taps>(srcs, v_tap);
       if (is_compound) {
         const __m128i results = Compound1DShift(sums);
         StoreUnaligned16(dst16_x, results);
@@ -425,54 +424,44 @@ void ConvolveVertical_SSE4_1(
   if (filter_index < 2) {  // 6 tap.
     SetupTaps<6>(&v_filter, taps);
     if (width == 2) {
-      FilterVertical2xH<6, 0>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical2xH<6>(src, src_stride, dest, dest_stride, height, taps);
     } else if (width == 4) {
-      FilterVertical4xH<6, 0>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical4xH<6>(src, src_stride, dest, dest_stride, height, taps);
     } else {
-      FilterVertical<0>(src, src_stride, dest, dest_stride, width, height,
+      FilterVertical<6>(src, src_stride, dest, dest_stride, width, height,
                         taps);
     }
   } else if (filter_index == 2) {  // 8 tap.
     SetupTaps<8>(&v_filter, taps);
     if (width == 2) {
-      FilterVertical2xH<8, 2>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical2xH<8>(src, src_stride, dest, dest_stride, height, taps);
     } else if (width == 4) {
-      FilterVertical4xH<8, 2>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical4xH<8>(src, src_stride, dest, dest_stride, height, taps);
     } else {
-      FilterVertical<2>(src, src_stride, dest, dest_stride, width, height,
+      FilterVertical<8>(src, src_stride, dest, dest_stride, width, height,
                         taps);
     }
   } else if (filter_index == 3) {  // 2 tap.
     SetupTaps<2>(&v_filter, taps);
     if (width == 2) {
-      FilterVertical2xH<2, 3>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical2xH<2>(src, src_stride, dest, dest_stride, height, taps);
     } else if (width == 4) {
-      FilterVertical4xH<2, 3>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical4xH<2>(src, src_stride, dest, dest_stride, height, taps);
     } else {
-      FilterVertical<3>(src, src_stride, dest, dest_stride, width, height,
+      FilterVertical<2>(src, src_stride, dest, dest_stride, width, height,
                         taps);
     }
-  } else if (filter_index == 4) {  // 4 tap.
-    SetupTaps<4>(&v_filter, taps);
-    if (width == 2) {
-      FilterVertical2xH<4, 4>(src, src_stride, dest, dest_stride, height, taps);
-    } else if (width == 4) {
-      FilterVertical4xH<4, 4>(src, src_stride, dest, dest_stride, height, taps);
-    } else {
-      FilterVertical<4>(src, src_stride, dest, dest_stride, width, height,
-                        taps);
-    }
-  } else {
-    // TODO(slavarnway): Investigate adding |filter_index| == 1 special cases.
+  } else {  // 4 tap
+    // TODO(slavarnway): Investigate adding |filter_index| == 1 special case.
     // See convolve_neon.cc
     SetupTaps<4>(&v_filter, taps);
 
     if (width == 2) {
-      FilterVertical2xH<4, 5>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical2xH<4>(src, src_stride, dest, dest_stride, height, taps);
     } else if (width == 4) {
-      FilterVertical4xH<4, 5>(src, src_stride, dest, dest_stride, height, taps);
+      FilterVertical4xH<4>(src, src_stride, dest, dest_stride, height, taps);
     } else {
-      FilterVertical<5>(src, src_stride, dest, dest_stride, width, height,
+      FilterVertical<4>(src, src_stride, dest, dest_stride, width, height,
                         taps);
     }
   }
@@ -558,50 +547,37 @@ void ConvolveCompoundVertical_SSE4_1(
   if (filter_index < 2) {  // 6 tap.
     SetupTaps<6>(&v_filter, taps);
     if (width == 4) {
-      FilterVertical4xH<6, 0, /*is_compound=*/true>(src, src_stride, dest, 4,
-                                                    height, taps);
+      FilterVertical4xH<6, /*is_compound=*/true>(src, src_stride, dest, 4,
+                                                 height, taps);
     } else {
-      FilterVertical<0, /*is_compound=*/true>(src, src_stride, dest, width,
+      FilterVertical<6, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps);
     }
   } else if (filter_index == 2) {  // 8 tap.
     SetupTaps<8>(&v_filter, taps);
-
     if (width == 4) {
-      FilterVertical4xH<8, 2, /*is_compound=*/true>(src, src_stride, dest, 4,
-                                                    height, taps);
+      FilterVertical4xH<8, /*is_compound=*/true>(src, src_stride, dest, 4,
+                                                 height, taps);
     } else {
-      FilterVertical<2, /*is_compound=*/true>(src, src_stride, dest, width,
+      FilterVertical<8, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps);
     }
   } else if (filter_index == 3) {  // 2 tap.
     SetupTaps<2>(&v_filter, taps);
-
     if (width == 4) {
-      FilterVertical4xH<2, 3, /*is_compound=*/true>(src, src_stride, dest, 4,
-                                                    height, taps);
+      FilterVertical4xH<2, /*is_compound=*/true>(src, src_stride, dest, 4,
+                                                 height, taps);
     } else {
-      FilterVertical<3, /*is_compound=*/true>(src, src_stride, dest, width,
+      FilterVertical<2, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps);
     }
-  } else if (filter_index == 4) {  // 4 tap.
+  } else {  // 4 tap
     SetupTaps<4>(&v_filter, taps);
-
     if (width == 4) {
-      FilterVertical4xH<4, 4, /*is_compound=*/true>(src, src_stride, dest, 4,
-                                                    height, taps);
+      FilterVertical4xH<4, /*is_compound=*/true>(src, src_stride, dest, 4,
+                                                 height, taps);
     } else {
       FilterVertical<4, /*is_compound=*/true>(src, src_stride, dest, width,
-                                              width, height, taps);
-    }
-  } else {
-    SetupTaps<4>(&v_filter, taps);
-
-    if (width == 4) {
-      FilterVertical4xH<4, 5, /*is_compound=*/true>(src, src_stride, dest, 4,
-                                                    height, taps);
-    } else {
-      FilterVertical<5, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps);
     }
   }
