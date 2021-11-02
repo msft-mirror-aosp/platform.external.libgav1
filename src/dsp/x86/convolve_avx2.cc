@@ -145,14 +145,14 @@ void FilterHorizontal(const uint8_t* LIBGAV1_RESTRICT src,
       do {
         if (is_2d) {
           const __m128i sum =
-              HorizontalTaps8To16_2x2<filter_index>(src, src_stride, v_tap);
+              HorizontalTaps8To16_2x2<num_taps>(src, src_stride, v_tap);
           Store4(&dest16[0], sum);
           dest16 += pred_stride;
           Store4(&dest16[0], _mm_srli_si128(sum, 8));
           dest16 += pred_stride;
         } else {
           const __m128i sum =
-              SimpleHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
+              SimpleHorizontalTaps2x2<num_taps>(src, src_stride, v_tap);
           Store2(dest8, sum);
           dest8 += pred_stride;
           Store2(dest8, _mm_srli_si128(sum, 4));

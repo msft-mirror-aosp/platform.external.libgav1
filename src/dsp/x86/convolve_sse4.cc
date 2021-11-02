@@ -36,7 +36,7 @@ namespace {
 
 #include "src/dsp/x86/convolve_sse4.inc"
 
-template <int filter_index>
+template <int num_taps>
 __m128i SumHorizontalTaps(const uint8_t* LIBGAV1_RESTRICT const src,
                           const __m128i* const v_tap) {
   __m128i v_src[4];
@@ -44,33 +44,33 @@ __m128i SumHorizontalTaps(const uint8_t* LIBGAV1_RESTRICT const src,
   const __m128i src_long_dup_lo = _mm_unpacklo_epi8(src_long, src_long);
   const __m128i src_long_dup_hi = _mm_unpackhi_epi8(src_long, src_long);
 
-  if (filter_index < 2) {
+  if (num_taps == 6) {
     // 6 taps.
     v_src[0] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 3);   // _21
     v_src[1] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 7);   // _43
     v_src[2] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 11);  // _65
-  } else if (filter_index == 2) {
+  } else if (num_taps == 8) {
     // 8 taps.
     v_src[0] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 1);   // _10
     v_src[1] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 5);   // _32
     v_src[2] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 9);   // _54
     v_src[3] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 13);  // _76
-  } else if (filter_index == 3) {
+  } else if (num_taps == 2) {
     // 2 taps.
     v_src[0] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 7);  // _43
-  } else if (filter_index > 3) {
+  } else {
     // 4 taps.
     v_src[0] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 5);  // _32
     v_src[1] = _mm_alignr_epi8(src_long_dup_hi, src_long_dup_lo, 9);  // _54
   }
-  const __m128i sum = SumOnePassTaps<filter_index>(v_src, v_tap);
+  const __m128i sum = SumOnePassTaps<num_taps>(v_src, v_tap);
   return sum;
 }
 
-template <int filter_index>
+template <int num_taps>
 __m128i SimpleHorizontalTaps(const uint8_t* LIBGAV1_RESTRICT const src,
                              const __m128i* const v_tap) {
-  __m128i sum = SumHorizontalTaps<filter_index>(src, v_tap);
+  __m128i sum = SumHorizontalTaps<num_taps>(src, v_tap);
 
   // Normally the Horizontal pass does the downshift in two passes:
   // kInterRoundBitsHorizontal - 1 and then (kFilterBits -
@@ -83,16 +83,15 @@ __m128i SimpleHorizontalTaps(const uint8_t* LIBGAV1_RESTRICT const src,
   return _mm_packus_epi16(sum, sum);
 }
 
-template <int filter_index>
+template <int num_taps>
 __m128i HorizontalTaps8To16(const uint8_t* LIBGAV1_RESTRICT const src,
                             const __m128i* const v_tap) {
-  const __m128i sum = SumHorizontalTaps<filter_index>(src, v_tap);
+  const __m128i sum = SumHorizontalTaps<num_taps>(src, v_tap);
 
   return RightShiftWithRounding_S16(sum, kInterRoundBitsHorizontal - 1);
 }
 
-template <int num_taps, int filter_index, bool is_2d = false,
-          bool is_compound = false>
+template <int num_taps, bool is_2d = false, bool is_compound = false>
 void FilterHorizontal(const uint8_t* LIBGAV1_RESTRICT src,
                       const ptrdiff_t src_stride,
                       void* LIBGAV1_RESTRICT const dest,
@@ -108,16 +107,14 @@ void FilterHorizontal(const uint8_t* LIBGAV1_RESTRICT src,
       int x = 0;
       do {
         if (is_2d || is_compound) {
-          const __m128i v_sum =
-              HorizontalTaps8To16<filter_index>(&src[x], v_tap);
+          const __m128i v_sum = HorizontalTaps8To16<num_taps>(&src[x], v_tap);
           if (is_2d) {
             StoreAligned16(&dest16[x], v_sum);
           } else {
             StoreUnaligned16(&dest16[x], v_sum);
           }
         } else {
-          const __m128i result =
-              SimpleHorizontalTaps<filter_index>(&src[x], v_tap);
+          const __m128i result = SimpleHorizontalTaps<num_taps>(&src[x], v_tap);
           StoreLo8(&dest8[x], result);
         }
         x += 8;
@@ -138,10 +135,10 @@ void FilterHorizontal(const uint8_t* LIBGAV1_RESTRICT src,
       int y = height;
       do {
         if (is_2d || is_compound) {
-          const __m128i v_sum = HorizontalTaps8To16<filter_index>(src, v_tap);
+          const __m128i v_sum = HorizontalTaps8To16<num_taps>(src, v_tap);
           StoreLo8(dest16, v_sum);
         } else {
-          const __m128i result = SimpleHorizontalTaps<filter_index>(src, v_tap);
+          const __m128i result = SimpleHorizontalTaps<num_taps>(src, v_tap);
           Store4(&dest8[0], result);
         }
         src += src_stride;
@@ -157,14 +154,14 @@ void FilterHorizontal(const uint8_t* LIBGAV1_RESTRICT src,
       do {
         if (is_2d) {
           const __m128i sum =
-              HorizontalTaps8To16_2x2<filter_index>(src, src_stride, v_tap);
+              HorizontalTaps8To16_2x2<num_taps>(src, src_stride, v_tap);
           Store4(&dest16[0], sum);
           dest16 += pred_stride;
           Store4(&dest16[0], _mm_srli_si128(sum, 8));
           dest16 += pred_stride;
         } else {
           const __m128i sum =
-              SimpleHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
+              SimpleHorizontalTaps2x2<num_taps>(src, src_stride, v_tap);
           Store2(dest8, sum);
           dest8 += pred_stride;
           Store2(dest8, _mm_srli_si128(sum, 4));
@@ -181,7 +178,7 @@ void FilterHorizontal(const uint8_t* LIBGAV1_RESTRICT src,
         assert(height % 2 == 1);
         __m128i sum;
         const __m128i input = LoadLo8(&src[2]);
-        if (filter_index == 3) {
+        if (num_taps == 2) {
           // 03 04 04 05 05 06 06 07 ....
           const __m128i v_src_43 =
               _mm_srli_si128(_mm_unpacklo_epi8(input, input), 3);
@@ -218,28 +215,25 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
 
   if (filter_index == 2) {  // 8 tap.
     SetupTaps<8>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<8, 2, is_2d, is_compound>(src, src_stride, dst, dst_stride,
-                                               width, height, v_tap);
+    FilterHorizontal<8, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                            width, height, v_tap);
   } else if (filter_index == 1) {  // 6 tap.
     SetupTaps<6>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<6, 1, is_2d, is_compound>(src, src_stride, dst, dst_stride,
-                                               width, height, v_tap);
+    FilterHorizontal<6, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                            width, height, v_tap);
   } else if (filter_index == 0) {  // 6 tap.
     SetupTaps<6>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<6, 0, is_2d, is_compound>(src, src_stride, dst, dst_stride,
-                                               width, height, v_tap);
-  } else if (filter_index == 4) {  // 4 tap.
+    FilterHorizontal<6, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                            width, height, v_tap);
+  } else if ((filter_index & 0x4) != 0) {  // 4 tap.
+    // ((filter_index == 4) | (filter_index == 5))
     SetupTaps<4>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<4, 4, is_2d, is_compound>(src, src_stride, dst, dst_stride,
-                                               width, height, v_tap);
-  } else if (filter_index == 5) {  // 4 tap.
-    SetupTaps<4>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<4, 5, is_2d, is_compound>(src, src_stride, dst, dst_stride,
-                                               width, height, v_tap);
+    FilterHorizontal<4, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                            width, height, v_tap);
   } else {  // 2 tap.
     SetupTaps<2>(&v_horizontal_filter, v_tap);
-    FilterHorizontal<2, 3, is_2d, is_compound>(src, src_stride, dst, dst_stride,
-                                               width, height, v_tap);
+    FilterHorizontal<2, is_2d, is_compound>(src, src_stride, dst, dst_stride,
+                                            width, height, v_tap);
   }
 }
 
@@ -909,7 +903,7 @@ inline void ConvolveHorizontalScale(const uint8_t* LIBGAV1_RESTRICT src,
                                                       source);
 
         StoreLo8(intermediate, RightShiftWithRounding_S16(
-                                   SumOnePassTaps<filter_index>(source, taps),
+                                   SumOnePassTaps<num_taps>(source, taps),
                                    kInterRoundBitsHorizontal - 1));
         src_x += src_stride;
         intermediate += kIntermediateStride;
@@ -936,10 +930,9 @@ inline void ConvolveHorizontalScale(const uint8_t* LIBGAV1_RESTRICT src,
       PrepareSourceVectors<num_taps, grade_x>(src_x, packed_indices, source);
 
       // Shift by one less because the taps are halved.
-      StoreAligned16(
-          intermediate_x,
-          RightShiftWithRounding_S16(SumOnePassTaps<filter_index>(source, taps),
-                                     kInterRoundBitsHorizontal - 1));
+      StoreAligned16(intermediate_x, RightShiftWithRounding_S16(
+                                         SumOnePassTaps<num_taps>(source, taps),
+                                         kInterRoundBitsHorizontal - 1));
       src_x += src_stride;
       intermediate_x += kIntermediateStride;
     } while (--y != 0);

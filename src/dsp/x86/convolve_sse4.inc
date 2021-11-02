@@ -21,43 +21,8 @@
 // Multiply every entry in |src[]| by the corresponding entry in |taps[]| and
 // sum. The filters in |taps[]| are pre-shifted by 1. This prevents the final
 // sum from outranging int16_t.
-template <int filter_index>
-__m128i SumOnePassTaps(const __m128i* const src, const __m128i* const taps) {
-  __m128i sum;
-  if (filter_index < 2) {
-    // 6 taps.
-    const __m128i v_madd_21 = _mm_maddubs_epi16(src[0], taps[0]);  // k2k1
-    const __m128i v_madd_43 = _mm_maddubs_epi16(src[1], taps[1]);  // k4k3
-    const __m128i v_madd_65 = _mm_maddubs_epi16(src[2], taps[2]);  // k6k5
-    sum = _mm_add_epi16(v_madd_21, v_madd_43);
-    sum = _mm_add_epi16(sum, v_madd_65);
-  } else if (filter_index == 2) {
-    // 8 taps.
-    const __m128i v_madd_10 = _mm_maddubs_epi16(src[0], taps[0]);  // k1k0
-    const __m128i v_madd_32 = _mm_maddubs_epi16(src[1], taps[1]);  // k3k2
-    const __m128i v_madd_54 = _mm_maddubs_epi16(src[2], taps[2]);  // k5k4
-    const __m128i v_madd_76 = _mm_maddubs_epi16(src[3], taps[3]);  // k7k6
-    const __m128i v_sum_3210 = _mm_add_epi16(v_madd_10, v_madd_32);
-    const __m128i v_sum_7654 = _mm_add_epi16(v_madd_54, v_madd_76);
-    sum = _mm_add_epi16(v_sum_7654, v_sum_3210);
-  } else if (filter_index == 3) {
-    // 2 taps.
-    sum = _mm_maddubs_epi16(src[0], taps[0]);  // k4k3
-  } else {
-    // 4 taps.
-    const __m128i v_madd_32 = _mm_maddubs_epi16(src[0], taps[0]);  // k3k2
-    const __m128i v_madd_54 = _mm_maddubs_epi16(src[1], taps[1]);  // k5k4
-    sum = _mm_add_epi16(v_madd_32, v_madd_54);
-  }
-  return sum;
-}
-
-// The vertical version uses num_taps instead of filter_index.
-// TODO(slavarnway): Investigate merging SumOnePassTaps and
-// SumOnePassTapsVertical
 template <int num_taps>
-__m128i SumOnePassTapsVertical(const __m128i* const src,
-                               const __m128i* const taps) {
+__m128i SumOnePassTaps(const __m128i* const src, const __m128i* const taps) {
   __m128i sum;
   if (num_taps == 6) {
     // 6 taps.
@@ -87,13 +52,13 @@ __m128i SumOnePassTapsVertical(const __m128i* const src,
   return sum;
 }
 
-template <int filter_index>
+template <int num_taps>
 __m128i SumHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
                              const __m128i* const v_tap) {
   // 00 01 02 03 04 05 06 07 10 11 12 13 14 15 16 17
   const __m128i v_src = LoadHi8(LoadLo8(&src[0]), &src[src_stride]);
 
-  if (filter_index == 3) {
+  if (num_taps == 2) {
     // 03 04 04 05 05 06 06 07 13 14 14 15 15 16 16 17
     const __m128i v_src_43 = _mm_shuffle_epi8(
         v_src, _mm_set_epi32(0x0f0e0e0d, 0x0d0c0c0b, 0x07060605, 0x05040403));
@@ -114,10 +79,10 @@ __m128i SumHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
   return v_sum_5432;
 }
 
-template <int filter_index>
+template <int num_taps>
 __m128i SimpleHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
                                 const __m128i* const v_tap) {
-  __m128i sum = SumHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
+  __m128i sum = SumHorizontalTaps2x2<num_taps>(src, src_stride, v_tap);
 
   // Normally the Horizontal pass does the downshift in two passes:
   // kInterRoundBitsHorizontal - 1 and then (kFilterBits -
@@ -130,11 +95,10 @@ __m128i SimpleHorizontalTaps2x2(const uint8_t* src, const ptrdiff_t src_stride,
   return _mm_packus_epi16(sum, sum);
 }
 
-template <int filter_index>
+template <int num_taps>
 __m128i HorizontalTaps8To16_2x2(const uint8_t* src, const ptrdiff_t src_stride,
                                 const __m128i* const v_tap) {
-  const __m128i sum =
-      SumHorizontalTaps2x2<filter_index>(src, src_stride, v_tap);
+  const __m128i sum = SumHorizontalTaps2x2<num_taps>(src, src_stride, v_tap);
 
   return RightShiftWithRounding_S16(sum, kInterRoundBitsHorizontal - 1);
 }
@@ -469,7 +433,7 @@ __m128i SumVerticalTaps(const __m128i* const srcs, const __m128i* const v_tap) {
     v_src[0] = _mm_unpacklo_epi8(srcs[0], srcs[1]);
     v_src[1] = _mm_unpacklo_epi8(srcs[2], srcs[3]);
   }
-  const __m128i sum = SumOnePassTapsVertical<num_taps>(v_src, v_tap);
+  const __m128i sum = SumOnePassTaps<num_taps>(v_src, v_tap);
   return sum;
 }
 
