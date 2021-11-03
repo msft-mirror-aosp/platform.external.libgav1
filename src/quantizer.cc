@@ -20,8 +20,9 @@
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
 
-#if LIBGAV1_MAX_BITDEPTH != 8 && LIBGAV1_MAX_BITDEPTH != 10
-#error LIBGAV1_MAX_BITDEPTH must be 8 or 10
+#if LIBGAV1_MAX_BITDEPTH != 8 && LIBGAV1_MAX_BITDEPTH != 10 && \
+    LIBGAV1_MAX_BITDEPTH != 12
+#error LIBGAV1_MAX_BITDEPTH must be 8, 10 or 12
 #endif
 
 namespace libgav1 {
