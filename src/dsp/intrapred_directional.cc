@@ -236,12 +236,43 @@ void Init10bpp() {
 }
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
+#if LIBGAV1_MAX_BITDEPTH == 12
+void Init12bpp() {
+  Dsp* const dsp = dsp_internal::GetWritableDspTable(12);
+  assert(dsp != nullptr);
+#if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  dsp->directional_intra_predictor_zone1 =
+      DirectionalIntraPredictorZone1_C<uint16_t>;
+  dsp->directional_intra_predictor_zone2 =
+      DirectionalIntraPredictorZone2_C<uint16_t>;
+  dsp->directional_intra_predictor_zone3 =
+      DirectionalIntraPredictorZone3_C<uint16_t>;
+#endif  // LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS
+  static_cast<void>(dsp);
+#ifndef LIBGAV1_Dsp12bpp_DirectionalIntraPredictorZone1
+  dsp->directional_intra_predictor_zone1 =
+      DirectionalIntraPredictorZone1_C<uint16_t>;
+#endif
+#ifndef LIBGAV1_Dsp12bpp_DirectionalIntraPredictorZone2
+  dsp->directional_intra_predictor_zone2 =
+      DirectionalIntraPredictorZone2_C<uint16_t>;
+#endif
+#ifndef LIBGAV1_Dsp12bpp_DirectionalIntraPredictorZone3
+  dsp->directional_intra_predictor_zone3 =
+      DirectionalIntraPredictorZone3_C<uint16_t>;
+#endif
+}
+#endif  // LIBGAV1_MAX_BITDEPTH == 12
+
 }  // namespace
 
 void IntraPredDirectionalInit_C() {
   Init8bpp();
 #if LIBGAV1_MAX_BITDEPTH >= 10
   Init10bpp();
+#endif
+#if LIBGAV1_MAX_BITDEPTH == 12
+  Init12bpp();
 #endif
 }
 
