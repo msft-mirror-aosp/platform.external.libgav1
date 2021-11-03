@@ -309,12 +309,6 @@ inline uint8x16_t MaskOverreadsQ(const uint8x16_t source,
   return dst;
 }
 
-inline uint16x8_t MaskOverreadsQ(const uint16x8_t source,
-                                 const ptrdiff_t over_read_in_bytes) {
-  return vreinterpretq_u16_u8(
-      MaskOverreadsQ(vreinterpretq_u8_u16(source), over_read_in_bytes));
-}
-
 inline uint8x8_t Load1MsanU8(const uint8_t* const source,
                              const ptrdiff_t over_read_in_bytes) {
   return MaskOverreads(vld1_u8(source), over_read_in_bytes);
@@ -329,6 +323,20 @@ inline uint16x8_t Load1QMsanU16(const uint16_t* const source,
                                 const ptrdiff_t over_read_in_bytes) {
   return vreinterpretq_u16_u8(MaskOverreadsQ(
       vreinterpretq_u8_u16(vld1q_u16(source)), over_read_in_bytes));
+}
+
+inline uint16x8x2_t Load2QMsanU16(const uint16_t* const source,
+                                  const ptrdiff_t over_read_in_bytes) {
+  // Relative source index of elements (2 bytes each):
+  // dst.val[0]: 00 02 04 06 08 10 12 14
+  // dst.val[1]: 01 03 05 07 09 11 13 15
+  uint16x8x2_t dst = vld2q_u16(source);
+  dst.val[0] = vreinterpretq_u16_u8(MaskOverreadsQ(
+      vreinterpretq_u8_u16(dst.val[0]), over_read_in_bytes >> 1));
+  dst.val[1] = vreinterpretq_u16_u8(
+      MaskOverreadsQ(vreinterpretq_u8_u16(dst.val[1]),
+                     (over_read_in_bytes >> 1) + (over_read_in_bytes % 4)));
+  return dst;
 }
 
 inline uint32x4_t Load1QMsanU32(const uint32_t* const source,
@@ -392,24 +400,6 @@ inline void Store4(void* const buf, const uint16x4_t val) {
 // Simplify code when caller has |buf| cast as uint8_t*.
 inline void Store8(void* const buf, const uint16x8_t val) {
   vst1q_u16(static_cast<uint16_t*>(buf), val);
-}
-
-inline void Store4QMsanS16(void* const buf, const int16x8x4_t src) {
-#if LIBGAV1_MSAN
-  // The memory shadow is incorrect for vst4q_u16, only marking the first 16
-  // bytes of the destination as initialized. To avoid missing truly
-  // uninitialized memory, check the input vectors first, before marking the
-  // whole 64 bytes initialized. If any input vector contains unused values, it
-  // should pass through MaskOverreadsQ first.
-  __msan_check_mem_is_initialized(&src.val[0], sizeof(src.val[0]));
-  __msan_check_mem_is_initialized(&src.val[1], sizeof(src.val[1]));
-  __msan_check_mem_is_initialized(&src.val[2], sizeof(src.val[2]));
-  __msan_check_mem_is_initialized(&src.val[3], sizeof(src.val[3]));
-  vst4q_s16(static_cast<int16_t*>(buf), src);
-  __msan_unpoison(buf, sizeof(int16x8x4_t));
-#else
-  vst4q_s16(static_cast<int16_t*>(buf), src);
-#endif  // LIBGAV1_MSAN
 }
 
 //------------------------------------------------------------------------------
