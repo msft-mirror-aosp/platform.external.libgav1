@@ -78,6 +78,12 @@ dsp::Dsp* GetWritableDspTable(int bitdepth) {
       return &dsp_10bpp;
     }
 #endif
+#if LIBGAV1_MAX_BITDEPTH == 12
+    case 12: {
+      static dsp::Dsp dsp_12bpp;
+      return &dsp_12bpp;
+    }
+#endif
   }
   return nullptr;
 }

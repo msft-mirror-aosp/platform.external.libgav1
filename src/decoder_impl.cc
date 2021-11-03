@@ -1300,6 +1300,10 @@ StatusCode DecoderImpl::DecodeTiles(
                  sequence_header.color_config.bitdepth);
     return kStatusInternalError;
   }
+  if (sequence_header.color_config.bitdepth == 12) {
+    LIBGAV1_DLOG(ERROR, "TODO(b/177464177): 12-bit support is incomplete.");
+    return kStatusUnimplemented;
+  }
 
   const int tile_count = frame_header.tile_info.tile_count;
   assert(tile_count >= 1);
