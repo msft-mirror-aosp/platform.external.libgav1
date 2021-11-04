@@ -41,8 +41,9 @@ constexpr int kMaxTransform1dSize[kNumTransform1ds] = {
 };
 
 void CheckTables(bool c_only) {
-  // TODO(b/177464177): add kBitdepth12 when the dsp table is fully populated.
-#if LIBGAV1_MAX_BITDEPTH >= 10
+#if LIBGAV1_MAX_BITDEPTH == 12
+  static constexpr int kBitdepths[] = {kBitdepth8, kBitdepth10, kBitdepth12};
+#elif LIBGAV1_MAX_BITDEPTH >= 10
   static constexpr int kBitdepths[] = {kBitdepth8, kBitdepth10};
 #else
   static constexpr int kBitdepths[] = {kBitdepth8};
