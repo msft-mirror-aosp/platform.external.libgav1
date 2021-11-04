@@ -109,7 +109,9 @@ void CheckTables(bool c_only) {
     const uint32_t cpu_features = GetCpuInfo();
     super_res_coefficients_is_nonnull = (cpu_features & kSSE4_1) != 0;
 #endif
-    if (c_only) super_res_coefficients_is_nonnull = false;
+    if (c_only || bitdepth == kBitdepth12) {
+      super_res_coefficients_is_nonnull = false;
+    }
     if (super_res_coefficients_is_nonnull) {
       EXPECT_NE(dsp->super_res_coefficients, nullptr);
     } else {
