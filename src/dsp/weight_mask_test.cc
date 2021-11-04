@@ -142,6 +142,52 @@ const char* GetDigest10bpp(int id) {
 }
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
 
+#if LIBGAV1_MAX_BITDEPTH == 12
+const char* GetDigest12bpp(int id) {
+  static const char* const kDigest[] = {
+      "61249978b45a7b99461162526f076de8",
+      "77527e6851680c9265b1169d38d7b792",
+      "57d7a67fa305765a69277d0f2d9af751",
+      "" /*kBlock4x16*/,
+      "4aff643f698d53516c7b1b8aa01f5336",
+      "8469e857f2daca2bc54c67698214cf57",
+      "f91c848d5cf74df58b0c23175660c4a1",
+      "e87790d0d3f62effd117286409392937",
+      "d7653607e49364fe62ad7479ee225935",
+      "299b158c163f28fc4201e2ca885fffd8",
+      "73a0b01b93eda57fa130786ccd6f1165",
+      "bdd190833cadc2f3edfb6222231e8b91",
+      "52553513d423f6a32695c4a03ab5c41a",
+      "e6f1c081aac8815081707643a2134669",
+      "f7b299f391f4e478c6154c08152795f7",
+      "daedb66bb882aee936b93e51228b3da1",
+      "9522d5713fb951b79f42d78fbff914cf",
+      "422c046013f79a9f46e2c855967570ba",
+
+      // mask_is_inverse = true.
+      "8f96d65fd33a1f179d30820fcb591fb8",
+      "3afd1fc4f365348623dd7bce65648b16",
+      "885120312ea4003a044940dd6e91c8bb",
+      "" /*kBlock4x16*/,
+      "1a21f2ca6d6da217467990da09cb7617",
+      "c3b34ecac7e974b532424f6fa56ebf1c",
+      "0f637e8cc79abae884e613092e406225",
+      "b3cbb6519ecebba2d5e2183696d6ada0",
+      "a090ac4fd0566ddafd8094674d6e1ed1",
+      "bb3125a04a233993aeb734d60e5744e1",
+      "e0bf32ffc6fb96dd281eb35c874faa1a",
+      "429c84da51603348498f310b32389d36",
+      "685850e543be4703833acec7f14a875c",
+      "074a4034389423363417d24d51290d62",
+      "b817ce08c73caa47770b08fc0ba2fc8c",
+      "16af80abb452c4870b40aeedd820096f",
+      "6ad4718230353440b01f2bb78348157e",
+      "ad49bd7af0ea17c84f434c7dfd0a911d",
+  };
+  return kDigest[id];
+}
+#endif  // LIBGAV1_MAX_BITDEPTH == 12
+
 struct WeightMaskTestParam {
   WeightMaskTestParam(int width, int height, bool mask_is_inverse)
       : width(width), height(height), mask_is_inverse(mask_is_inverse) {}
@@ -159,6 +205,7 @@ template <int bitdepth>
 class WeightMaskTest : public testing::TestWithParam<WeightMaskTestParam>,
                        public test_utils::MaxAlignedAllocable {
  public:
+  static_assert(bitdepth >= kBitdepth8 && bitdepth <= LIBGAV1_MAX_BITDEPTH, "");
   WeightMaskTest() = default;
   ~WeightMaskTest() override = default;
 
@@ -293,17 +340,26 @@ void WeightMaskTest<bitdepth>::Test(const int num_runs,
     const int id_offset = mask_is_inverse_ ? kMaxBlockSizes - 4 : 0;
     const int id = id_offset +
                    static_cast<int>(DimensionsToBlockSize(width_, height_)) - 4;
-    if (bitdepth == 8) {
-      test_utils::CheckMd5Digest(
-          absl::StrFormat("BlockSize %dx%d", width_, height_).c_str(),
-          "WeightMask", GetDigest8bpp(id), mask_, sizeof(mask_), elapsed_time);
+    const char* expected_digest = nullptr;
+    switch (bitdepth) {
+      case 8:
+        expected_digest = GetDigest8bpp(id);
+        break;
 #if LIBGAV1_MAX_BITDEPTH >= 10
-    } else {
-      test_utils::CheckMd5Digest(
-          absl::StrFormat("BlockSize %dx%d", width_, height_).c_str(),
-          "WeightMask", GetDigest10bpp(id), mask_, sizeof(mask_), elapsed_time);
+      case 10:
+        expected_digest = GetDigest10bpp(id);
+        break;
+#endif
+#if LIBGAV1_MAX_BITDEPTH == 12
+      case 12:
+        expected_digest = GetDigest12bpp(id);
+        break;
 #endif
     }
+    ASSERT_NE(expected_digest, nullptr);
+    test_utils::CheckMd5Digest(
+        absl::StrFormat("BlockSize %dx%d", width_, height_).c_str(),
+        "WeightMask", expected_digest, mask_, sizeof(mask_), elapsed_time);
   }
 }
 
@@ -384,6 +440,28 @@ INSTANTIATE_TEST_SUITE_P(SSE41, WeightMaskTest10bpp,
                          testing::ValuesIn(weight_mask_test_param));
 #endif
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
+
+#if LIBGAV1_MAX_BITDEPTH == 12
+using WeightMaskTest12bpp = WeightMaskTest<12>;
+
+TEST_P(WeightMaskTest12bpp, FixedValues) {
+  const int min = kCompoundPredictionRange[2][0];
+  const int max = kCompoundPredictionRange[2][1];
+  Test(1, true, min, min);
+  Test(1, true, min, max);
+  Test(1, true, max, min);
+  Test(1, true, max, max);
+}
+
+TEST_P(WeightMaskTest12bpp, RandomValues) { Test(1, false, -1, -1); }
+
+TEST_P(WeightMaskTest12bpp, DISABLED_Speed) {
+  Test(kNumSpeedTests, false, -1, -1);
+}
+
+INSTANTIATE_TEST_SUITE_P(C, WeightMaskTest12bpp,
+                         testing::ValuesIn(weight_mask_test_param));
+#endif  // LIBGAV1_MAX_BITDEPTH == 12
 
 }  // namespace
 }  // namespace dsp
