@@ -16,6 +16,7 @@
 // This will be included inside an anonymous namespace on files where these are
 // necessary.
 
+#if !LIBGAV1_TARGETING_AVX2
 int GetNumTapsInFilter(const int filter_index) {
   if (filter_index < 2) {
     // Despite the names these only use 6 taps.
@@ -44,6 +45,7 @@ int GetNumTapsInFilter(const int filter_index) {
   // tap filter.
   return 4;
 }
+#endif  // !LIBGAV1_TARGETING_AVX2
 
 constexpr int kIntermediateAllocWidth = kMaxSuperBlockSizeInPixels;
 constexpr int kIntermediateStride = 8;

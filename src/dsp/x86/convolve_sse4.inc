@@ -18,6 +18,49 @@
 
 #include "src/dsp/convolve.inc"
 
+// This version checks for the special cases when filter_index == 1.
+int GetNumTapsInFilter(const int filter_index, const int filter_id) {
+  if (filter_index == 0) {
+    // Despite the names these only use 6 taps.
+    // kInterpolationFilterEightTap
+    // kInterpolationFilterEightTapSmooth
+    return 6;
+  }
+
+  if (filter_index == 1) {
+    // Despite the names these only use 6 taps.
+    // kInterpolationFilterEightTap
+    // kInterpolationFilterEightTapSmooth
+    if (((filter_id == 1) | (filter_id == 15) | (filter_id == 7) |
+         (filter_id == 8) | (filter_id == 9)) != 0) {
+      return 6;
+    }
+    // When |filter_index| == 1, the |filter_id| values not listed above map to
+    // 4 tap filters.
+    return 4;
+  }
+
+  if (filter_index == 2) {
+    // kInterpolationFilterEightTapSharp
+    return 8;
+  }
+
+  if (filter_index == 3) {
+    // kInterpolationFilterBilinear
+    return 2;
+  }
+
+  assert(filter_index > 3);
+  // For small sizes (width/height <= 4) the large filters are replaced with 4
+  // tap options.
+  // If the original filters were |kInterpolationFilterEightTap| or
+  // |kInterpolationFilterEightTapSharp| then it becomes
+  // |kInterpolationFilterSwitchable|.
+  // If it was |kInterpolationFilterEightTapSmooth| then it becomes an unnamed 4
+  // tap filter.
+  return 4;
+}
+
 // Multiply every entry in |src[]| by the corresponding entry in |taps[]| and
 // sum. The filters in |taps[]| are pre-shifted by 1. This prevents the final
 // sum from outranging int16_t.

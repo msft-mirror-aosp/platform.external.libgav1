@@ -600,7 +600,8 @@ void Convolve2D_AVX2(const void* LIBGAV1_RESTRICT const reference,
                      const ptrdiff_t pred_stride) {
   const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
   const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(vert_filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(vert_filter_index, vertical_filter_id);
 
   // The output of the horizontal filter is guaranteed to fit in 16 bits.
   alignas(32) uint16_t
@@ -1116,7 +1117,8 @@ void ConvolveVertical_AVX2(const void* LIBGAV1_RESTRICT const reference,
                            const int height, void* LIBGAV1_RESTRICT prediction,
                            const ptrdiff_t pred_stride) {
   const int filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(filter_index, vertical_filter_id);
   const ptrdiff_t src_stride = reference_stride;
   const auto* src = static_cast<const uint8_t*>(reference) -
                     (vertical_taps / 2 - 1) * src_stride;
@@ -1130,7 +1132,7 @@ void ConvolveVertical_AVX2(const void* LIBGAV1_RESTRICT const reference,
   // Use 256 bits for width > 4.
   if (width > 4) {
     __m256i taps_256[4];
-    if (filter_index < 2) {  // 6 tap.
+    if (vertical_taps == 6) {  // 6 tap.
       SetupTaps<6>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<6>(src, src_stride, dest, dest_stride, width, height,
@@ -1142,7 +1144,7 @@ void ConvolveVertical_AVX2(const void* LIBGAV1_RESTRICT const reference,
         FilterVertical32xH<6>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       }
-    } else if (filter_index == 2) {  // 8 tap.
+    } else if (vertical_taps == 8) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<8>(src, src_stride, dest, dest_stride, width, height,
@@ -1154,7 +1156,7 @@ void ConvolveVertical_AVX2(const void* LIBGAV1_RESTRICT const reference,
         FilterVertical32xH<8>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       }
-    } else if (filter_index == 3) {  // 2 tap.
+    } else if (vertical_taps == 2) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<2>(src, src_stride, dest, dest_stride, width, height,
@@ -1166,19 +1168,7 @@ void ConvolveVertical_AVX2(const void* LIBGAV1_RESTRICT const reference,
         FilterVertical32xH<2>(src, src_stride, dest, dest_stride, width, height,
                               taps_256);
       }
-    } else if (filter_index == 4) {  // 4 tap.
-      SetupTaps<4>(&v_filter, taps_256);
-      if (width == 8) {
-        FilterVertical8xH<4>(src, src_stride, dest, dest_stride, width, height,
-                             taps_256);
-      } else if (width == 16) {
-        FilterVertical16xH<4>(src, src_stride, dest, dest_stride, width, height,
-                              taps_256);
-      } else {
-        FilterVertical32xH<4>(src, src_stride, dest, dest_stride, width, height,
-                              taps_256);
-      }
-    } else {
+    } else {  // 4 tap.
       SetupTaps<4>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<4>(src, src_stride, dest, dest_stride, width, height,
@@ -1195,21 +1185,21 @@ void ConvolveVertical_AVX2(const void* LIBGAV1_RESTRICT const reference,
     // Use 128 bit code.
     __m128i taps[4];
 
-    if (filter_index < 2) {  // 6 tap.
+    if (vertical_taps == 6) {  // 6 tap.
       SetupTaps<6>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<6>(src, src_stride, dest, dest_stride, height, taps);
       } else {
         FilterVertical4xH<6>(src, src_stride, dest, dest_stride, height, taps);
       }
-    } else if (filter_index == 2) {  // 8 tap.
+    } else if (vertical_taps == 8) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<8>(src, src_stride, dest, dest_stride, height, taps);
       } else {
         FilterVertical4xH<8>(src, src_stride, dest, dest_stride, height, taps);
       }
-    } else if (filter_index == 3) {  // 2 tap.
+    } else if (vertical_taps == 2) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps);
       if (width == 2) {
         FilterVertical2xH<2>(src, src_stride, dest, dest_stride, height, taps);
@@ -1234,7 +1224,8 @@ void ConvolveCompoundVertical_AVX2(
     const int vertical_filter_id, const int width, const int height,
     void* LIBGAV1_RESTRICT prediction, const ptrdiff_t /*pred_stride*/) {
   const int filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(filter_index, vertical_filter_id);
   const ptrdiff_t src_stride = reference_stride;
   const auto* src = static_cast<const uint8_t*>(reference) -
                     (vertical_taps / 2 - 1) * src_stride;
@@ -1248,7 +1239,7 @@ void ConvolveCompoundVertical_AVX2(
   // Use 256 bits for width > 4.
   if (width > 4) {
     __m256i taps_256[4];
-    if (filter_index < 2) {  // 6 tap.
+    if (vertical_taps == 6) {  // 6 tap.
       SetupTaps<6>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<6, /*is_compound=*/true>(
@@ -1260,7 +1251,7 @@ void ConvolveCompoundVertical_AVX2(
         FilterVertical32xH<6, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       }
-    } else if (filter_index == 2) {  // 8 tap.
+    } else if (vertical_taps == 8) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<8, /*is_compound=*/true>(
@@ -1272,7 +1263,7 @@ void ConvolveCompoundVertical_AVX2(
         FilterVertical32xH<8, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       }
-    } else if (filter_index == 3) {  // 2 tap.
+    } else if (vertical_taps == 2) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<2, /*is_compound=*/true>(
@@ -1284,19 +1275,7 @@ void ConvolveCompoundVertical_AVX2(
         FilterVertical32xH<2, /*is_compound=*/true>(
             src, src_stride, dest, dest_stride, width, height, taps_256);
       }
-    } else if (filter_index == 4) {  // 4 tap.
-      SetupTaps<4>(&v_filter, taps_256);
-      if (width == 8) {
-        FilterVertical8xH<4, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps_256);
-      } else if (width == 16) {
-        FilterVertical16xH<4, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps_256);
-      } else {
-        FilterVertical32xH<4, /*is_compound=*/true>(
-            src, src_stride, dest, dest_stride, width, height, taps_256);
-      }
-    } else {
+    } else {  // 4 tap.
       SetupTaps<4>(&v_filter, taps_256);
       if (width == 8) {
         FilterVertical8xH<4, /*is_compound=*/true>(
@@ -1313,15 +1292,15 @@ void ConvolveCompoundVertical_AVX2(
     // Use 128 bit code.
     __m128i taps[4];
 
-    if (filter_index < 2) {  // 6 tap.
+    if (vertical_taps == 6) {  // 6 tap.
       SetupTaps<6>(&v_filter, taps);
       FilterVertical4xH<6, /*is_compound=*/true>(src, src_stride, dest,
                                                  dest_stride, height, taps);
-    } else if (filter_index == 2) {  // 8 tap.
+    } else if (vertical_taps == 8) {  // 8 tap.
       SetupTaps<8>(&v_filter, taps);
       FilterVertical4xH<8, /*is_compound=*/true>(src, src_stride, dest,
                                                  dest_stride, height, taps);
-    } else if (filter_index == 3) {  // 2 tap.
+    } else if (vertical_taps == 2) {  // 2 tap.
       SetupTaps<2>(&v_filter, taps);
       FilterVertical4xH<2, /*is_compound=*/true>(src, src_stride, dest,
                                                  dest_stride, height, taps);
@@ -1388,7 +1367,8 @@ void ConvolveCompound2D_AVX2(
     void* LIBGAV1_RESTRICT prediction, const ptrdiff_t pred_stride) {
   const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
   const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(vert_filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(vert_filter_index, vertical_filter_id);
 
   // The output of the horizontal filter is guaranteed to fit in 16 bits.
   alignas(32) uint16_t

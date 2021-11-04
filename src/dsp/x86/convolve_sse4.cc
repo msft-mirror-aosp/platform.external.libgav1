@@ -247,7 +247,8 @@ void Convolve2D_SSE4_1(const void* LIBGAV1_RESTRICT const reference,
                        const ptrdiff_t pred_stride) {
   const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
   const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(vert_filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(vert_filter_index, vertical_filter_id);
 
   // The output of the horizontal filter is guaranteed to fit in 16 bits.
   alignas(16) uint16_t
@@ -403,7 +404,8 @@ void ConvolveVertical_SSE4_1(
     const int vertical_filter_id, const int width, const int height,
     void* LIBGAV1_RESTRICT prediction, const ptrdiff_t pred_stride) {
   const int filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(filter_index, vertical_filter_id);
   const ptrdiff_t src_stride = reference_stride;
   const auto* src = static_cast<const uint8_t*>(reference) -
                     (vertical_taps / 2 - 1) * src_stride;
@@ -415,7 +417,7 @@ void ConvolveVertical_SSE4_1(
   const __m128i v_filter =
       LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
 
-  if (filter_index < 2) {  // 6 tap.
+  if (vertical_taps == 6) {  // 6 tap.
     SetupTaps<6>(&v_filter, taps);
     if (width == 2) {
       FilterVertical2xH<6>(src, src_stride, dest, dest_stride, height, taps);
@@ -425,7 +427,7 @@ void ConvolveVertical_SSE4_1(
       FilterVertical<6>(src, src_stride, dest, dest_stride, width, height,
                         taps);
     }
-  } else if (filter_index == 2) {  // 8 tap.
+  } else if (vertical_taps == 8) {  // 8 tap.
     SetupTaps<8>(&v_filter, taps);
     if (width == 2) {
       FilterVertical2xH<8>(src, src_stride, dest, dest_stride, height, taps);
@@ -435,7 +437,7 @@ void ConvolveVertical_SSE4_1(
       FilterVertical<8>(src, src_stride, dest, dest_stride, width, height,
                         taps);
     }
-  } else if (filter_index == 3) {  // 2 tap.
+  } else if (vertical_taps == 2) {  // 2 tap.
     SetupTaps<2>(&v_filter, taps);
     if (width == 2) {
       FilterVertical2xH<2>(src, src_stride, dest, dest_stride, height, taps);
@@ -446,10 +448,7 @@ void ConvolveVertical_SSE4_1(
                         taps);
     }
   } else {  // 4 tap
-    // TODO(slavarnway): Investigate adding |filter_index| == 1 special case.
-    // See convolve_neon.cc
     SetupTaps<4>(&v_filter, taps);
-
     if (width == 2) {
       FilterVertical2xH<4>(src, src_stride, dest, dest_stride, height, taps);
     } else if (width == 4) {
@@ -527,7 +526,8 @@ void ConvolveCompoundVertical_SSE4_1(
     const int vertical_filter_id, const int width, const int height,
     void* LIBGAV1_RESTRICT prediction, const ptrdiff_t /*pred_stride*/) {
   const int filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(filter_index, vertical_filter_id);
   const ptrdiff_t src_stride = reference_stride;
   const auto* src = static_cast<const uint8_t*>(reference) -
                     (vertical_taps / 2 - 1) * src_stride;
@@ -538,7 +538,7 @@ void ConvolveCompoundVertical_SSE4_1(
   const __m128i v_filter =
       LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
 
-  if (filter_index < 2) {  // 6 tap.
+  if (vertical_taps == 6) {  // 6 tap.
     SetupTaps<6>(&v_filter, taps);
     if (width == 4) {
       FilterVertical4xH<6, /*is_compound=*/true>(src, src_stride, dest, 4,
@@ -547,7 +547,7 @@ void ConvolveCompoundVertical_SSE4_1(
       FilterVertical<6, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps);
     }
-  } else if (filter_index == 2) {  // 8 tap.
+  } else if (vertical_taps == 8) {  // 8 tap.
     SetupTaps<8>(&v_filter, taps);
     if (width == 4) {
       FilterVertical4xH<8, /*is_compound=*/true>(src, src_stride, dest, 4,
@@ -556,7 +556,7 @@ void ConvolveCompoundVertical_SSE4_1(
       FilterVertical<8, /*is_compound=*/true>(src, src_stride, dest, width,
                                               width, height, taps);
     }
-  } else if (filter_index == 3) {  // 2 tap.
+  } else if (vertical_taps == 2) {  // 2 tap.
     SetupTaps<2>(&v_filter, taps);
     if (width == 4) {
       FilterVertical4xH<2, /*is_compound=*/true>(src, src_stride, dest, 4,
@@ -626,7 +626,8 @@ void ConvolveCompound2D_SSE4_1(
   // Similarly for height.
   const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
   const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
-  const int vertical_taps = GetNumTapsInFilter(vert_filter_index);
+  const int vertical_taps =
+      GetNumTapsInFilter(vert_filter_index, vertical_filter_id);
   const int intermediate_height = height + vertical_taps - 1;
   const ptrdiff_t src_stride = reference_stride;
   const auto* const src = static_cast<const uint8_t*>(reference) -
