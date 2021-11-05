@@ -484,7 +484,6 @@ void ConvolveCompoundCopy_SSE4(
             _mm_slli_epi16(v_src_ext_lo, kRoundBitsVertical);
         const __m128i v_dest_hi =
             _mm_slli_epi16(v_src_ext_hi, kRoundBitsVertical);
-        // TODO(slavarnway): Investigate using aligned stores.
         StoreUnaligned16(&dest[x], v_dest_lo);
         StoreUnaligned16(&dest[x + 8], v_dest_hi);
         x += 16;
