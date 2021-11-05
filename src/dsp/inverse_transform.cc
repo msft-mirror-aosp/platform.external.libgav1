@@ -455,7 +455,22 @@ void Adst4_C(void* dest, int8_t range) {
   s[0] = RangeCheckValue(s[0] + s[3], range + 12);
   s[1] = RangeCheckValue(s[1] - s[4], range + 12);
   s[3] = s[2];
-  s[2] = RangeCheckValue(kAdst4Multiplier[2] * b7, range + 12);
+  // Note the intermediate value can only exceed INT32_MAX with 12-bit content.
+  // For simplicity in unoptimized code, int64_t is used for both 10 & 12-bit.
+  using Intermediate =
+      typename std::conditional<sizeof(Residual) == 2, int32_t, int64_t>::type;
+  // With range checking enabled b7 would be trapped above. This prevents an
+  // integer sanitizer warning. In SIMD implementations the multiply can be
+  // allowed to rollover on platforms where this has defined behavior.
+  const auto adst2_b7 = static_cast<Intermediate>(kAdst4Multiplier[2]) * b7;
+#if defined(LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK) && \
+    LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
+  if (sizeof(Residual) == 4) {
+    assert(adst2_b7 >= INT32_MIN);
+    assert(adst2_b7 <= INT32_MAX);
+  }
+#endif  // LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
+  s[2] = RangeCheckValue(static_cast<int32_t>(adst2_b7), range + 12);
   // stage 4.
   s[0] = RangeCheckValue(s[0] + s[5], range + 12);
   s[1] = RangeCheckValue(s[1] - s[6], range + 12);
@@ -464,10 +479,6 @@ void Adst4_C(void* dest, int8_t range) {
   const int32_t x1 = RangeCheckValue(s[1] + s[3], range + 12);
   int32_t x3 = RangeCheckValue(s[0] + s[1], range + 12);
   x3 = RangeCheckValue(x3 - s[3], range + 12);
-  // Note the intermediate value can only exceed INT32_MAX with 12-bit content.
-  // For simplicity in unoptimized code, int64_t is used for both 10 & 12-bit.
-  using Intermediate =
-      typename std::conditional<sizeof(Residual) == 2, int32_t, int64_t>::type;
   auto dst_0 = static_cast<int32_t>(
       RightShiftWithRounding(static_cast<Intermediate>(x0), 12));
   auto dst_1 = static_cast<int32_t>(
