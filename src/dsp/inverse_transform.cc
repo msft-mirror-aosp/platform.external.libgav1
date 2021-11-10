@@ -26,6 +26,15 @@
 #include "src/utils/compiler_attributes.h"
 #include "src/utils/logging.h"
 
+#if defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+#undef LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
+#endif
+
+#if defined(LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK) && \
+    LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
+#include <cinttypes>
+#endif
+
 namespace libgav1 {
 namespace dsp {
 namespace {
@@ -35,24 +44,25 @@ namespace {
 
 constexpr uint8_t kTransformColumnShift = 4;
 
-#if defined(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
-#undef LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
-#endif
-
-int32_t RangeCheckValue(int32_t value, int8_t range) {
+template <typename T>
+int32_t RangeCheckValue(T value, int8_t range) {
 #if defined(LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK) && \
     LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
+  static_assert(
+      std::is_same<T, int32_t>::value || std::is_same<T, std::int64_t>::value,
+      "");
   assert(range <= 32);
   const auto min = static_cast<int32_t>(-(uint32_t{1} << (range - 1)));
   const auto max = static_cast<int32_t>((uint32_t{1} << (range - 1)) - 1);
   if (min > value || value > max) {
-    LIBGAV1_DLOG(ERROR, "coeff out of bit range, value: %d bit range %d\n",
-                 value, range);
+    LIBGAV1_DLOG(ERROR,
+                 "coeff out of bit range, value: %" PRId64 " bit range %d",
+                 static_cast<int64_t>(value), range);
     assert(min <= value && value <= max);
   }
 #endif  // LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
   static_cast<void>(range);
-  return value;
+  return static_cast<int32_t>(value);
 }
 
 template <typename Residual>
@@ -463,14 +473,7 @@ void Adst4_C(void* dest, int8_t range) {
   // integer sanitizer warning. In SIMD implementations the multiply can be
   // allowed to rollover on platforms where this has defined behavior.
   const auto adst2_b7 = static_cast<Intermediate>(kAdst4Multiplier[2]) * b7;
-#if defined(LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK) && \
-    LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
-  if (sizeof(Residual) == 4) {
-    assert(adst2_b7 >= INT32_MIN);
-    assert(adst2_b7 <= INT32_MAX);
-  }
-#endif  // LIBGAV1_ENABLE_TRANSFORM_RANGE_CHECK
-  s[2] = RangeCheckValue(static_cast<int32_t>(adst2_b7), range + 12);
+  s[2] = RangeCheckValue(adst2_b7, range + 12);
   // stage 4.
   s[0] = RangeCheckValue(s[0] + s[5], range + 12);
   s[1] = RangeCheckValue(s[1] - s[6], range + 12);
@@ -478,7 +481,8 @@ void Adst4_C(void* dest, int8_t range) {
   const int32_t x0 = RangeCheckValue(s[0] + s[3], range + 12);
   const int32_t x1 = RangeCheckValue(s[1] + s[3], range + 12);
   int32_t x3 = RangeCheckValue(s[0] + s[1], range + 12);
-  x3 = RangeCheckValue(x3 - s[3], range + 12);
+  const auto x3_s3 = static_cast<Intermediate>(x3) - s[3];
+  x3 = RangeCheckValue(x3_s3, range + 12);
   auto dst_0 = static_cast<int32_t>(
       RightShiftWithRounding(static_cast<Intermediate>(x0), 12));
   auto dst_1 = static_cast<int32_t>(
@@ -1825,7 +1829,6 @@ void InverseTransformInit_C() {
 
   // Local functions that may be unused depending on the optimizations
   // available.
-  static_cast<void>(RangeCheckValue);
   static_cast<void>(kBitReverseLookup);
 }
 
