@@ -996,7 +996,7 @@ bool Tile::GetReferenceBlockPosition(
     const int start_y, const int step_x, const int step_y,
     const int left_border, const int right_border, const int top_border,
     const int bottom_border, int* ref_block_start_x, int* ref_block_start_y,
-    int* ref_block_end_x) {
+    int* ref_block_end_x, int* ref_block_end_y) {
   *ref_block_start_x = GetPixelPositionFromHighScale(start_x, 0, 0);
   *ref_block_start_y = GetPixelPositionFromHighScale(start_y, 0, 0);
   if (reference_frame_index == -1) {
@@ -1006,7 +1006,7 @@ bool Tile::GetReferenceBlockPosition(
   *ref_block_start_y -= kConvolveBorderLeftTop;
   *ref_block_end_x = GetPixelPositionFromHighScale(start_x, step_x, width - 1) +
                      kConvolveBorderRight;
-  int ref_block_end_y =
+  *ref_block_end_y =
       GetPixelPositionFromHighScale(start_y, step_y, height - 1) +
       kConvolveBorderBottom;
   if (is_scaled) {
@@ -1015,13 +1015,13 @@ bool Tile::GetReferenceBlockPosition(
          kScaleSubPixelBits) +
         kSubPixelTaps;
     *ref_block_end_x += kConvolveScaleBorderRight - kConvolveBorderRight;
-    ref_block_end_y = *ref_block_start_y + block_height - 1;
+    *ref_block_end_y = *ref_block_start_y + block_height - 1;
   }
   // Determines if we need to extend beyond the left/right/top/bottom border.
   return *ref_block_start_x < (ref_start_x - left_border) ||
          *ref_block_end_x > (ref_last_x + right_border) ||
          *ref_block_start_y < (ref_start_y - top_border) ||
-         ref_block_end_y > (ref_last_y + bottom_border);
+         *ref_block_end_y > (ref_last_y + bottom_border);
 }
 
 // Builds a block as the input for convolve, by copying the content of
@@ -1140,6 +1140,7 @@ bool Tile::BlockInterPrediction(
   int ref_block_start_x;
   int ref_block_start_y;
   int ref_block_end_x;
+  int ref_block_end_y;
   const bool extend_block = GetReferenceBlockPosition(
       reference_frame_index, is_scaled, width, height, ref_start_x, ref_last_x,
       ref_start_y, ref_last_y, start_x, start_y, step_x, step_y,
@@ -1147,24 +1148,15 @@ bool Tile::BlockInterPrediction(
       reference_buffer->right_border(plane),
       reference_buffer->top_border(plane),
       reference_buffer->bottom_border(plane), &ref_block_start_x,
-      &ref_block_start_y, &ref_block_end_x);
+      &ref_block_start_y, &ref_block_end_x, &ref_block_end_y);
 
   // In frame parallel mode, ensure that the reference block has been decoded
   // and available for referencing.
   if (reference_frame_index != -1 && frame_parallel_) {
-    int reference_y_max;
-    if (is_scaled) {
-      // TODO(vigneshv): For now, we wait for the entire reference frame to be
-      // decoded if we are using scaled references. This will eventually be
-      // fixed.
-      reference_y_max = reference_height;
-    } else {
-      reference_y_max =
-          std::min(ref_block_start_y + height + kSubPixelTaps, ref_last_y);
-      // For U and V planes with subsampling, we need to multiply
-      // reference_y_max by 2 since we only track the progress of Y planes.
-      reference_y_max = LeftShift(reference_y_max, subsampling_y);
-    }
+    // For U and V planes with subsampling, we need to multiply the value of
+    // ref_block_end_y by 2 since we only track the progress of the Y planes.
+    const int reference_y_max = LeftShift(
+        std::min(ref_block_end_y + kSubPixelTaps, ref_last_y), subsampling_y);
     if (reference_frame_progress_cache_[reference_frame_index] <
             reference_y_max &&
         !reference_frames_[reference_frame_index]->WaitUntil(
