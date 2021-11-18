@@ -444,7 +444,13 @@ void Adst4_C(void* dest, int8_t range) {
   // Section 7.13.2.6: It is a requirement of bitstream conformance that all
   // values stored in the s and x arrays by this process are representable by
   // a signed integer using range + 12 bits of precision.
-  int32_t s[7];
+  // Note the intermediate value can only exceed INT32_MAX with invalid 12-bit
+  // content. For simplicity in unoptimized code, int64_t is used for both 10 &
+  // 12-bit. SIMD implementations can allow these to rollover on platforms
+  // where this has defined behavior.
+  using Intermediate =
+      typename std::conditional<sizeof(Residual) == 2, int32_t, int64_t>::type;
+  Intermediate s[7];
   s[0] = RangeCheckValue(kAdst4Multiplier[0] * dst[0], range + 12);
   s[1] = RangeCheckValue(kAdst4Multiplier[1] * dst[0], range + 12);
   s[2] = RangeCheckValue(kAdst4Multiplier[2] * dst[1], range + 12);
@@ -465,10 +471,6 @@ void Adst4_C(void* dest, int8_t range) {
   s[0] = RangeCheckValue(s[0] + s[3], range + 12);
   s[1] = RangeCheckValue(s[1] - s[4], range + 12);
   s[3] = s[2];
-  // Note the intermediate value can only exceed INT32_MAX with 12-bit content.
-  // For simplicity in unoptimized code, int64_t is used for both 10 & 12-bit.
-  using Intermediate =
-      typename std::conditional<sizeof(Residual) == 2, int32_t, int64_t>::type;
   // With range checking enabled b7 would be trapped above. This prevents an
   // integer sanitizer warning. In SIMD implementations the multiply can be
   // allowed to rollover on platforms where this has defined behavior.
@@ -478,19 +480,14 @@ void Adst4_C(void* dest, int8_t range) {
   s[0] = RangeCheckValue(s[0] + s[5], range + 12);
   s[1] = RangeCheckValue(s[1] - s[6], range + 12);
   // stages 5 and 6.
-  const int32_t x0 = RangeCheckValue(s[0] + s[3], range + 12);
-  const int32_t x1 = RangeCheckValue(s[1] + s[3], range + 12);
-  int32_t x3 = RangeCheckValue(s[0] + s[1], range + 12);
-  const auto x3_s3 = static_cast<Intermediate>(x3) - s[3];
-  x3 = RangeCheckValue(x3_s3, range + 12);
-  auto dst_0 = static_cast<int32_t>(
-      RightShiftWithRounding(static_cast<Intermediate>(x0), 12));
-  auto dst_1 = static_cast<int32_t>(
-      RightShiftWithRounding(static_cast<Intermediate>(x1), 12));
-  auto dst_2 = static_cast<int32_t>(
-      RightShiftWithRounding(static_cast<Intermediate>(s[2]), 12));
-  auto dst_3 = static_cast<int32_t>(
-      RightShiftWithRounding(static_cast<Intermediate>(x3), 12));
+  const Intermediate x0 = RangeCheckValue(s[0] + s[3], range + 12);
+  const Intermediate x1 = RangeCheckValue(s[1] + s[3], range + 12);
+  Intermediate x3 = RangeCheckValue(s[0] + s[1], range + 12);
+  x3 = RangeCheckValue(x3 - s[3], range + 12);
+  auto dst_0 = static_cast<int32_t>(RightShiftWithRounding(x0, 12));
+  auto dst_1 = static_cast<int32_t>(RightShiftWithRounding(x1, 12));
+  auto dst_2 = static_cast<int32_t>(RightShiftWithRounding(s[2], 12));
+  auto dst_3 = static_cast<int32_t>(RightShiftWithRounding(x3, 12));
   if (sizeof(Residual) == 2) {
     // If the first argument to RightShiftWithRounding(..., 12) is only
     // slightly smaller than 2^27 - 1 (e.g., 0x7fffe4e), adding 2^11 to it
