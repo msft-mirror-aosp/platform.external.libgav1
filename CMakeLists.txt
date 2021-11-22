@@ -103,6 +103,12 @@ libgav1_track_configuration_variable(LIBGAV1_GENERATED_SOURCES_DIRECTORY)
 
 # Controls use of std::mutex and absl::Mutex in ThreadPool.
 libgav1_track_configuration_variable(LIBGAV1_THREADPOOL_USE_STD_MUTEX)
+if((DEFINED
+    LIBGAV1_THREADPOOL_USE_STD_MUTEX
+    AND NOT LIBGAV1_THREADPOOL_USE_STD_MUTEX)
+   OR NOT (DEFINED LIBGAV1_THREADPOOL_USE_STD_MUTEX OR ANDROID OR IOS))
+  set(use_absl_threading TRUE)
+endif()
 
 if(LIBGAV1_VERBOSE)
   libgav1_dump_cmake_flag_variables()
