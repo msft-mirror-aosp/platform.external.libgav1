@@ -48,6 +48,8 @@ libgav1_option(NAME LIBGAV1_ENABLE_NEON HELPSTRING "Enables neon optimizations."
                VALUE ON)
 libgav1_option(NAME LIBGAV1_ENABLE_SSE4_1 HELPSTRING
                "Enables sse4.1 optimizations." VALUE ON)
+libgav1_option(NAME LIBGAV1_ENABLE_EXAMPLES HELPSTRING "Enables examples." VALUE
+               ON)
 libgav1_option(NAME LIBGAV1_ENABLE_TESTS HELPSTRING "Enables tests." VALUE ON)
 libgav1_option(
   NAME LIBGAV1_VERBOSE HELPSTRING
