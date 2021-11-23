@@ -1289,11 +1289,12 @@ bool Tile::BlockWarpProcess(const Block& block, const Plane plane,
            start_x += 8) {
         const int src_x = (start_x + 4) << subsampling_x_[plane];
         const int src_y = (start_y + 4) << subsampling_y_[plane];
-        const int dst_y = src_x * warp_params->params[4] +
-                          src_y * warp_params->params[5] +
-                          warp_params->params[1];
-        const int y4 = dst_y >> subsampling_y_[plane];
-        const int iy4 = y4 >> kWarpedModelPrecisionBits;
+        const int64_t dst_y =
+            src_x * warp_params->params[4] +
+            static_cast<int64_t>(src_y) * warp_params->params[5] +
+            warp_params->params[1];
+        const int64_t y4 = dst_y >> subsampling_y_[plane];
+        const int iy4 = static_cast<int>(y4 >> kWarpedModelPrecisionBits);
         reference_y_max = std::max(iy4 + 8, reference_y_max);
       }
     }
