@@ -831,7 +831,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
   int y = 0;
   do {
     int x = 0;
-    do {
+    for (; x + 8 <= safe_chroma_width; x += 8) {
       const int luma_x = x << subsampling_x;
       const uint16x8_t average_luma =
           GetAverageLuma(&in_y_row[luma_x], subsampling_x);
@@ -847,13 +847,13 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlaneWithCfl_NEON(
       // function for just that case.
       StoreUnsigned8(&out_chroma_row[x],
                      vreinterpretq_u16_s16(Clip3(blended, floor, ceiling)));
-      x += 8;
-    } while (x < safe_chroma_width);
+    }
 
     if (x < chroma_width) {
       const int luma_x = x << subsampling_x;
       const int valid_range_pixels = width - luma_x;
       const int valid_range_bytes = valid_range_pixels * sizeof(in_y_row[0]);
+      assert(valid_range_pixels < 16);
       memcpy(luma_buffer, &in_y_row[luma_x], valid_range_bytes);
       luma_buffer[valid_range_pixels] = in_y_row[width - 1];
       const uint16x8_t average_luma = GetAverageLumaMsan(
@@ -962,7 +962,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
   int y = 0;
   do {
     int x = 0;
-    do {
+    for (; x + 8 <= safe_chroma_width; x += 8) {
       const int luma_x = x << subsampling_x;
       const int valid_range = width - luma_x;
 
@@ -977,9 +977,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
       // replace clipping with vqmovun_s16, but the gain would be small.
       StoreUnsigned8(&out_chroma_row[x],
                      vreinterpretq_u16_s16(Clip3(blended, floor, ceiling)));
-
-      x += 8;
-    } while (x < safe_chroma_width);
+    }
 
     if (x < chroma_width) {
       // Begin right edge iteration. Same as the normal iterations, but the
@@ -988,6 +986,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane8bpp_NEON(
       const int luma_x = x << subsampling_x;
       const int valid_range_pixels = width - luma_x;
       const int valid_range_bytes = valid_range_pixels * sizeof(in_y_row[0]);
+      assert(valid_range_pixels < 16);
       memcpy(luma_buffer, &in_y_row[luma_x], valid_range_bytes);
       luma_buffer[valid_range_pixels] = in_y_row[width - 1];
       const int valid_range_chroma_bytes =
@@ -1324,7 +1323,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
   int y = 0;
   do {
     int x = 0;
-    do {
+    for (; x + 8 <= safe_chroma_width; x += 8) {
       const int luma_x = x << subsampling_x;
       const int16x8_t average_luma = vreinterpretq_s16_u16(
           GetAverageLuma(&in_y_row[luma_x], subsampling_x));
@@ -1335,9 +1334,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
           chroma_multiplier);
       StoreUnsigned8(&out_chroma_row[x],
                      vreinterpretq_u16_s16(Clip3(blended, floor, ceiling)));
-
-      x += 8;
-    } while (x < safe_chroma_width);
+    }
 
     if (x < chroma_width) {
       // Begin right edge iteration. Same as the normal iterations, but the
@@ -1346,6 +1343,7 @@ LIBGAV1_ALWAYS_INLINE void BlendChromaPlane10bpp_NEON(
       const int luma_x = x << subsampling_x;
       const int valid_range_pixels = width - luma_x;
       const int valid_range_bytes = valid_range_pixels * sizeof(in_y_row[0]);
+      assert(valid_range_pixels < 16);
       memcpy(luma_buffer, &in_y_row[luma_x], valid_range_bytes);
       luma_buffer[valid_range_pixels] = in_y_row[width - 1];
       const int valid_range_chroma_bytes =
