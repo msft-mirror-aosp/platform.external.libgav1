@@ -759,7 +759,6 @@ inline void DirectionalZone2_SSE4_1(void* dest, ptrdiff_t stride,
 
   // For steep angles, the source pixels from left_column may not fit in a
   // 16-byte load for shuffling.
-  // TODO(petersonab): Find a more precise formula for this subject to x.
   const int max_shuffle_height =
       std::min(height, kDirectionalZone2ShuffleInvalidHeight[ystep >> 6]);
 
