@@ -23,18 +23,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <new>
 
 #include "src/dsp/arm/common_neon.h"
-#include "src/dsp/arm/film_grain_neon.h"
-#include "src/dsp/common.h"
 #include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/film_grain_common.h"
+#include "src/utils/array_2d.h"
 #include "src/utils/common.h"
 #include "src/utils/compiler_attributes.h"
-#include "src/utils/logging.h"
+#include "src/utils/constants.h"
 #include "src/utils/memory.h"
+#include "src/utils/types.h"
 
 namespace libgav1 {
 namespace dsp {
