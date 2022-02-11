@@ -597,7 +597,8 @@ inline int8x8_t VQTbl1S8(const int8x16_t a, const uint8x8_t index) {
 //------------------------------------------------------------------------------
 // Saturation helpers.
 
-inline int16x4_t Clip3S16(int16x4_t val, int16x4_t low, int16x4_t high) {
+inline int16x4_t Clip3S16(const int16x4_t val, const int16x4_t low,
+                          const int16x4_t high) {
   return vmin_s16(vmax_s16(val, low), high);
 }
 
@@ -606,7 +607,7 @@ inline int16x8_t Clip3S16(const int16x8_t val, const int16x8_t low,
   return vminq_s16(vmaxq_s16(val, low), high);
 }
 
-inline uint16x8_t ConvertToUnsignedPixelU16(int16x8_t val, int bitdepth) {
+inline uint16x8_t ConvertToUnsignedPixelU16(const int16x8_t val, int bitdepth) {
   const int16x8_t low = vdupq_n_s16(0);
   const uint16x8_t high = vdupq_n_u16((1 << bitdepth) - 1);
 
@@ -737,7 +738,7 @@ inline uint16x8_t Transpose64(const uint16x8_t a) { return vextq_u16(a, a, 4); }
 // Output:
 // b0.val[0]: 00 01 02 03 16 17 18 19
 // b0.val[1]: 04 05 06 07 20 21 22 23
-inline int16x8x2_t VtrnqS64(int32x4_t a0, int32x4_t a1) {
+inline int16x8x2_t VtrnqS64(const int32x4_t a0, const int32x4_t a1) {
   int16x8x2_t b0;
   b0.val[0] = vcombine_s16(vreinterpret_s16_s32(vget_low_s32(a0)),
                            vreinterpret_s16_s32(vget_low_s32(a1)));
@@ -746,7 +747,7 @@ inline int16x8x2_t VtrnqS64(int32x4_t a0, int32x4_t a1) {
   return b0;
 }
 
-inline uint16x8x2_t VtrnqU64(uint32x4_t a0, uint32x4_t a1) {
+inline uint16x8x2_t VtrnqU64(const uint32x4_t a0, const uint32x4_t a1) {
   uint16x8x2_t b0;
   b0.val[0] = vcombine_u16(vreinterpret_u16_u32(vget_low_u32(a0)),
                            vreinterpret_u16_u32(vget_low_u32(a1)));
