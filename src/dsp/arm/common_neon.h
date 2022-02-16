@@ -761,6 +761,11 @@ inline uint16x8x2_t VtrnqU64(const uint32x4_t a0, const uint32x4_t a1) {
 // 10 11 12 13
 // 20 21 22 23
 // 30 31 32 33
+// Output:
+// 00 10 20 30
+// 01 11 21 31
+// 02 12 22 32
+// 03 13 23 33
 inline void Transpose4x4(uint16x4_t a[4]) {
   // b:
   // 00 10 02 12
