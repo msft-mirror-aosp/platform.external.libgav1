@@ -1178,6 +1178,7 @@ void Init8bpp() {
   dsp->loop_filters[kLoopFilterSize14][kLoopFilterTypeVertical] =
       Vertical14_NEON;
 }
+
 }  // namespace
 }  // namespace low_bitdepth
 
@@ -1995,6 +1996,7 @@ void Vertical8_NEON(void* const dest, const ptrdiff_t stride, int outer_thresh,
   vst1q_u16(dst_2, ReverseLowHalf(output[2]));
   vst1q_u16(dst_3, ReverseLowHalf(output[3]));
 }
+
 inline void Filter14(const uint16x8_t p6q6, const uint16x8_t p5q5,
                      const uint16x8_t p4q4, const uint16x8_t p3q3,
                      const uint16x8_t p2q2, const uint16x8_t p1q1,
