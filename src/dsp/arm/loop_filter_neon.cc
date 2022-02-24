@@ -1448,8 +1448,6 @@ void Vertical4_NEON(void* const dest, const ptrdiff_t stride, int outer_thresh,
                &needs_filter4_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u16(needs_filter4_mask) == 0) {
     // None of the values will be filtered.
     return;
