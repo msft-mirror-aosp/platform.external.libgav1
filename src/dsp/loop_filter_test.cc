@@ -133,6 +133,9 @@ class LoopFilterTest : public testing::TestWithParam<LoopFilterSize> {
       }
     } else if (absl::StartsWith(test_case, "NEON/")) {
       LoopFilterInit_NEON();
+#if LIBGAV1_MAX_BITDEPTH >= 10
+      LoopFilterInit10bpp_NEON();
+#endif
     } else {
       FAIL() << "Unrecognized architecture prefix in test case name: "
              << test_case;
