@@ -94,16 +94,22 @@ void Smooth4xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   }
 }
 
-inline uint8x8_t CalculatePred(const uint16x8_t weighted_top,
-                               const uint16x8_t weighted_left,
-                               const uint16x8_t weighted_bl,
-                               const uint16x8_t weighted_tr) {
-  // Maximum value: 0xFF00
-  const uint16x8_t pred_0 = vaddq_u16(weighted_top, weighted_bl);
-  // Maximum value: 0xFF00
-  const uint16x8_t pred_1 = vaddq_u16(weighted_left, weighted_tr);
-  const uint16x8_t pred_2 = vhaddq_u16(pred_0, pred_1);
-  return vrshrn_n_u16(pred_2, kSmoothWeightScale);
+inline uint8x8_t CalculatePred(const uint16x8_t weighted_top_bl,
+                               const uint16x8_t weighted_left_tr) {
+  // Maximum value of each parameter: 0xFF00
+  const uint16x8_t avg = vhaddq_u16(weighted_top_bl, weighted_left_tr);
+  return vrshrn_n_u16(avg, kSmoothWeightScale);
+}
+
+inline uint8x8_t CalculateWeightsAndPred(
+    const uint8x8_t top, const uint8x8_t left, const uint16x8_t weighted_tr,
+    const uint8x8_t bottom_left, const uint8x8_t weights_x,
+    const uint8x8_t scaled_weights_y, const uint8x8_t weights_y) {
+  const uint16x8_t weighted_top = vmull_u8(weights_y, top);
+  const uint16x8_t weighted_top_bl =
+      vmlal_u8(weighted_top, scaled_weights_y, bottom_left);
+  const uint16x8_t weighted_left_tr = vmlal_u8(weighted_tr, weights_x, left);
+  return CalculatePred(weighted_top_bl, weighted_left_tr);
 }
 
 template <int height>
@@ -129,11 +135,9 @@ void Smooth8xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const uint8x8_t left_v = vdup_n_u8(left[y]);
     const uint8x8_t weights_y_v = vdup_n_u8(weights_y[y]);
     const uint8x8_t scaled_weights_y = NegateS8(weights_y_v);
-    const uint16x8_t weighted_bl = vmull_u8(scaled_weights_y, bottom_left_v);
-    const uint16x8_t weighted_top = vmull_u8(weights_y_v, top_v);
-    const uint16x8_t weighted_left = vmull_u8(weights_x_v, left_v);
     const uint8x8_t result =
-        CalculatePred(weighted_top, weighted_left, weighted_bl, weighted_tr);
+        CalculateWeightsAndPred(top_v, left_v, weighted_tr, bottom_left_v,
+                                weights_x_v, scaled_weights_y, weights_y_v);
 
     vst1_u8(dst, result);
     dst += stride;
@@ -144,19 +148,21 @@ inline uint8x16_t CalculateWeightsAndPred(
     const uint8x16_t top, const uint8x8_t left, const uint8x8_t top_right,
     const uint8x8_t weights_y, const uint8x16_t weights_x,
     const uint8x16_t scaled_weights_x, const uint16x8_t weighted_bl) {
-  const uint16x8_t weighted_top_low = vmull_u8(weights_y, vget_low_u8(top));
+  const uint16x8_t weighted_top_bl_low =
+      vmlal_u8(weighted_bl, weights_y, vget_low_u8(top));
   const uint16x8_t weighted_left_low = vmull_u8(vget_low_u8(weights_x), left);
-  const uint16x8_t weighted_tr_low =
-      vmull_u8(vget_low_u8(scaled_weights_x), top_right);
-  const uint8x8_t result_low = CalculatePred(
-      weighted_top_low, weighted_left_low, weighted_bl, weighted_tr_low);
+  const uint16x8_t weighted_left_tr_low =
+      vmlal_u8(weighted_left_low, vget_low_u8(scaled_weights_x), top_right);
+  const uint8x8_t result_low =
+      CalculatePred(weighted_top_bl_low, weighted_left_tr_low);
 
-  const uint16x8_t weighted_top_high = vmull_u8(weights_y, vget_high_u8(top));
+  const uint16x8_t weighted_top_bl_high =
+      vmlal_u8(weighted_bl, weights_y, vget_high_u8(top));
   const uint16x8_t weighted_left_high = vmull_u8(vget_high_u8(weights_x), left);
-  const uint16x8_t weighted_tr_high =
-      vmull_u8(vget_high_u8(scaled_weights_x), top_right);
-  const uint8x8_t result_high = CalculatePred(
-      weighted_top_high, weighted_left_high, weighted_bl, weighted_tr_high);
+  const uint16x8_t weighted_left_tr_high =
+      vmlal_u8(weighted_left_high, vget_high_u8(scaled_weights_x), top_right);
+  const uint8x8_t result_high =
+      CalculatePred(weighted_top_bl_high, weighted_left_tr_high);
 
   return vcombine_u8(result_low, result_high);
 }
@@ -265,14 +271,14 @@ void SmoothVertical4Or8xN_NEON(void* LIBGAV1_RESTRICT const dest,
     const uint8x8_t scaled_weights_y = NegateS8(weights_y_v);
 
     const uint16x8_t weighted_top = vmull_u8(weights_y_v, top_v);
-    const uint16x8_t weighted_bl = vmull_u8(scaled_weights_y, bottom_left_v);
-    const uint16x8_t pred = vaddq_u16(weighted_top, weighted_bl);
-    const uint8x8_t pred_scaled = vrshrn_n_u16(pred, kSmoothWeightScale);
+    const uint16x8_t weighted_top_bl =
+        vmlal_u8(weighted_top, scaled_weights_y, bottom_left_v);
+    const uint8x8_t pred = vrshrn_n_u16(weighted_top_bl, kSmoothWeightScale);
 
     if (width == 4) {
-      StoreLo4(dst, pred_scaled);
+      StoreLo4(dst, pred);
     } else {  // width == 8
-      vst1_u8(dst, pred_scaled);
+      vst1_u8(dst, pred);
     }
     dst += stride;
   }
@@ -281,10 +287,10 @@ void SmoothVertical4Or8xN_NEON(void* LIBGAV1_RESTRICT const dest,
 inline uint8x16_t CalculateVerticalWeightsAndPred(
     const uint8x16_t top, const uint8x8_t weights_y,
     const uint16x8_t weighted_bl) {
-  const uint16x8_t weighted_top_low = vmull_u8(weights_y, vget_low_u8(top));
-  const uint16x8_t weighted_top_high = vmull_u8(weights_y, vget_high_u8(top));
-  const uint16x8_t pred_low = vaddq_u16(weighted_top_low, weighted_bl);
-  const uint16x8_t pred_high = vaddq_u16(weighted_top_high, weighted_bl);
+  const uint16x8_t pred_low =
+      vmlal_u8(weighted_bl, weights_y, vget_low_u8(top));
+  const uint16x8_t pred_high =
+      vmlal_u8(weighted_bl, weights_y, vget_high_u8(top));
   const uint8x8_t pred_scaled_low = vrshrn_n_u16(pred_low, kSmoothWeightScale);
   const uint8x8_t pred_scaled_high =
       vrshrn_n_u16(pred_high, kSmoothWeightScale);
@@ -361,14 +367,14 @@ void SmoothHorizontal4Or8xN_NEON(
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t left_v = vdup_n_u8(left[y]);
-    const uint16x8_t weighted_left = vmull_u8(weights_x, left_v);
-    const uint16x8_t pred = vaddq_u16(weighted_left, weighted_tr);
-    const uint8x8_t pred_scaled = vrshrn_n_u16(pred, kSmoothWeightScale);
+    const uint16x8_t weighted_left_tr =
+        vmlal_u8(weighted_tr, weights_x, left_v);
+    const uint8x8_t pred = vrshrn_n_u16(weighted_left_tr, kSmoothWeightScale);
 
     if (width == 4) {
-      StoreLo4(dst, pred_scaled);
+      StoreLo4(dst, pred);
     } else {  // width == 8
-      vst1_u8(dst, pred_scaled);
+      vst1_u8(dst, pred);
     }
     dst += stride;
   }
@@ -378,17 +384,16 @@ inline uint8x16_t CalculateHorizontalWeightsAndPred(
     const uint8x8_t left, const uint8x8_t top_right, const uint8x16_t weights_x,
     const uint8x16_t scaled_weights_x) {
   const uint16x8_t weighted_left_low = vmull_u8(vget_low_u8(weights_x), left);
-  const uint16x8_t weighted_tr_low =
-      vmull_u8(vget_low_u8(scaled_weights_x), top_right);
-  const uint16x8_t pred_low = vaddq_u16(weighted_left_low, weighted_tr_low);
-  const uint8x8_t pred_scaled_low = vrshrn_n_u16(pred_low, kSmoothWeightScale);
+  const uint16x8_t weighted_left_tr_low =
+      vmlal_u8(weighted_left_low, vget_low_u8(scaled_weights_x), top_right);
+  const uint8x8_t pred_scaled_low =
+      vrshrn_n_u16(weighted_left_tr_low, kSmoothWeightScale);
 
   const uint16x8_t weighted_left_high = vmull_u8(vget_high_u8(weights_x), left);
-  const uint16x8_t weighted_tr_high =
-      vmull_u8(vget_high_u8(scaled_weights_x), top_right);
-  const uint16x8_t pred_high = vaddq_u16(weighted_left_high, weighted_tr_high);
+  const uint16x8_t weighted_left_tr_high =
+      vmlal_u8(weighted_left_high, vget_high_u8(scaled_weights_x), top_right);
   const uint8x8_t pred_scaled_high =
-      vrshrn_n_u16(pred_high, kSmoothWeightScale);
+      vrshrn_n_u16(weighted_left_tr_high, kSmoothWeightScale);
 
   return vcombine_u8(pred_scaled_low, pred_scaled_high);
 }
