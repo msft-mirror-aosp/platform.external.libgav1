@@ -51,6 +51,11 @@ inline uint16x4_t CalculatePred(const uint16x4_t weighted_top,
   return vrshrn_n_u32(pred_2, kSmoothWeightScale + 1);
 }
 
+// 256 - v = vneg_s8(v)
+inline uint8x8_t NegateS8(const uint8x8_t v) {
+  return vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(v)));
+}
+
 template <int height>
 void Smooth4xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                     const void* LIBGAV1_RESTRICT const top_row,
@@ -67,17 +72,14 @@ void Smooth4xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   const uint8x8_t top_right_v = vdup_n_u8(top_right);
   const uint8x8_t bottom_left_v = vdup_n_u8(bottom_left);
   const uint8x8_t weights_x_v = Load4(kSmoothWeights + width - 4);
-  // 256 - weights = vneg_s8(weights)
-  const uint8x8_t scaled_weights_x =
-      vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(weights_x_v)));
+  const uint8x8_t scaled_weights_x = NegateS8(weights_x_v);
   const uint16x4_t weighted_tr =
       vget_low_u16(vmull_u8(scaled_weights_x, top_right_v));
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t left_v = vdup_n_u8(left[y]);
     const uint8x8_t weights_y_v = vdup_n_u8(weights_y[y]);
-    const uint8x8_t scaled_weights_y =
-        vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(weights_y_v)));
+    const uint8x8_t scaled_weights_y = NegateS8(weights_y_v);
     const uint16x4_t weighted_bl =
         vget_low_u16(vmull_u8(scaled_weights_y, bottom_left_v));
 
@@ -120,15 +122,13 @@ void Smooth8xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   const uint8x8_t top_right_v = vdup_n_u8(top_right);
   const uint8x8_t bottom_left_v = vdup_n_u8(bottom_left);
   const uint8x8_t weights_x_v = vld1_u8(kSmoothWeights + width - 4);
-  // 256 - weights = vneg_s8(weights)
-  const uint8x8_t scaled_weights_x =
-      vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(weights_x_v)));
+  const uint8x8_t scaled_weights_x = NegateS8(weights_x_v);
   const uint16x8_t weighted_tr = vmull_u8(scaled_weights_x, top_right_v);
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t left_v = vdup_n_u8(left[y]);
     const uint8x8_t weights_y_v = vdup_n_u8(weights_y[y]);
-    const uint8x8_t scaled_weights_y = vdup_n_u8(256 - weights_y[y]);
+    const uint8x8_t scaled_weights_y = NegateS8(weights_y_v);
     const uint16x8_t weighted_bl = vmull_u8(scaled_weights_y, bottom_left_v);
     const uint16x8_t weighted_top = vmull_u8(weights_y_v, top_v);
     const uint16x8_t weighted_left = vmull_u8(weights_x_v, left_v);
@@ -159,6 +159,11 @@ inline uint8x16_t CalculateWeightsAndPred(
       weighted_top_high, weighted_left_high, weighted_bl, weighted_tr_high);
 
   return vcombine_u8(result_low, result_high);
+}
+
+// 256 - v = vneg_s8(v)
+inline uint8x16_t NegateS8(const uint8x16_t v) {
+  return vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(v)));
 }
 
 template <int width, int height>
@@ -196,23 +201,19 @@ void Smooth16PlusxN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   }
 
   uint8x16_t scaled_weights_x[4];
-  scaled_weights_x[0] =
-      vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x_v[0])));
+  scaled_weights_x[0] = NegateS8(weights_x_v[0]);
   if (width > 16) {
-    scaled_weights_x[1] =
-        vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x_v[1])));
+    scaled_weights_x[1] = NegateS8(weights_x_v[1]);
     if (width == 64) {
-      scaled_weights_x[2] =
-          vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x_v[2])));
-      scaled_weights_x[3] =
-          vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x_v[3])));
+      scaled_weights_x[2] = NegateS8(weights_x_v[2]);
+      scaled_weights_x[3] = NegateS8(weights_x_v[3]);
     }
   }
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t left_v = vdup_n_u8(left[y]);
     const uint8x8_t weights_y_v = vdup_n_u8(weights_y[y]);
-    const uint8x8_t scaled_weights_y = vdup_n_u8(256 - weights_y[y]);
+    const uint8x8_t scaled_weights_y = NegateS8(weights_y_v);
     const uint16x8_t weighted_bl = vmull_u8(scaled_weights_y, bottom_left_v);
 
     vst1q_u8(dst, CalculateWeightsAndPred(top_v[0], left_v, top_right_v,
@@ -261,7 +262,7 @@ void SmoothVertical4Or8xN_NEON(void* LIBGAV1_RESTRICT const dest,
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t weights_y_v = vdup_n_u8(weights_y[y]);
-    const uint8x8_t scaled_weights_y = vdup_n_u8(256 - weights_y[y]);
+    const uint8x8_t scaled_weights_y = NegateS8(weights_y_v);
 
     const uint16x8_t weighted_top = vmull_u8(weights_y_v, top_v);
     const uint16x8_t weighted_bl = vmull_u8(scaled_weights_y, bottom_left_v);
@@ -315,7 +316,7 @@ void SmoothVertical16PlusxN_NEON(
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t weights_y_v = vdup_n_u8(weights_y[y]);
-    const uint8x8_t scaled_weights_y = vdup_n_u8(256 - weights_y[y]);
+    const uint8x8_t scaled_weights_y = NegateS8(weights_y_v);
     const uint16x8_t weighted_bl = vmull_u8(scaled_weights_y, bottom_left_v);
 
     const uint8x16_t pred_0 =
@@ -355,9 +356,7 @@ void SmoothHorizontal4Or8xN_NEON(
   const uint8x8_t top_right_v = vdup_n_u8(top_right);
   // Over-reads for 4xN but still within the array.
   const uint8x8_t weights_x = vld1_u8(kSmoothWeights + width - 4);
-  // 256 - weights = vneg_s8(weights)
-  const uint8x8_t scaled_weights_x =
-      vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(weights_x)));
+  const uint8x8_t scaled_weights_x = NegateS8(weights_x);
   const uint16x8_t weighted_tr = vmull_u8(scaled_weights_x, top_right_v);
 
   for (int y = 0; y < height; ++y) {
@@ -417,16 +416,12 @@ void SmoothHorizontal16PlusxN_NEON(
   }
 
   uint8x16_t scaled_weights_x[4];
-  scaled_weights_x[0] =
-      vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x[0])));
+  scaled_weights_x[0] = NegateS8(weights_x[0]);
   if (width > 16) {
-    scaled_weights_x[1] =
-        vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x[1])));
+    scaled_weights_x[1] = NegateS8(weights_x[1]);
     if (width == 64) {
-      scaled_weights_x[2] =
-          vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x[2])));
-      scaled_weights_x[3] =
-          vreinterpretq_u8_s8(vnegq_s8(vreinterpretq_s8_u8(weights_x[3])));
+      scaled_weights_x[2] = NegateS8(weights_x[2]);
+      scaled_weights_x[3] = NegateS8(weights_x[3]);
     }
   }
 
@@ -626,6 +621,11 @@ constexpr uint16_t kSmoothWeights[] = {
 #include "src/dsp/smooth_weights.inc"
 };
 
+// 256 - v = vneg_s8(v)
+inline uint16x4_t NegateS8(const uint16x4_t v) {
+  return vreinterpret_u16_s8(vneg_s8(vreinterpret_s8_u16(v)));
+}
+
 template <int height>
 void Smooth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
                     const void* LIBGAV1_RESTRICT const top_row,
@@ -640,7 +640,7 @@ void Smooth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   const uint16x4_t top_v = vld1_u16(top);
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
   const uint16x4_t weights_x_v = vld1_u16(kSmoothWeights);
-  const uint16x4_t scaled_weights_x = vsub_u16(vdup_n_u16(256), weights_x_v);
+  const uint16x4_t scaled_weights_x = NegateS8(weights_x_v);
   const uint32x4_t weighted_tr = vmull_n_u16(scaled_weights_x, top_right);
 
   for (int y = 0; y < height; ++y) {
@@ -704,9 +704,9 @@ void Smooth8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   const uint16x4x2_t weights_x = {vld1_u16(kSmoothWeights + 4),
                                   vld1_u16(kSmoothWeights + 8)};
   const uint32x4_t weighted_tr_low =
-      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[0]), top_right);
+      vmull_n_u16(NegateS8(weights_x.val[0]), top_right);
   const uint32x4_t weighted_tr_high =
-      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[1]), top_right);
+      vmull_n_u16(NegateS8(weights_x.val[1]), top_right);
 
   for (int y = 0; y < height; ++y) {
     const uint32x4_t weighted_bl =
@@ -735,18 +735,15 @@ void SmoothWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
 
   auto* dst = static_cast<uint8_t*>(dest);
 
-  const uint16x4_t weight_scaling = vdup_n_u16(256);
   // Precompute weighted values that don't vary with |y|.
   uint32x4_t weighted_tr_low[width >> 3];
   uint32x4_t weighted_tr_high[width >> 3];
   for (int i = 0; i < width >> 3; ++i) {
     const int x = i << 3;
     const uint16x4_t weights_x_low = vld1_u16(kSmoothWeights + width - 4 + x);
-    weighted_tr_low[i] =
-        vmull_n_u16(vsub_u16(weight_scaling, weights_x_low), top_right);
+    weighted_tr_low[i] = vmull_n_u16(NegateS8(weights_x_low), top_right);
     const uint16x4_t weights_x_high = vld1_u16(kSmoothWeights + width + x);
-    weighted_tr_high[i] =
-        vmull_n_u16(vsub_u16(weight_scaling, weights_x_high), top_right);
+    weighted_tr_high[i] = vmull_n_u16(NegateS8(weights_x_high), top_right);
   }
 
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
@@ -881,7 +878,7 @@ void SmoothHorizontal4xH_NEON(void* LIBGAV1_RESTRICT const dest,
   auto* dst = static_cast<uint8_t*>(dest);
 
   const uint16x4_t weights_x = vld1_u16(kSmoothWeights);
-  const uint16x4_t scaled_weights_x = vsub_u16(vdup_n_u16(256), weights_x);
+  const uint16x4_t scaled_weights_x = NegateS8(weights_x);
 
   const uint32x4_t weighted_tr = vmull_n_u16(scaled_weights_x, top_right);
   for (int y = 0; y < height; ++y) {
@@ -908,9 +905,9 @@ void SmoothHorizontal8xH_NEON(void* LIBGAV1_RESTRICT const dest,
                                   vld1_u16(kSmoothWeights + 8)};
 
   const uint32x4_t weighted_tr_low =
-      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[0]), top_right);
+      vmull_n_u16(NegateS8(weights_x.val[0]), top_right);
   const uint32x4_t weighted_tr_high =
-      vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[1]), top_right);
+      vmull_n_u16(NegateS8(weights_x.val[1]), top_right);
 
   for (int y = 0; y < height; ++y) {
     auto* dst16 = reinterpret_cast<uint16_t*>(dst);
@@ -938,8 +935,6 @@ void SmoothHorizontalWxH_NEON(void* LIBGAV1_RESTRICT const dest,
 
   auto* dst = static_cast<uint8_t*>(dest);
 
-  const uint16x4_t weight_scaling = vdup_n_u16(256);
-
   uint16x4_t weights_x_low[width >> 3];
   uint16x4_t weights_x_high[width >> 3];
   uint32x4_t weighted_tr_low[width >> 3];
@@ -947,11 +942,9 @@ void SmoothHorizontalWxH_NEON(void* LIBGAV1_RESTRICT const dest,
   for (int i = 0; i < width >> 3; ++i) {
     const int x = i << 3;
     weights_x_low[i] = vld1_u16(kSmoothWeights + width - 4 + x);
-    weighted_tr_low[i] =
-        vmull_n_u16(vsub_u16(weight_scaling, weights_x_low[i]), top_right);
+    weighted_tr_low[i] = vmull_n_u16(NegateS8(weights_x_low[i]), top_right);
     weights_x_high[i] = vld1_u16(kSmoothWeights + width + x);
-    weighted_tr_high[i] =
-        vmull_n_u16(vsub_u16(weight_scaling, weights_x_high[i]), top_right);
+    weighted_tr_high[i] = vmull_n_u16(NegateS8(weights_x_high[i]), top_right);
   }
 
   for (int y = 0; y < height; ++y) {
