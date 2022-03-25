@@ -70,6 +70,8 @@ void Smooth4xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   // 256 - weights = vneg_s8(weights)
   const uint8x8_t scaled_weights_x =
       vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(weights_x_v)));
+  const uint16x4_t weighted_tr =
+      vget_low_u16(vmull_u8(scaled_weights_x, top_right_v));
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t left_v = vdup_n_u8(left[y]);
@@ -82,8 +84,6 @@ void Smooth4xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const uint16x4_t weighted_top = vget_low_u16(vmull_u8(weights_y_v, top_v));
     const uint16x4_t weighted_left =
         vget_low_u16(vmull_u8(weights_x_v, left_v));
-    const uint16x4_t weighted_tr =
-        vget_low_u16(vmull_u8(scaled_weights_x, top_right_v));
     const uint16x4_t result =
         CalculatePred(weighted_top, weighted_left, weighted_bl, weighted_tr);
 
@@ -123,16 +123,15 @@ void Smooth8xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   // 256 - weights = vneg_s8(weights)
   const uint8x8_t scaled_weights_x =
       vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(weights_x_v)));
+  const uint16x8_t weighted_tr = vmull_u8(scaled_weights_x, top_right_v);
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t left_v = vdup_n_u8(left[y]);
     const uint8x8_t weights_y_v = vdup_n_u8(weights_y[y]);
     const uint8x8_t scaled_weights_y = vdup_n_u8(256 - weights_y[y]);
     const uint16x8_t weighted_bl = vmull_u8(scaled_weights_y, bottom_left_v);
-
     const uint16x8_t weighted_top = vmull_u8(weights_y_v, top_v);
     const uint16x8_t weighted_left = vmull_u8(weights_x_v, left_v);
-    const uint16x8_t weighted_tr = vmull_u8(scaled_weights_x, top_right_v);
     const uint8x8_t result =
         CalculatePred(weighted_top, weighted_left, weighted_bl, weighted_tr);
 
@@ -359,12 +358,11 @@ void SmoothHorizontal4Or8xN_NEON(
   // 256 - weights = vneg_s8(weights)
   const uint8x8_t scaled_weights_x =
       vreinterpret_u8_s8(vneg_s8(vreinterpret_s8_u8(weights_x)));
+  const uint16x8_t weighted_tr = vmull_u8(scaled_weights_x, top_right_v);
 
   for (int y = 0; y < height; ++y) {
     const uint8x8_t left_v = vdup_n_u8(left[y]);
-
     const uint16x8_t weighted_left = vmull_u8(weights_x, left_v);
-    const uint16x8_t weighted_tr = vmull_u8(scaled_weights_x, top_right_v);
     const uint16x8_t pred = vaddq_u16(weighted_left, weighted_tr);
     const uint8x8_t pred_scaled = vrshrn_n_u16(pred, kSmoothWeightScale);
 
@@ -643,8 +641,6 @@ void Smooth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
   const uint16x4_t weights_x_v = vld1_u16(kSmoothWeights);
   const uint16x4_t scaled_weights_x = vsub_u16(vdup_n_u16(256), weights_x_v);
-
-  // Weighted top right doesn't change with each row.
   const uint32x4_t weighted_tr = vmull_n_u16(scaled_weights_x, top_right);
 
   for (int y = 0; y < height; ++y) {
@@ -707,14 +703,12 @@ void Smooth8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
   const uint16x4x2_t weights_x = {vld1_u16(kSmoothWeights + 4),
                                   vld1_u16(kSmoothWeights + 8)};
-  // Weighted top right doesn't change with each row.
   const uint32x4_t weighted_tr_low =
       vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[0]), top_right);
   const uint32x4_t weighted_tr_high =
       vmull_n_u16(vsub_u16(vdup_n_u16(256), weights_x.val[1]), top_right);
 
   for (int y = 0; y < height; ++y) {
-    // |weighted_bl| is invariant across the row.
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
     const uint32x4_t weighted_corners_low =
@@ -757,7 +751,6 @@ void SmoothWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
 
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
   for (int y = 0; y < height; ++y) {
-    // |weighted_bl| is invariant across the row.
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
     auto* dst_x = reinterpret_cast<uint16_t*>(dst);
@@ -823,7 +816,6 @@ void SmoothVertical8xH_NEON(void* LIBGAV1_RESTRICT const dest,
 
   for (int y = 0; y < height; ++y) {
     auto* dst16 = reinterpret_cast<uint16_t*>(dst);
-    // |weighted_bl| is invariant across the row.
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
 
@@ -859,7 +851,6 @@ void SmoothVerticalWxH_NEON(void* LIBGAV1_RESTRICT const dest,
 
   const uint16x4_t bottom_left_v = vdup_n_u16(bottom_left);
   for (int y = 0; y < height; ++y) {
-    // |weighted_bl| is invariant across the row.
     const uint32x4_t weighted_bl =
         vmull_n_u16(bottom_left_v, 256 - weights_y[y]);
 
