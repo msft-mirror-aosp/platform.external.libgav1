@@ -665,10 +665,10 @@ void Smooth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
 
 // Common code between 8xH and [16|32|64]xH.
 inline void CalculatePred8(uint16_t* LIBGAV1_RESTRICT dst,
-                           const uint32x4_t& weighted_corners_low,
-                           const uint32x4_t& weighted_corners_high,
-                           const uint16x4x2_t& top_vals,
-                           const uint16x4x2_t& weights_x, const uint16_t left_y,
+                           const uint32x4_t weighted_corners_low,
+                           const uint32x4_t weighted_corners_high,
+                           const uint16x4x2_t top_vals,
+                           const uint16x4x2_t weights_x, const uint16_t left_y,
                            const uint16_t weight_y) {
   // Each variable in the running summation is named for the last item to be
   // accumulated.
