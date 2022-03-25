@@ -31,7 +31,6 @@
 
 namespace libgav1 {
 namespace dsp {
-
 namespace low_bitdepth {
 namespace {
 
@@ -1139,6 +1138,7 @@ void Init10bpp() {
   dsp->intra_predictors[kTransformSize64x64][kIntraPredictorSmoothHorizontal] =
       SmoothHorizontalWxH_NEON<64, 64>;
 }
+
 }  // namespace
 }  // namespace high_bitdepth
 #endif  // LIBGAV1_MAX_BITDEPTH >= 10
