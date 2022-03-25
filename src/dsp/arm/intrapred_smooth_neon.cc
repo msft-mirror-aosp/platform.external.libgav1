@@ -186,9 +186,6 @@ void Smooth16PlusxN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
   const uint8x8_t top_right_v = vdup_n_u8(top_right);
   const uint8x8_t bottom_left_v = vdup_n_u8(bottom_left);
 
-  // TODO(johannkoenig): Consider re-reading top_v and weights_x_v in the loop.
-  // This currently has a performance slope similar to Paeth so it does not
-  // appear to be register bound for arm64.
   uint8x16_t weights_x_v[4];
   weights_x_v[0] = vld1q_u8(kSmoothWeights + width - 4);
   if (width > 16) {
