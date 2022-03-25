@@ -53,9 +53,9 @@ inline uint16x4_t CalculatePred(const uint16x4_t weighted_top,
 }
 
 template <int height>
-inline void Smooth4xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-                           const void* LIBGAV1_RESTRICT const top_row,
-                           const void* LIBGAV1_RESTRICT const left_column) {
+void Smooth4xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                    const void* LIBGAV1_RESTRICT const top_row,
+                    const void* LIBGAV1_RESTRICT const left_column) {
   constexpr int width = 4;
   const auto* const top = static_cast<const uint8_t*>(top_row);
   const auto* const left = static_cast<const uint8_t*>(left_column);
@@ -106,9 +106,9 @@ inline uint8x8_t CalculatePred(const uint16x8_t weighted_top,
 }
 
 template <int height>
-inline void Smooth8xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-                           const void* LIBGAV1_RESTRICT const top_row,
-                           const void* LIBGAV1_RESTRICT const left_column) {
+void Smooth8xN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                    const void* LIBGAV1_RESTRICT const top_row,
+                    const void* LIBGAV1_RESTRICT const left_column) {
   constexpr int width = 8;
   const auto* const top = static_cast<const uint8_t*>(top_row);
   const auto* const left = static_cast<const uint8_t*>(left_column);
@@ -164,10 +164,9 @@ inline uint8x16_t CalculateWeightsAndPred(
 }
 
 template <int width, int height>
-inline void Smooth16PlusxN_NEON(
-    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void Smooth16PlusxN_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                         const void* LIBGAV1_RESTRICT const top_row,
+                         const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
   const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t top_right = top[width - 1];
@@ -246,10 +245,10 @@ inline void Smooth16PlusxN_NEON(
 }
 
 template <int width, int height>
-inline void SmoothVertical4Or8xN_NEON(
-    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothVertical4Or8xN_NEON(void* LIBGAV1_RESTRICT const dest,
+                               ptrdiff_t stride,
+                               const void* LIBGAV1_RESTRICT const top_row,
+                               const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint8_t*>(top_row);
   const auto* const left = static_cast<const uint8_t*>(left_column);
   const uint8_t bottom_left = left[height - 1];
@@ -297,7 +296,7 @@ inline uint8x16_t CalculateVerticalWeightsAndPred(
 }
 
 template <int width, int height>
-inline void SmoothVertical16PlusxN_NEON(
+void SmoothVertical16PlusxN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
@@ -349,7 +348,7 @@ inline void SmoothVertical16PlusxN_NEON(
 }
 
 template <int width, int height>
-inline void SmoothHorizontal4Or8xN_NEON(
+void SmoothHorizontal4Or8xN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
@@ -402,7 +401,7 @@ inline uint8x16_t CalculateHorizontalWeightsAndPred(
 }
 
 template <int width, int height>
-inline void SmoothHorizontal16PlusxN_NEON(
+void SmoothHorizontal16PlusxN_NEON(
     void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
     const void* LIBGAV1_RESTRICT const top_row,
     const void* LIBGAV1_RESTRICT const left_column) {
@@ -634,9 +633,9 @@ constexpr uint16_t kSmoothWeights[] = {
 };
 
 template <int height>
-inline void Smooth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-                           const void* LIBGAV1_RESTRICT const top_row,
-                           const void* LIBGAV1_RESTRICT const left_column) {
+void Smooth4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                    const void* LIBGAV1_RESTRICT const top_row,
+                    const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[3];
@@ -697,9 +696,9 @@ inline void CalculatePred8(uint16_t* LIBGAV1_RESTRICT dst,
 }
 
 template <int height>
-inline void Smooth8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-                           const void* LIBGAV1_RESTRICT const top_row,
-                           const void* LIBGAV1_RESTRICT const left_column) {
+void Smooth8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                    const void* LIBGAV1_RESTRICT const top_row,
+                    const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[7];
@@ -735,9 +734,9 @@ inline void Smooth8xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
 
 // For width 16 and above.
 template <int width, int height>
-inline void SmoothWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-                           const void* LIBGAV1_RESTRICT const top_row,
-                           const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                    const void* LIBGAV1_RESTRICT const top_row,
+                    const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[width - 1];
@@ -785,10 +784,9 @@ inline void SmoothWxH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
 }
 
 template <int height>
-inline void SmoothVertical4xH_NEON(
-    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothVertical4xH_NEON(void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
+                            const void* LIBGAV1_RESTRICT const top_row,
+                            const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t bottom_left = left[height - 1];
@@ -812,10 +810,10 @@ inline void SmoothVertical4xH_NEON(
 }
 
 template <int height>
-inline void SmoothVertical8xH_NEON(
-    void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothVertical8xH_NEON(void* LIBGAV1_RESTRICT const dest,
+                            const ptrdiff_t stride,
+                            const void* LIBGAV1_RESTRICT const top_row,
+                            const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t bottom_left = left[height - 1];
@@ -846,10 +844,10 @@ inline void SmoothVertical8xH_NEON(
 
 // For width 16 and above.
 template <int width, int height>
-inline void SmoothVerticalWxH_NEON(
-    void* LIBGAV1_RESTRICT const dest, const ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothVerticalWxH_NEON(void* LIBGAV1_RESTRICT const dest,
+                            const ptrdiff_t stride,
+                            const void* LIBGAV1_RESTRICT const top_row,
+                            const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t bottom_left = left[height - 1];
@@ -885,10 +883,10 @@ inline void SmoothVerticalWxH_NEON(
 }
 
 template <int height>
-inline void SmoothHorizontal4xH_NEON(
-    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothHorizontal4xH_NEON(void* LIBGAV1_RESTRICT const dest,
+                              ptrdiff_t stride,
+                              const void* LIBGAV1_RESTRICT const top_row,
+                              const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[3];
@@ -909,10 +907,10 @@ inline void SmoothHorizontal4xH_NEON(
 }
 
 template <int height>
-inline void SmoothHorizontal8xH_NEON(
-    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothHorizontal8xH_NEON(void* LIBGAV1_RESTRICT const dest,
+                              ptrdiff_t stride,
+                              const void* LIBGAV1_RESTRICT const top_row,
+                              const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[7];
@@ -943,10 +941,10 @@ inline void SmoothHorizontal8xH_NEON(
 
 // For width 16 and above.
 template <int width, int height>
-inline void SmoothHorizontalWxH_NEON(
-    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column) {
+void SmoothHorizontalWxH_NEON(void* LIBGAV1_RESTRICT const dest,
+                              ptrdiff_t stride,
+                              const void* LIBGAV1_RESTRICT const top_row,
+                              const void* LIBGAV1_RESTRICT const left_column) {
   const auto* const top = static_cast<const uint16_t*>(top_row);
   const auto* const left = static_cast<const uint16_t*>(left_column);
   const uint16_t top_right = top[width - 1];
