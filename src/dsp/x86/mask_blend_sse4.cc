@@ -149,12 +149,12 @@ inline void WriteMaskBlendLine4x2(const int16_t* LIBGAV1_RESTRICT const pred_0,
 }
 
 template <int subsampling_x, int subsampling_y>
-inline void MaskBlending4x4_SSE4(const int16_t* LIBGAV1_RESTRICT pred_0,
-                                 const int16_t* LIBGAV1_RESTRICT pred_1,
-                                 const uint8_t* LIBGAV1_RESTRICT mask,
-                                 const ptrdiff_t mask_stride,
-                                 uint8_t* LIBGAV1_RESTRICT dst,
-                                 const ptrdiff_t dst_stride) {
+inline void MaskBlending4x4_SSE4_1(const int16_t* LIBGAV1_RESTRICT pred_0,
+                                   const int16_t* LIBGAV1_RESTRICT pred_1,
+                                   const uint8_t* LIBGAV1_RESTRICT mask,
+                                   const ptrdiff_t mask_stride,
+                                   uint8_t* LIBGAV1_RESTRICT dst,
+                                   const ptrdiff_t dst_stride) {
   const __m128i mask_inverter = _mm_set1_epi16(64);
   __m128i pred_mask_0 =
       GetMask4x2<subsampling_x, subsampling_y>(mask, mask_stride);
@@ -173,15 +173,15 @@ inline void MaskBlending4x4_SSE4(const int16_t* LIBGAV1_RESTRICT pred_0,
 }
 
 template <int subsampling_x, int subsampling_y>
-inline void MaskBlending4xH_SSE4(const int16_t* LIBGAV1_RESTRICT pred_0,
-                                 const int16_t* LIBGAV1_RESTRICT pred_1,
-                                 const uint8_t* LIBGAV1_RESTRICT const mask_ptr,
-                                 const ptrdiff_t mask_stride, const int height,
-                                 uint8_t* LIBGAV1_RESTRICT dst,
-                                 const ptrdiff_t dst_stride) {
+inline void MaskBlending4xH_SSE4_1(
+    const int16_t* LIBGAV1_RESTRICT pred_0,
+    const int16_t* LIBGAV1_RESTRICT pred_1,
+    const uint8_t* LIBGAV1_RESTRICT const mask_ptr, const ptrdiff_t mask_stride,
+    const int height, uint8_t* LIBGAV1_RESTRICT dst,
+    const ptrdiff_t dst_stride) {
   const uint8_t* mask = mask_ptr;
   if (height == 4) {
-    MaskBlending4x4_SSE4<subsampling_x, subsampling_y>(
+    MaskBlending4x4_SSE4_1<subsampling_x, subsampling_y>(
         pred_0, pred_1, mask, mask_stride, dst, dst_stride);
     return;
   }
@@ -230,20 +230,20 @@ inline void MaskBlending4xH_SSE4(const int16_t* LIBGAV1_RESTRICT pred_0,
 }
 
 template <int subsampling_x, int subsampling_y>
-inline void MaskBlend_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
-                           const void* LIBGAV1_RESTRICT prediction_1,
-                           const ptrdiff_t /*prediction_stride_1*/,
-                           const uint8_t* LIBGAV1_RESTRICT const mask_ptr,
-                           const ptrdiff_t mask_stride, const int width,
-                           const int height, void* LIBGAV1_RESTRICT dest,
-                           const ptrdiff_t dst_stride) {
+inline void MaskBlend_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
+                             const void* LIBGAV1_RESTRICT prediction_1,
+                             const ptrdiff_t /*prediction_stride_1*/,
+                             const uint8_t* LIBGAV1_RESTRICT const mask_ptr,
+                             const ptrdiff_t mask_stride, const int width,
+                             const int height, void* LIBGAV1_RESTRICT dest,
+                             const ptrdiff_t dst_stride) {
   auto* dst = static_cast<uint8_t*>(dest);
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   const ptrdiff_t pred_stride_0 = width;
   const ptrdiff_t pred_stride_1 = width;
   if (width == 4) {
-    MaskBlending4xH_SSE4<subsampling_x, subsampling_y>(
+    MaskBlending4xH_SSE4_1<subsampling_x, subsampling_y>(
         pred_0, pred_1, mask_ptr, mask_stride, height, dst, dst_stride);
     return;
   }
@@ -309,7 +309,7 @@ inline void InterIntraWriteMaskBlendLine8bpp4x2(
 }
 
 template <int subsampling_x, int subsampling_y>
-inline void InterIntraMaskBlending8bpp4x4_SSE4(
+inline void InterIntraMaskBlending8bpp4x4_SSE4_1(
     const uint8_t* LIBGAV1_RESTRICT pred_0, uint8_t* LIBGAV1_RESTRICT pred_1,
     const ptrdiff_t pred_stride_1, const uint8_t* LIBGAV1_RESTRICT mask,
     const ptrdiff_t mask_stride) {
@@ -335,26 +335,26 @@ inline void InterIntraMaskBlending8bpp4x4_SSE4(
 }
 
 template <int subsampling_x, int subsampling_y>
-inline void InterIntraMaskBlending8bpp4xH_SSE4(
+inline void InterIntraMaskBlending8bpp4xH_SSE4_1(
     const uint8_t* LIBGAV1_RESTRICT pred_0, uint8_t* LIBGAV1_RESTRICT pred_1,
     const ptrdiff_t pred_stride_1,
     const uint8_t* LIBGAV1_RESTRICT const mask_ptr, const ptrdiff_t mask_stride,
     const int height) {
   const uint8_t* mask = mask_ptr;
   if (height == 4) {
-    InterIntraMaskBlending8bpp4x4_SSE4<subsampling_x, subsampling_y>(
+    InterIntraMaskBlending8bpp4x4_SSE4_1<subsampling_x, subsampling_y>(
         pred_0, pred_1, pred_stride_1, mask, mask_stride);
     return;
   }
   int y = 0;
   do {
-    InterIntraMaskBlending8bpp4x4_SSE4<subsampling_x, subsampling_y>(
+    InterIntraMaskBlending8bpp4x4_SSE4_1<subsampling_x, subsampling_y>(
         pred_0, pred_1, pred_stride_1, mask, mask_stride);
     pred_0 += 4 << 2;
     pred_1 += pred_stride_1 << 2;
     mask += mask_stride << (2 + subsampling_y);
 
-    InterIntraMaskBlending8bpp4x4_SSE4<subsampling_x, subsampling_y>(
+    InterIntraMaskBlending8bpp4x4_SSE4_1<subsampling_x, subsampling_y>(
         pred_0, pred_1, pred_stride_1, mask, mask_stride);
     pred_0 += 4 << 2;
     pred_1 += pred_stride_1 << 2;
@@ -364,13 +364,13 @@ inline void InterIntraMaskBlending8bpp4xH_SSE4(
 }
 
 template <int subsampling_x, int subsampling_y>
-void InterIntraMaskBlend8bpp_SSE4(
+void InterIntraMaskBlend8bpp_SSE4_1(
     const uint8_t* LIBGAV1_RESTRICT prediction_0,
     uint8_t* LIBGAV1_RESTRICT prediction_1, const ptrdiff_t prediction_stride_1,
     const uint8_t* LIBGAV1_RESTRICT const mask_ptr, const ptrdiff_t mask_stride,
     const int width, const int height) {
   if (width == 4) {
-    InterIntraMaskBlending8bpp4xH_SSE4<subsampling_x, subsampling_y>(
+    InterIntraMaskBlending8bpp4xH_SSE4_1<subsampling_x, subsampling_y>(
         prediction_0, prediction_1, prediction_stride_1, mask_ptr, mask_stride,
         height);
     return;
@@ -411,24 +411,24 @@ void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
 #if DSP_ENABLED_8BPP_SSE4_1(MaskBlend444)
-  dsp->mask_blend[0][0] = MaskBlend_SSE4<0, 0>;
+  dsp->mask_blend[0][0] = MaskBlend_SSE4_1<0, 0>;
 #endif
 #if DSP_ENABLED_8BPP_SSE4_1(MaskBlend422)
-  dsp->mask_blend[1][0] = MaskBlend_SSE4<1, 0>;
+  dsp->mask_blend[1][0] = MaskBlend_SSE4_1<1, 0>;
 #endif
 #if DSP_ENABLED_8BPP_SSE4_1(MaskBlend420)
-  dsp->mask_blend[2][0] = MaskBlend_SSE4<1, 1>;
+  dsp->mask_blend[2][0] = MaskBlend_SSE4_1<1, 1>;
 #endif
   // The is_inter_intra index of mask_blend[][] is replaced by
   // inter_intra_mask_blend_8bpp[] in 8-bit.
 #if DSP_ENABLED_8BPP_SSE4_1(InterIntraMaskBlend8bpp444)
-  dsp->inter_intra_mask_blend_8bpp[0] = InterIntraMaskBlend8bpp_SSE4<0, 0>;
+  dsp->inter_intra_mask_blend_8bpp[0] = InterIntraMaskBlend8bpp_SSE4_1<0, 0>;
 #endif
 #if DSP_ENABLED_8BPP_SSE4_1(InterIntraMaskBlend8bpp422)
-  dsp->inter_intra_mask_blend_8bpp[1] = InterIntraMaskBlend8bpp_SSE4<1, 0>;
+  dsp->inter_intra_mask_blend_8bpp[1] = InterIntraMaskBlend8bpp_SSE4_1<1, 0>;
 #endif
 #if DSP_ENABLED_8BPP_SSE4_1(InterIntraMaskBlend8bpp420)
-  dsp->inter_intra_mask_blend_8bpp[2] = InterIntraMaskBlend8bpp_SSE4<1, 1>;
+  dsp->inter_intra_mask_blend_8bpp[2] = InterIntraMaskBlend8bpp_SSE4_1<1, 1>;
 #endif
 }
 

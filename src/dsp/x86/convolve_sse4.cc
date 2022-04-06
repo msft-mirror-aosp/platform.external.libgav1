@@ -460,7 +460,7 @@ void ConvolveVertical_SSE4_1(
   }
 }
 
-void ConvolveCompoundCopy_SSE4(
+void ConvolveCompoundCopy_SSE4_1(
     const void* LIBGAV1_RESTRICT const reference,
     const ptrdiff_t reference_stride, const int /*horizontal_filter_index*/,
     const int /*vertical_filter_index*/, const int /*horizontal_filter_id*/,
@@ -1860,7 +1860,7 @@ void Init8bpp() {
   dsp->convolve[0][0][1][0] = ConvolveVertical_SSE4_1;
   dsp->convolve[0][0][1][1] = Convolve2D_SSE4_1;
 
-  dsp->convolve[0][1][0][0] = ConvolveCompoundCopy_SSE4;
+  dsp->convolve[0][1][0][0] = ConvolveCompoundCopy_SSE4_1;
   dsp->convolve[0][1][0][1] = ConvolveCompoundHorizontal_SSE4_1;
   dsp->convolve[0][1][1][0] = ConvolveCompoundVertical_SSE4_1;
   dsp->convolve[0][1][1][1] = ConvolveCompound2D_SSE4_1;
