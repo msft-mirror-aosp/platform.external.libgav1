@@ -293,7 +293,6 @@ inline void InterIntraWriteMaskBlendLine8bpp4x2(
   const __m128i pred_mask = _mm_unpacklo_epi8(pred_mask_0, pred_mask_1);
 
   const __m128i pred_val_0 = LoadLo8(pred_0);
-  // TODO(b/150326556): One load.
   __m128i pred_val_1 = Load4(pred_1);
   pred_val_1 = _mm_or_si128(_mm_slli_si128(Load4(pred_1 + pred_stride_1), 4),
                             pred_val_1);
