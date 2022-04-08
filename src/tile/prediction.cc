@@ -771,11 +771,10 @@ bool Tile::InterPrediction(const Block& block, const Plane plane, const int x,
                       [static_cast<int>(prediction_parameters.mask_is_inverse)](
                           block.scratch_buffer->prediction_buffer[0],
                           block.scratch_buffer->prediction_buffer[1],
-                          block.scratch_buffer->weight_mask,
-                          kMaxSuperBlockSizeInPixels);
+                          block.scratch_buffer->weight_mask, block.width);
     }
     prediction_mask = block.scratch_buffer->weight_mask;
-    prediction_mask_stride = kMaxSuperBlockSizeInPixels;
+    prediction_mask_stride = block.width;
   }
 
   if (is_compound) {
