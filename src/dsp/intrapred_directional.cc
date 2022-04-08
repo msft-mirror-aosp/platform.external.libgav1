@@ -94,11 +94,19 @@ void DirectionalIntraPredictorZone1_C(
   } while (++y < height);
 }
 
+// clang 14.0.0 produces incorrect code with LIBGAV1_RESTRICT.
+// https://github.com/llvm/llvm-project/issues/54427
+#if defined(__clang__) && __clang_major__ == 14
+#define LOCAL_RESTRICT
+#else
+#define LOCAL_RESTRICT LIBGAV1_RESTRICT
+#endif
+
 template <typename Pixel>
 void DirectionalIntraPredictorZone2_C(
-    void* LIBGAV1_RESTRICT const dest, ptrdiff_t stride,
-    const void* LIBGAV1_RESTRICT const top_row,
-    const void* LIBGAV1_RESTRICT const left_column, const int width,
+    void* LOCAL_RESTRICT const dest, ptrdiff_t stride,
+    const void* LOCAL_RESTRICT const top_row,
+    const void* LOCAL_RESTRICT const left_column, const int width,
     const int height, const int xstep, const int ystep,
     const bool upsampled_top, const bool upsampled_left) {
   const auto* const top = static_cast<const Pixel*>(top_row);
@@ -142,6 +150,8 @@ void DirectionalIntraPredictorZone2_C(
     dst += stride;
   } while (++y < height);
 }
+
+#undef LOCAL_RESTRICT
 
 template <typename Pixel>
 void DirectionalIntraPredictorZone3_C(
