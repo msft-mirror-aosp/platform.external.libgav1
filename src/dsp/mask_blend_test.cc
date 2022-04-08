@@ -373,6 +373,7 @@ void MaskBlendTest<bitdepth, Pixel>::Test(const char* const digest,
   PredType* src_2 = source2_;
   uint8_t* src_2_8bpp = source2_8bpp_;
   const ptrdiff_t src_2_stride = param_.is_inter_intra ? kStride : width;
+  const ptrdiff_t mask_stride = param_.width;
   uint8_t* mask_row = mask_;
   const int range_mask = (1 << (bitdepth)) - 1;
   for (int y = 0; y < height; ++y) {
@@ -403,7 +404,7 @@ void MaskBlendTest<bitdepth, Pixel>::Test(const char* const digest,
       mask_row[x] = rnd.Rand8() & 63;
       mask_row[x] += rnd.Rand8() & 1;  // Range of mask is [0, 64].
     }
-    mask_row += kStride;
+    mask_row += mask_stride;
   }
 
   absl::Duration elapsed_time;
@@ -414,7 +415,7 @@ void MaskBlendTest<bitdepth, Pixel>::Test(const char* const digest,
       static_assert(sizeof(source2_8bpp_cache_) == sizeof(source2_8bpp_), "");
       // source2_8bpp_ is modified in the call.
       memcpy(source2_8bpp_cache_, source2_8bpp_, sizeof(source2_8bpp_));
-      func_8bpp_(source1_8bpp_, source2_8bpp_, src_2_stride, mask_, kStride,
+      func_8bpp_(source1_8bpp_, source2_8bpp_, src_2_stride, mask_, mask_stride,
                  width, height);
       for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
@@ -426,7 +427,7 @@ void MaskBlendTest<bitdepth, Pixel>::Test(const char* const digest,
       if (bitdepth != 8) {
         ASSERT_EQ(func_8bpp_, nullptr);
       }
-      func_(source1_, source2_, src_2_stride, mask_, kStride, width, height,
+      func_(source1_, source2_, src_2_stride, mask_, mask_stride, width, height,
             dest_, kDestStride);
     }
     elapsed_time += absl::Now() - start;
