@@ -207,22 +207,23 @@ void LoopFilterTest<bitdepth, Pixel>::TestRandomValues(
 
 template <int bitdepth, typename Pixel>
 void LoopFilterTest<bitdepth, Pixel>::TestSaturatedValues() const {
-  const LoopFilterType filter = kLoopFilterTypeHorizontal;
-  if (cur_loop_filters_[filter] == nullptr) return;
-
   Pixel dst[kNumPixels], ref[kNumPixels];
   const auto value = static_cast<Pixel>((1 << bitdepth) - 1);
   for (auto& r : dst) r = value;
   memcpy(ref, dst, sizeof(dst));
 
-  const int outer_thresh = 24;
-  const int inner_thresh = 8;
-  const int hev_thresh = 0;
-  cur_loop_filters_[filter](dst + 8 + kBlockStride * 8, kBlockStride,
-                            outer_thresh, inner_thresh, hev_thresh);
-  ASSERT_TRUE(test_utils::CompareBlocks(ref, dst, kBlockStride, kBlockStride,
-                                        kBlockStride, kBlockStride, true))
-      << "kLoopFilterTypeHorizontal output doesn't match reference";
+  for (int i = 0; i < kNumLoopFilterTypes; ++i) {
+    if (cur_loop_filters_[i] == nullptr) return;
+    const int outer_thresh = 24;
+    const int inner_thresh = 8;
+    const int hev_thresh = 0;
+    cur_loop_filters_[i](dst + 8 + kBlockStride * 8, kBlockStride, outer_thresh,
+                         inner_thresh, hev_thresh);
+    ASSERT_TRUE(test_utils::CompareBlocks(ref, dst, kBlockStride, kBlockStride,
+                                          kBlockStride, kBlockStride, true))
+        << ToString(static_cast<LoopFilterType>(i))
+        << " output doesn't match reference";
+  }
 }
 
 //------------------------------------------------------------------------------
@@ -332,6 +333,8 @@ TEST_P(LoopFilterTest10bpp, FixedInput) {
   TestRandomValues(GetDigests10bpp(size_), kNumTests);
 }
 
+TEST_P(LoopFilterTest10bpp, SaturatedValues) { TestSaturatedValues(); }
+
 INSTANTIATE_TEST_SUITE_P(C, LoopFilterTest10bpp,
                          testing::ValuesIn(kLoopFilterSizes));
 
@@ -390,6 +393,8 @@ TEST_P(LoopFilterTest12bpp, DISABLED_Speed) {
 TEST_P(LoopFilterTest12bpp, FixedInput) {
   TestRandomValues(GetDigests12bpp(size_), kNumTests);
 }
+
+TEST_P(LoopFilterTest12bpp, SaturatedValues) { TestSaturatedValues(); }
 
 INSTANTIATE_TEST_SUITE_P(C, LoopFilterTest12bpp,
                          testing::ValuesIn(kLoopFilterSizes));
