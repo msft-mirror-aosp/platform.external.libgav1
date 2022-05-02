@@ -148,8 +148,6 @@ void Horizontal4_NEON(void* const dest, const ptrdiff_t stride,
   needs_filter4_mask = InterleaveLow32(needs_filter4_mask, needs_filter4_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter4_mask) == 0) {
     // None of the values will be filtered.
     return;
@@ -206,8 +204,6 @@ void Vertical4_NEON(void* const dest, const ptrdiff_t stride,
   needs_filter4_mask = InterleaveLow32(needs_filter4_mask, needs_filter4_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter4_mask) == 0) {
     // None of the values will be filtered.
     return;
@@ -341,8 +337,6 @@ void Horizontal6_NEON(void* const dest, const ptrdiff_t stride,
   hev_mask = InterleaveLow32(hev_mask, hev_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter6_mask) == 0) {
     // None of the values will be filtered.
     return;
@@ -413,8 +407,6 @@ void Vertical6_NEON(void* const dest, const ptrdiff_t stride,
   hev_mask = InterleaveLow32(hev_mask, hev_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter6_mask) == 0) {
     // None of the values will be filtered.
     return;
@@ -591,8 +583,6 @@ void Horizontal8_NEON(void* const dest, const ptrdiff_t stride,
   hev_mask = InterleaveLow32(hev_mask, hev_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter8_mask) == 0) {
     // None of the values will be filtered.
     return;
@@ -668,8 +658,6 @@ void Vertical8_NEON(void* const dest, const ptrdiff_t stride,
   hev_mask = InterleaveLow32(hev_mask, hev_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter8_mask) == 0) {
     // None of the values will be filtered.
     return;
@@ -850,8 +838,6 @@ void Horizontal14_NEON(void* const dest, const ptrdiff_t stride,
   hev_mask = InterleaveLow32(hev_mask, hev_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter8_mask) == 0) {
     // None of the values will be filtered.
     return;
@@ -1016,8 +1002,6 @@ void Vertical14_NEON(void* const dest, const ptrdiff_t stride,
   hev_mask = InterleaveLow32(hev_mask, hev_mask);
 
 #if defined(__aarch64__)
-  // Consider doing this on armv7 if there is a quick way to check if a vector
-  // is zero.
   if (vaddv_u8(needs_filter8_mask) == 0) {
     // None of the values will be filtered.
     return;
