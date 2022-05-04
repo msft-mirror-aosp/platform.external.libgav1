@@ -505,20 +505,12 @@ inline void DirectionalZone1Blend_WxH(
   } while (++y < height);
 }
 
-// The height at which a load of 16 bytes will not contain enough source pixels
-// from |left_column| to supply an accurate row when computing 8 pixels at a
-// time. The values are found by inspection. By coincidence, all angles that
-// satisfy (ystep >> 6) == 2 map to the same value, so it is enough to look up
-// by ystep >> 6. The largest index for this lookup is 1023 >> 6 == 15.
-constexpr int kDirectionalZone2ShuffleInvalidHeight[16] = {
-    1024, 1024, 16, 16, 16, 16, 0, 0, 18, 0, 0, 0, 0, 0, 0, 40};
-
-// 7.11.2.4 (8) 90 < angle > 180
-// The strategy for these functions (4xH and 8+xH) is to know how many blocks
-// can be processed with just pixels from |top_ptr|, then handle mixed blocks,
-// then handle only blocks that take from |left_ptr|. Additionally, a fast
-// index-shuffle approach is used for pred values from |left_column| in sections
-// that permit it.
+//  7.11.2.4 (8) 90 < angle > 180
+//  The strategy for these functions (4xH and 8+xH) is to know how many blocks
+//  can be processed with just pixels from |top_ptr|, then handle mixed blocks,
+//  then handle only blocks that take from |left_ptr|. Additionally, a fast
+//  index-shuffle approach is used for pred values from |left_column| in
+//  sections that permit it.
 inline void DirectionalZone2_4xH(
     uint8_t* LIBGAV1_RESTRICT dst, const ptrdiff_t stride,
     const uint8_t* LIBGAV1_RESTRICT const top_row,
@@ -543,13 +535,6 @@ inline void DirectionalZone2_4xH(
   // at least 3.
   assert(xstep >= 3);
   const int min_top_only_x = std::min((height * xstep) >> 6, /* width */ 4);
-
-  // For steep angles, the source pixels from |left_column| may not fit in a
-  // 16-byte load for shuffling.
-  // TODO(petersonab): Find a more precise formula for this subject to x.
-  // TODO(johannkoenig): Revisit this for |width| == 4.
-  const int max_shuffle_height =
-      std::min(kDirectionalZone2ShuffleInvalidHeight[ystep >> 6], height);
 
   // Offsets the original zone bound value to simplify x < (y+1)*xstep/64 -1
   int xstep_bounds_base = (xstep == 64) ? 0 : xstep - 1;
@@ -584,18 +569,11 @@ inline void DirectionalZone2_4xH(
     // All rows from |min_left_only_y| down for this set of columns only need
     // |left_column| to compute.
     const int min_left_only_y = std::min((4 << 6) / xstep, height);
-    // At high angles such that min_left_only_y < 8, ystep is low and xstep is
-    // high. This means that max_shuffle_height is unbounded and xstep_bounds
-    // will overflow in 16 bits. This is prevented by stopping the first
-    // blending loop at min_left_only_y for such cases, which means we skip over
-    // the second blending loop as well.
-    const int left_shuffle_stop_y =
-        std::min(max_shuffle_height, min_left_only_y);
     int xstep_bounds = xstep_bounds_base + xstep_y;
     int top_x = -xstep - xstep_y;
 
     // +8 increment is OK because if height is 4 this only goes once.
-    for (; y < left_shuffle_stop_y;
+    for (; y < min_left_only_y;
          y += 8, dst += stride8, xstep_bounds += xstep8, top_x -= xstep8) {
       DirectionalZone2FromLeftCol_WxH<4>(
           dst, stride, min_height,
@@ -607,21 +585,8 @@ inline void DirectionalZone2_4xH(
                                    upsample_top_shift);
     }
 
-    // Pick up from the last y-value, using the slower but secure method for
-    // left prediction.
-    const int16_t base_left_y = vgetq_lane_s16(left_y, 0);
-    for (; y < min_left_only_y;
-         y += 8, dst += stride8, xstep_bounds += xstep8, top_x -= xstep8) {
-      DirectionalZone3_WxH<4>(
-          dst, stride, min_height,
-          left_column + ((y - left_base_increment) << upsample_left_shift),
-          base_left_y, -ystep, upsample_left_shift);
-
-      DirectionalZone1Blend_WxH<4>(dst, stride, min_height, top_row,
-                                   xstep_bounds, top_x, xstep,
-                                   upsample_top_shift);
-    }
     // Loop over y for left_only rows.
+    const int16_t base_left_y = vgetq_lane_s16(left_y, 0);
     for (; y < height; y += 8, dst += stride8) {
       DirectionalZone3_WxH<4>(
           dst, stride, min_height,
