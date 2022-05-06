@@ -256,11 +256,12 @@ void ObmcBlendTest<bitdepth, Pixel>::Test(const char* const digest,
         src_2[x] = rnd.Rand16() & mask;
       }
       src_1 += kMaxBlendingBlockSize;
-      src_2 += kMaxBlendingBlockSize;
+      src_2 += width_;
     }
   }
   const ptrdiff_t stride = kMaxBlendingBlockSize * sizeof(Pixel);
-  func_(source1_, stride, width_, height_, source2_, stride);
+  func_(source1_, stride, width_, height_, source2_,
+        width_ * sizeof(source2_[0]));
   if (use_fixed_values) {
     const bool success = test_utils::CompareBlocks(
         source1_, source2_, width_, height_, kMaxBlendingBlockSize,
@@ -288,7 +289,7 @@ void ObmcBlendTest<bitdepth, Pixel>::TestSpeed(const char* const digest,
       src_2[x] = rnd.Rand16() & mask;
     }
     src_1 += kMaxBlendingBlockSize;
-    src_2 += kMaxBlendingBlockSize;
+    src_2 += width_;
   }
   const ptrdiff_t stride = kMaxBlendingBlockSize * sizeof(Pixel);
   uint8_t dest[sizeof(Pixel) * kMaxBlendingBlockSize * kMaxBlendingBlockSize];
@@ -297,7 +298,8 @@ void ObmcBlendTest<bitdepth, Pixel>::TestSpeed(const char* const digest,
     memcpy(dest, source1_,
            sizeof(Pixel) * kMaxBlendingBlockSize * kMaxBlendingBlockSize);
     const absl::Time start = absl::Now();
-    func_(dest, stride, width_, height_, source2_, stride);
+    func_(dest, stride, width_, height_, source2_,
+          width_ * sizeof(source2_[0]));
     elapsed_time += absl::Now() - start;
   }
   memcpy(source1_, dest,
