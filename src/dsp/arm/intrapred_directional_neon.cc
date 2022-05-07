@@ -554,9 +554,9 @@ inline void DirectionalZone2_4xH(
   // blocks that have a mixture of values computed from top or left. The final
   // stage covers blocks that are only computed from the left.
   if (min_top_only_x > 0) {
-    // Round down to the nearest multiple of 8.
-    // TODO(johannkoenig): This never hits for Wx4 blocks but maybe it should.
-    const int max_top_only_y = std::min((1 << 6) / xstep, height) & ~7;
+    // Round down to the nearest multiple of 8 (or 4, if height is 4).
+    const int max_top_only_y =
+        std::min((1 << 6) / xstep, height) & ~(min_height - 1);
     DirectionalZone1_WxH<4>(dst, stride, max_top_only_y, top_row, -xstep,
                             upsampled_top);
 
@@ -665,8 +665,9 @@ inline void DirectionalZone2_8(
     uint8_t* dst_x = dst + x;
     const int max_shuffle_height =
         std::min(((x + d) << 6) / xstep, height) & ~7;
-    // Round down to the nearest multiple of 8.
-    const int max_top_only_y = std::min(((x + 1) << 6) / xstep, height) & ~7;
+    // Round down to the nearest multiple of 8 (or 4, if height is 4).
+    const int max_top_only_y =
+        std::min((1 << 6) / xstep, height) & ~(min_height - 1);
     DirectionalZone1_WxH<8>(dst_x, stride, max_top_only_y,
                             top_row + (x << upsample_top_shift), -xstep,
                             upsampled_top);
@@ -1924,9 +1925,9 @@ inline void DirectionalZone2_4xH(
   // computed from the top row. The second stage, comprising two y-loops, covers
   // blocks that have a mixture of values computed from top or left. The final
   // stage covers blocks that are only computed from the left.
-  // Round down to the nearest multiple of 8.
-  // TODO(petersonab): Check if rounding to the nearest 4 is okay.
-  const int max_top_only_y = std::min((1 << 6) / xstep, height) & ~7;
+  // Round down to the nearest multiple of 8 (or 4, if height is 4).
+  const int max_top_only_y =
+      std::min((1 << 6) / xstep, height) & ~(min_height - 1);
   DirectionalZone1_4xH<upsampled_top>(reinterpret_cast<uint16_t*>(dst),
                                       stride >> 1, max_top_only_y, top_row,
                                       -xstep);
