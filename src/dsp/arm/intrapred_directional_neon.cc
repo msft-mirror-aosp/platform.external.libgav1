@@ -599,34 +599,88 @@ inline void DirectionalZone2_4xH(
   }
 }
 
-// Process a multiple of 8 |width|.
-inline void DirectionalZone2_8(
+template <bool shuffle_left_column>
+inline void DirectionalZone2_8xH(
     uint8_t* LIBGAV1_RESTRICT const dst, const ptrdiff_t stride,
     const uint8_t* LIBGAV1_RESTRICT const top_row,
-    const uint8_t* LIBGAV1_RESTRICT const left_column, const int width,
-    const int height, const int xstep, const int ystep,
+    const uint8_t* LIBGAV1_RESTRICT const left_column, const int height,
+    const int xstep, const int ystep, const int x, const int left_offset,
+    const int xstep_bounds_base, const int16x8_t left_y,
     const bool upsampled_top, const bool upsampled_left) {
   const int upsample_left_shift = static_cast<int>(upsampled_left);
   const int upsample_top_shift = static_cast<int>(upsampled_top);
-
-  // Helper vector.
-  const int16x8_t zero_to_seven = {0, 1, 2, 3, 4, 5, 6, 7};
 
   // Loop incrementers for moving by block (8x8). This function handles blocks
   // with height 4 as well. They are calculated in one pass so these variables
   // do not get used.
   const ptrdiff_t stride8 = stride << 3;
   const int xstep8 = xstep << 3;
-  const int ystep8 = ystep << 3;
 
-  // Process Wx4 blocks.
+  // Cover 8x4 case.
   const int min_height = (height == 4) ? 4 : 8;
 
-  // All columns from |min_top_only_x| to the right will only need |top_row| to
-  // compute and can therefore call the Zone1 functions. This assumes |xstep| is
-  // at least 3.
-  assert(xstep >= 3);
-  const int min_top_only_x = std::min((height * xstep) >> 6, width);
+  // The first stage, before the first y-loop, covers blocks that are only
+  // computed from the top row. The second stage, comprising two y-loops, covers
+  // blocks that have a mixture of values computed from top or left. The final
+  // stage covers blocks that are only computed from the left.
+  uint8_t* dst_x = dst + x;
+  // Round down to the nearest multiple of 8 (or 4, if height is 4).
+  const int max_top_only_y =
+      std::min((1 << 6) / xstep, height) & ~(min_height - 1);
+  DirectionalZone1_WxH<8>(dst_x, stride, max_top_only_y,
+                          top_row + (x << upsample_top_shift), -xstep,
+                          upsampled_top);
+
+  if (max_top_only_y == height) return;
+
+  int y = max_top_only_y;
+  dst_x += stride * y;
+  const int xstep_y = xstep * y;
+
+  // All rows from |min_left_only_y| down for this set of columns only need
+  // |left_column| to compute. Round up to the nearest 8.
+  const int min_left_only_y =
+      Align(std::min(((x + 8) << 6) / xstep, height), 8);
+  int xstep_bounds = xstep_bounds_base + xstep_y;
+  int top_x = -xstep - xstep_y;
+
+  const int16_t base_left_y = vgetq_lane_s16(left_y, 0);
+  for (; y < min_left_only_y;
+       y += 8, dst_x += stride8, xstep_bounds += xstep8, top_x -= xstep8) {
+    if (shuffle_left_column) {
+      DirectionalZone2FromLeftCol_WxH<8>(
+          dst_x, stride, min_height,
+          left_column + ((left_offset + y) << upsample_left_shift), left_y,
+          upsample_left_shift);
+    } else {
+      DirectionalZone3_WxH<8>(
+          dst_x, stride, min_height,
+          left_column + ((left_offset + y) << upsample_left_shift), base_left_y,
+          -ystep, upsample_left_shift);
+    }
+
+    DirectionalZone1Blend_WxH<8>(
+        dst_x, stride, min_height, top_row + (x << upsample_top_shift),
+        xstep_bounds, top_x, xstep, upsample_top_shift);
+  }
+
+  // Loop over y for left_only rows.
+  for (; y < height; y += 8, dst_x += stride8) {
+    DirectionalZone3_WxH<8>(
+        dst_x, stride, min_height,
+        left_column + ((left_offset + y) << upsample_left_shift), base_left_y,
+        -ystep, upsample_left_shift);
+  }
+}
+
+// Process a multiple of 8 |width|.
+inline void DirectionalZone2_WxH(
+    uint8_t* LIBGAV1_RESTRICT const dst, const ptrdiff_t stride,
+    const uint8_t* LIBGAV1_RESTRICT const top_row,
+    const uint8_t* LIBGAV1_RESTRICT const left_column, const int width,
+    const int height, const int xstep, const int ystep,
+    const bool upsampled_top, const bool upsampled_left) {
+  const int ystep8 = ystep << 3;
 
   // Offsets the original zone bound value to simplify x < (y+1)*xstep/64 -1
   int xstep_bounds_base = (xstep == 64) ? 0 : xstep - 1;
@@ -642,7 +696,18 @@ inline void DirectionalZone2_8(
   // left_y vector omits the portion which is covered under the left_column
   // offset. Following values need the full ystep as a relative offset.
   const int16x8_t remainder = vdupq_n_s16(-ystep_remainder);
+  const int16x8_t zero_to_seven = {0, 1, 2, 3, 4, 5, 6, 7};
   int16x8_t left_y = vmlaq_n_s16(remainder, zero_to_seven, -ystep);
+
+  // For ystep > 90, at least two sets of 8 columns can be fully computed from
+  // top_row only.
+  const int min_top_only_x = std::min((height * xstep) >> 6, width);
+  // Analysis finds that, for most angles (ystep < 132), all segments that use
+  // both top_row and left_column can compute from left_column using byte
+  // shuffles from a single vector. For steeper angles, the shuffle is also
+  // fully reliable when x >= 32.
+  const int shuffle_left_col_x = (ystep < 132) ? 0 : 32;
+  const int min_shuffle_x = std::min(min_top_only_x, shuffle_left_col_x);
 
   // This loop treats each set of 4 columns in 3 stages with y-value boundaries.
   // The first stage, before the first y-loop, covers blocks that are only
@@ -650,83 +715,24 @@ inline void DirectionalZone2_8(
   // blocks that have a mixture of values computed from top or left. The final
   // stage covers blocks that are only computed from the left.
   int x = 0;
-  // For steep angles, the source pixels from |left_column| may not fit in a
-  // 16-byte load for shuffling. |d| represents the number of pixels that can
-  // fit in one contiguous vector when stepping by |ystep|. For a given x
-  // position, the left column values can be obtained by VTBL as long as the
-  // values at row[x + d] and beyond come from the top row. However, this does
-  // not guarantee that the vector will also contain all of the values needed
-  // from top row.
-  const int d = 16 / ((ystep >> 6) + 1);
+  for (int left_offset = -left_base_increment; x < min_shuffle_x; x += 8,
+           xstep_bounds_base -= (8 << 6),
+           left_y = vsubq_s16(left_y, increment_left8),
+           left_offset -= left_base_increment8) {
+    DirectionalZone2_8xH<false>(dst, stride, top_row, left_column, height,
+                                xstep, ystep, x, left_offset, xstep_bounds_base,
+                                left_y, upsampled_top, upsampled_left);
+  }
   for (int left_offset = -left_base_increment; x < min_top_only_x; x += 8,
            xstep_bounds_base -= (8 << 6),
            left_y = vsubq_s16(left_y, increment_left8),
            left_offset -= left_base_increment8) {
-    uint8_t* dst_x = dst + x;
-    const int max_shuffle_height =
-        std::min(((x + d) << 6) / xstep, height) & ~7;
-    // Round down to the nearest multiple of 8 (or 4, if height is 4).
-    const int max_top_only_y =
-        std::min((1 << 6) / xstep, height) & ~(min_height - 1);
-    DirectionalZone1_WxH<8>(dst_x, stride, max_top_only_y,
-                            top_row + (x << upsample_top_shift), -xstep,
-                            upsampled_top);
-
-    if (max_top_only_y == height) continue;
-
-    int y = max_top_only_y;
-    dst_x += stride * y;
-    const int xstep_y = xstep * y;
-
-    // All rows from |min_left_only_y| down for this set of columns only need
-    // |left_column| to compute.
-    const int min_left_only_y = std::min(((x + 8) << 6) / xstep, height);
-    // At high angles such that min_left_only_y < 8, ystep is low and xstep is
-    // high. This means that max_shuffle_height is unbounded and xstep_bounds
-    // will overflow in 16 bits. This is prevented by stopping the first
-    // blending loop at min_left_only_y for such cases, which means we skip over
-    // the second blending loop as well.
-    const int left_shuffle_stop_y =
-        std::min(max_shuffle_height, min_left_only_y);
-    int xstep_bounds = xstep_bounds_base + xstep_y;
-    int top_x = -xstep - xstep_y;
-
-    for (; y < left_shuffle_stop_y;
-         y += 8, dst_x += stride8, xstep_bounds += xstep8, top_x -= xstep8) {
-      DirectionalZone2FromLeftCol_WxH<8>(
-          dst_x, stride, min_height,
-          left_column + ((left_offset + y) << upsample_left_shift), left_y,
-          upsample_left_shift);
-
-      DirectionalZone1Blend_WxH<8>(
-          dst_x, stride, min_height, top_row + (x << upsample_top_shift),
-          xstep_bounds, top_x, xstep, upsample_top_shift);
-    }
-
-    // Pick up from the last y-value, using the slower but secure method for
-    // left prediction.
-    const int16_t base_left_y = vgetq_lane_s16(left_y, 0);
-    for (; y < min_left_only_y;
-         y += 8, dst_x += stride8, xstep_bounds += xstep8, top_x -= xstep8) {
-      DirectionalZone3_WxH<8>(
-          dst_x, stride, min_height,
-          left_column + ((left_offset + y) << upsample_left_shift), base_left_y,
-          -ystep, upsample_left_shift);
-
-      DirectionalZone1Blend_WxH<8>(
-          dst_x, stride, min_height, top_row + (x << upsample_top_shift),
-          xstep_bounds, top_x, xstep, upsample_top_shift);
-    }
-    // Loop over y for left_only rows.
-    for (; y < height; y += 8, dst_x += stride8) {
-      DirectionalZone3_WxH<8>(
-          dst_x, stride, min_height,
-          left_column + ((left_offset + y) << upsample_left_shift), base_left_y,
-          -ystep, upsample_left_shift);
-    }
+    DirectionalZone2_8xH<true>(dst, stride, top_row, left_column, height, xstep,
+                               ystep, x, left_offset, xstep_bounds_base, left_y,
+                               upsampled_top, upsampled_left);
   }
-  // TODO(johannkoenig): May be able to remove this branch.
   if (x < width) {
+    const int upsample_top_shift = static_cast<int>(upsampled_top);
     DirectionalZone1_WxH(dst + x, stride, width - x, height,
                          top_row + (x << upsample_top_shift), -xstep,
                          upsampled_top);
@@ -758,8 +764,8 @@ void DirectionalIntraPredictorZone2_NEON(
     DirectionalZone2_4xH(dst, stride, top_ptr, left_ptr, height, xstep, ystep,
                          upsampled_top, upsampled_left);
   } else {
-    DirectionalZone2_8(dst, stride, top_ptr, left_ptr, width, height, xstep,
-                       ystep, upsampled_top, upsampled_left);
+    DirectionalZone2_WxH(dst, stride, top_ptr, left_ptr, width, height, xstep,
+                         ystep, upsampled_top, upsampled_left);
   }
 }
 
