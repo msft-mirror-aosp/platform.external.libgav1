@@ -55,7 +55,7 @@ static_assert(kAlternateDeterministicSeed !=
 // void* operator new[](std::size_t, std::align_val_t, const std::nothrow_t&).
 // This is due to unbalanced inlining of the functions, so we force them to be
 // inlined.
-// See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=100861#c1
+// See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=103993
 struct MaxAlignedAllocable {
   // Class-specific allocation functions.
   static LIBGAV1_ALWAYS_INLINE void* operator new(size_t size) {
