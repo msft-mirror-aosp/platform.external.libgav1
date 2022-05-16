@@ -37,6 +37,10 @@ enum {
 };  // anonymous enum
 
 enum {
+  // Documentation variables.
+  kBitdepth8 = 8,
+  kBitdepth10 = 10,
+  kBitdepth12 = 12,
   kInvalidMvValue = -32768,
   kCdfMaxProbability = 32768,
   kBlockWidthCount = 5,

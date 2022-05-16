@@ -27,10 +27,6 @@
 namespace libgav1 {
 
 enum {
-  // Documentation variables.
-  kBitdepth8 = 8,
-  kBitdepth10 = 10,
-  kBitdepth12 = 12,
   kCflLumaBufferStride = 32,
 };  // anonymous enum
 
