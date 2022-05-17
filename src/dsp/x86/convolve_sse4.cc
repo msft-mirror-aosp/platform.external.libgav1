@@ -1157,7 +1157,7 @@ void ConvolveScale2D_SSE4_1(const void* LIBGAV1_RESTRICT const reference,
   alignas(16) int16_t
       intermediate_result[kIntermediateAllocWidth *
                           (2 * kIntermediateAllocWidth + kSubPixelTaps)];
-  const int num_vert_taps = GetNumTapsInFilter(vert_filter_index);
+  const int num_vert_taps = dsp::GetNumTapsInFilter(vert_filter_index);
   const int intermediate_height =
       (((height - 1) * step_y + (1 << kScaleSubPixelBits) - 1) >>
        kScaleSubPixelBits) +
@@ -1180,7 +1180,7 @@ void ConvolveScale2D_SSE4_1(const void* LIBGAV1_RESTRICT const reference,
   // inputs in each iteration on large blocks. When step_x is large, we need a
   // second register and alignr in order to gather all filter inputs.
   // |num_taps| - 1 is the offset for the shuffle of inputs to the final tap.
-  const int num_horiz_taps = GetNumTapsInFilter(horiz_filter_index);
+  const int num_horiz_taps = dsp::GetNumTapsInFilter(horiz_filter_index);
   const int kernel_start_ceiling = 16 - num_horiz_taps;
   // This truncated quotient |grade_x_threshold| selects |step_x| such that:
   // (step_x * 7) >> kScaleSubPixelBits < single load limit
