@@ -1171,33 +1171,36 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
                                       bool transpose) {
   auto* const dst = static_cast<int16_t*>(dest);
   int32x4_t s[7];
-  int16x8_t x[4];
+  int16x4_t x[4];
 
   if (transpose) {
     assert(step == 4);
     int16x4x4_t y = vld4_s16(dst);
-    for (int i = 0; i < 4; ++i) x[i] = vcombine_s16(y.val[i], y.val[i]);
+    for (int i = 0; i < 4; ++i) x[i] = y.val[i];
   } else {
-    LoadSrc<8, 4>(dst, step, 0, x);
+    x[0] = vld1_s16(dst);
+    x[1] = vld1_s16(dst + 1 * step);
+    x[2] = vld1_s16(dst + 2 * step);
+    x[3] = vld1_s16(dst + 3 * step);
   }
 
   // stage 1.
-  s[5] = vmull_n_s16(vget_low_s16(x[3]), kAdst4Multiplier[1]);
-  s[6] = vmull_n_s16(vget_low_s16(x[3]), kAdst4Multiplier[3]);
+  s[5] = vmull_n_s16(x[3], kAdst4Multiplier[1]);
+  s[6] = vmull_n_s16(x[3], kAdst4Multiplier[3]);
 
   // stage 2.
-  const int32x4_t a7 = vsubl_s16(vget_low_s16(x[0]), vget_low_s16(x[2]));
-  const int32x4_t b7 = vaddw_s16(a7, vget_low_s16(x[3]));
+  const int32x4_t a7 = vsubl_s16(x[0], x[2]);
+  const int32x4_t b7 = vaddw_s16(a7, x[3]);
 
   // stage 3.
-  s[0] = vmull_n_s16(vget_low_s16(x[0]), kAdst4Multiplier[0]);
-  s[1] = vmull_n_s16(vget_low_s16(x[0]), kAdst4Multiplier[1]);
+  s[0] = vmull_n_s16(x[0], kAdst4Multiplier[0]);
+  s[1] = vmull_n_s16(x[0], kAdst4Multiplier[1]);
   // s[0] = s[0] + s[3]
-  s[0] = vmlal_n_s16(s[0], vget_low_s16(x[2]), kAdst4Multiplier[3]);
+  s[0] = vmlal_n_s16(s[0], x[2], kAdst4Multiplier[3]);
   // s[1] = s[1] - s[4]
-  s[1] = vmlsl_n_s16(s[1], vget_low_s16(x[2]), kAdst4Multiplier[0]);
+  s[1] = vmlsl_n_s16(s[1], x[2], kAdst4Multiplier[0]);
 
-  s[3] = vmull_n_s16(vget_low_s16(x[1]), kAdst4Multiplier[2]);
+  s[3] = vmull_n_s16(x[1], kAdst4Multiplier[2]);
   s[2] = vmulq_n_s32(b7, kAdst4Multiplier[2]);
 
   // stage 4.
@@ -1214,17 +1217,20 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
   const int16x4_t dst_2 = vqrshrn_n_s32(s[2], 12);
   const int16x4_t dst_3 = vqrshrn_n_s32(x3, 12);
 
-  x[0] = vcombine_s16(dst_0, dst_0);
-  x[1] = vcombine_s16(dst_1, dst_1);
-  x[2] = vcombine_s16(dst_2, dst_2);
-  x[3] = vcombine_s16(dst_3, dst_3);
+  x[0] = dst_0;
+  x[1] = dst_1;
+  x[2] = dst_2;
+  x[3] = dst_3;
 
   if (transpose) {
     int16x4x4_t y;
-    for (int i = 0; i < 4; ++i) y.val[i] = vget_low_s16(x[i]);
+    for (int i = 0; i < 4; ++i) y.val[i] = x[i];
     vst4_s16(dst, y);
   } else {
-    StoreDst<8, 4>(dst, step, 0, x);
+    vst1_s16(dst, x[0]);
+    vst1_s16(dst + 1 * step, x[1]);
+    vst1_s16(dst + 2 * step, x[2]);
+    vst1_s16(dst + 3 * step, x[3]);
   }
 }
 
