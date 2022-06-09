@@ -1166,29 +1166,19 @@ void Dct64_NEON(void* dest, int32_t step, bool is_row, int row_shift) {
 
 //------------------------------------------------------------------------------
 // Asymmetric Discrete Sine Transforms (ADST).
-template <bool stage_is_rectangular>
+
 LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
                                       bool transpose) {
   auto* const dst = static_cast<int16_t*>(dest);
   int32x4_t s[8];
   int16x8_t x[4];
 
-  if (stage_is_rectangular) {
-    if (transpose) {
-      assert(step == 4);
-      int16x8x4_t y = vld4q_s16(dst);
-      for (int i = 0; i < 4; ++i) x[i] = y.val[i];
-    } else {
-      LoadSrc<16, 4>(dst, step, 0, x);
-    }
+  if (transpose) {
+    assert(step == 4);
+    int16x4x4_t y = vld4_s16(dst);
+    for (int i = 0; i < 4; ++i) x[i] = vcombine_s16(y.val[i], y.val[i]);
   } else {
-    if (transpose) {
-      assert(step == 4);
-      int16x4x4_t y = vld4_s16(dst);
-      for (int i = 0; i < 4; ++i) x[i] = vcombine_s16(y.val[i], y.val[i]);
-    } else {
-      LoadSrc<8, 4>(dst, step, 0, x);
-    }
+    LoadSrc<8, 4>(dst, step, 0, x);
   }
 
   // stage 1.
@@ -1229,22 +1219,12 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
   x[2] = vcombine_s16(dst_2, dst_2);
   x[3] = vcombine_s16(dst_3, dst_3);
 
-  if (stage_is_rectangular) {
-    if (transpose) {
-      int16x8x4_t y;
-      for (int i = 0; i < 4; ++i) y.val[i] = x[i];
-      vst4q_s16(dst, y);
-    } else {
-      StoreDst<16, 4>(dst, step, 0, x);
-    }
+  if (transpose) {
+    int16x4x4_t y;
+    for (int i = 0; i < 4; ++i) y.val[i] = vget_low_s16(x[i]);
+    vst4_s16(dst, y);
   } else {
-    if (transpose) {
-      int16x4x4_t y;
-      for (int i = 0; i < 4; ++i) y.val[i] = vget_low_s16(x[i]);
-      vst4_s16(dst, y);
-    } else {
-      StoreDst<8, 4>(dst, step, 0, x);
-    }
+    StoreDst<8, 4>(dst, step, 0, x);
   }
 }
 
@@ -2673,7 +2653,7 @@ void Adst4TransformLoopRow_NEON(TransformType /*tx_type*/,
   int i = adjusted_tx_height;
   auto* data = src;
   do {
-    Adst4_NEON<false>(data, /*step=*/4, /*transpose=*/true);
+    Adst4_NEON(data, /*step=*/4, /*transpose=*/true);
     data += 16;
     i -= 4;
   } while (i != 0);
@@ -2700,7 +2680,7 @@ void Adst4TransformLoopColumn_NEON(TransformType tx_type, TransformSize tx_size,
     int i = tx_width;
     auto* data = src;
     do {
-      Adst4_NEON<false>(data, tx_width, /*transpose=*/false);
+      Adst4_NEON(data, tx_width, /*transpose=*/false);
       data += 4;
       i -= 4;
     } while (i != 0);
