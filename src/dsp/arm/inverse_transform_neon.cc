@@ -536,9 +536,9 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool transpose) {
 
   if (stage_is_rectangular) {
     if (transpose) {
-      int16x8_t input[8];
-      LoadSrc<8, 8>(dst, step, 0, input);
-      Transpose4x8To8x4(input, x);
+      assert(step == 4);
+      int16x8x4_t y = vld4q_s16(dst);
+      for (int i = 0; i < 4; ++i) x[i] = y.val[i];
     } else {
       LoadSrc<16, 4>(dst, step, 0, x);
     }
@@ -563,9 +563,9 @@ LIBGAV1_ALWAYS_INLINE void Dct4_NEON(void* dest, int32_t step, bool transpose) {
 
   if (stage_is_rectangular) {
     if (transpose) {
-      int16x8_t output[8];
-      Transpose8x4To4x8(s, output);
-      StoreDst<8, 8>(dst, step, 0, output);
+      int16x8x4_t y;
+      for (int i = 0; i < 4; ++i) y.val[i] = s[i];
+      vst4q_s16(dst, y);
     } else {
       StoreDst<16, 4>(dst, step, 0, s);
     }
@@ -1175,9 +1175,9 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
 
   if (stage_is_rectangular) {
     if (transpose) {
-      int16x8_t input[8];
-      LoadSrc<8, 8>(dst, step, 0, input);
-      Transpose4x8To8x4(input, x);
+      assert(step == 4);
+      int16x8x4_t y = vld4q_s16(dst);
+      for (int i = 0; i < 4; ++i) x[i] = y.val[i];
     } else {
       LoadSrc<16, 4>(dst, step, 0, x);
     }
@@ -1231,9 +1231,9 @@ LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
 
   if (stage_is_rectangular) {
     if (transpose) {
-      int16x8_t output[8];
-      Transpose8x4To4x8(x, output);
-      StoreDst<8, 8>(dst, step, 0, output);
+      int16x8x4_t y;
+      for (int i = 0; i < 4; ++i) y.val[i] = x[i];
+      vst4q_s16(dst, y);
     } else {
       StoreDst<16, 4>(dst, step, 0, x);
     }
