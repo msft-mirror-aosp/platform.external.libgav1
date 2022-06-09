@@ -1170,7 +1170,7 @@ void Dct64_NEON(void* dest, int32_t step, bool is_row, int row_shift) {
 LIBGAV1_ALWAYS_INLINE void Adst4_NEON(void* dest, int32_t step,
                                       bool transpose) {
   auto* const dst = static_cast<int16_t*>(dest);
-  int32x4_t s[8];
+  int32x4_t s[7];
   int16x8_t x[4];
 
   if (transpose) {
