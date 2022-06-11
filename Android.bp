@@ -197,6 +197,8 @@ cc_defaults {
     native_coverage: true,
 
     cflags: [
+        "-DLIBGAV1_ENABLE_LOGGING=0",
+        "-DLIBGAV1_EXAMPLES_ENABLE_LOGGING=0",
         "-DLIBGAV1_MAX_BITDEPTH=10",
         "-DLIBGAV1_THREADPOOL_USE_STD_MUTEX",
     ],
