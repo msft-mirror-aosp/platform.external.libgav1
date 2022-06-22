@@ -96,9 +96,13 @@ list(APPEND libgav1_common_sse4_test_sources
 list(APPEND libgav1_convolve_test_sources
             "${libgav1_source}/dsp/convolve_test.cc")
 list(APPEND libgav1_cpu_test_sources "${libgav1_source}/utils/cpu_test.cc")
-list(APPEND libgav1_c_decoder_test_sources "${libgav1_source}/c_decoder_test.c")
+list(APPEND libgav1_c_decoder_test_sources
+            "${libgav1_source}/c_decoder_test.c"
+            "${libgav1_source}/decoder_test_data.h")
 list(APPEND libgav1_c_version_test_sources "${libgav1_source}/c_version_test.c")
-list(APPEND libgav1_decoder_test_sources "${libgav1_source}/decoder_test.cc")
+list(APPEND libgav1_decoder_test_sources
+            "${libgav1_source}/decoder_test.cc"
+            "${libgav1_source}/decoder_test_data.h")
 list(APPEND libgav1_decoder_buffer_test_sources
             "${libgav1_source}/decoder_buffer_test.cc")
 list(APPEND libgav1_distance_weighted_blend_test_sources
