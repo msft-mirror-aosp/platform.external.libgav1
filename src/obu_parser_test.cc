@@ -801,7 +801,9 @@ class ObuParserTest : public testing::Test {
         break;
       case kMetadataTypeItutT35:
         OBU_TEST_COMPARE(itu_t_t35_country_code);
-        OBU_TEST_COMPARE(itu_t_t35_country_code_extension_byte);
+        if (actual.itu_t_t35_country_code == 0xFF) {
+          OBU_TEST_COMPARE(itu_t_t35_country_code_extension_byte);
+        }
         ASSERT_EQ(expected.itu_t_t35_payload_size,
                   actual.itu_t_t35_payload_size);
         if (actual.itu_t_t35_payload_size != 0) {
@@ -2576,7 +2578,6 @@ TEST_F(ObuParserTest, MetadataItutT35) {
   BytesAndBits data;
   ObuMetadata gold;
   gold.itu_t_t35_country_code = 0xA6;  // 1 0 1 0 0 1 1 0 Switzerland
-  gold.itu_t_t35_country_code_extension_byte = 0;
   gold.itu_t_t35_payload_bytes.reset(new (std::nothrow) uint8_t[10]);
   ASSERT_NE(gold.itu_t_t35_payload_bytes, nullptr);
   for (int i = 0; i < 10; ++i) {
@@ -2594,6 +2595,15 @@ TEST_F(ObuParserTest, MetadataItutT35) {
   data.AppendLiteral(8, 0x80);
   data.AppendLiteral(8, 0x00);
   data.AppendLiteral(8, 0x00);
+
+  ASSERT_TRUE(ParseMetadata(data.GenerateData()));
+  VerifyMetadata(kMetadataTypeItutT35, gold);
+
+  gold.itu_t_t35_country_code = 0xFF;
+  gold.itu_t_t35_country_code_extension_byte = 10;
+
+  data.SetLiteral(8, 8, gold.itu_t_t35_country_code);
+  data.InsertLiteral(16, 8, gold.itu_t_t35_country_code_extension_byte);
 
   ASSERT_TRUE(ParseMetadata(data.GenerateData()));
   VerifyMetadata(kMetadataTypeItutT35, gold);
