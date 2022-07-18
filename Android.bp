@@ -79,6 +79,7 @@ cc_library_static {
         "libgav1/src/dsp/arm/intrapred_smooth_neon.cc",
         "libgav1/src/dsp/arm/inverse_transform_10bit_neon.cc",
         "libgav1/src/dsp/arm/inverse_transform_neon.cc",
+        "libgav1/src/dsp/arm/loop_filter_10bit_neon.cc",
         "libgav1/src/dsp/arm/loop_filter_neon.cc",
         "libgav1/src/dsp/arm/loop_restoration_10bit_neon.cc",
         "libgav1/src/dsp/arm/loop_restoration_neon.cc",
