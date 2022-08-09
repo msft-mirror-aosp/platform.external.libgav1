@@ -28,7 +28,7 @@ if(NOT LIBGAV1_ENABLE_TESTS OR NOT EXISTS "${libgav1_googletest}")
       "GoogleTest not found, setting LIBGAV1_ENABLE_TESTS to false.\n"
       "To enable tests download the GoogleTest repository to"
       " third_party/googletest:\n\n  git \\\n    -C ${libgav1_root} \\\n"
-      "    clone \\\n"
+      "    clone -b release-1.12.1 --depth 1 \\\n"
       "    https://github.com/google/googletest.git third_party/googletest\n")
     set(LIBGAV1_ENABLE_TESTS FALSE CACHE BOOL "Enables tests." FORCE)
   endif()
