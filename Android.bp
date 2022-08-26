@@ -192,6 +192,45 @@ cc_library_static {
     ],
 }
 
+// Helper library that only contains the bitstream parser.
+cc_library_static {
+    name: "libgav1_parser",
+    host_supported: true,
+    vendor_available: true,
+
+    export_include_dirs: [
+        ".",
+        "libgav1",
+        "libgav1/src",
+    ],
+
+    cflags: [
+        "-DLIBGAV1_MAX_BITDEPTH=10",
+        "-DLIBGAV1_THREADPOOL_USE_STD_MUTEX",
+        "-O2",
+        "-Wall",
+        "-Werror",
+        "-Wextra",
+    ],
+
+    srcs: [
+        "libgav1/src/buffer_pool.cc",
+        "libgav1/src/frame_buffer.cc",
+        "libgav1/src/obu_parser.cc",
+        "libgav1/src/internal_frame_buffer_list.cc",
+        "libgav1/src/status_code.cc",
+        "libgav1/src/utils/bit_reader.cc",
+        "libgav1/src/utils/constants.cc",
+        "libgav1/src/utils/logging.cc",
+        "libgav1/src/utils/raw_bit_reader.cc",
+        "libgav1/src/utils/segmentation.cc",
+        "libgav1/src/utils/segmentation_map.cc",
+        "libgav1/src/symbol_decoder_context.cc",
+        "libgav1/src/quantizer.cc",
+        "libgav1/src/yuv_buffer.cc",
+    ],
+}
+
 cc_defaults {
     name: "libgav1_fuzzer_defaults",
     host_supported: true,
