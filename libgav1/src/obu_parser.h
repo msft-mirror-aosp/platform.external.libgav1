@@ -221,26 +221,6 @@ enum MetadataType : uint8_t {
   // 32 and greater are reserved for AOM use.
 };
 
-struct ObuMetadata {
-  // Maximum content light level.
-  uint16_t max_cll;
-  // Maximum frame-average light level.
-  uint16_t max_fall;
-  uint16_t primary_chromaticity_x[3];
-  uint16_t primary_chromaticity_y[3];
-  uint16_t white_point_chromaticity_x;
-  uint16_t white_point_chromaticity_y;
-  uint32_t luminance_max;
-  uint32_t luminance_min;
-  // ITU-T T.35.
-  uint8_t itu_t_t35_country_code;
-  uint8_t itu_t_t35_country_code_extension_byte;  // Valid if
-                                                  // itu_t_t35_country_code is
-                                                  // 0xFF.
-  std::unique_ptr<uint8_t[]> itu_t_t35_payload_bytes;
-  size_t itu_t_t35_payload_size;
-};
-
 class ObuParser : public Allocable {
  public:
   ObuParser(const uint8_t* const data, size_t size, int operating_point,
@@ -271,12 +251,20 @@ class ObuParser : public Allocable {
   // populated with a valid frame buffer.
   StatusCode ParseOneFrame(RefCountedBufferPtr* current_frame);
 
+  // Get the AV1CodecConfigurationBox as described in
+  // https://aomediacodec.github.io/av1-isobmff/#av1codecconfigurationbox. This
+  // does minimal bitstream parsing to obtain the necessary information to
+  // generate the av1c box. Returns a std::unique_ptr that contains the av1c
+  // data on success, nullptr otherwise. |av1c_size| must not be nullptr and
+  // will contain the size of the buffer pointed to by the std::unique_ptr.
+  static std::unique_ptr<uint8_t[]> GetAV1CodecConfigurationBox(
+      const uint8_t* data, size_t size, size_t* av1c_size);
+
   // Getters. Only valid if ParseOneFrame() completes successfully.
   const Vector<ObuHeader>& obu_headers() const { return obu_headers_; }
   const ObuSequenceHeader& sequence_header() const { return sequence_header_; }
   const ObuFrameHeader& frame_header() const { return frame_header_; }
   const Vector<TileBuffer>& tile_buffers() const { return tile_buffers_; }
-  const ObuMetadata& metadata() const { return metadata_; }
   // Returns true if the last call to ParseOneFrame() encountered a sequence
   // header change.
   bool sequence_header_changed() const { return sequence_header_changed_; }
@@ -372,6 +360,18 @@ class ObuParser : public Allocable {
                       size_t tg_header_size, size_t bytes_consumed_so_far);
   bool ParseTileGroup(size_t size, size_t bytes_consumed_so_far);  // 5.11.1.
 
+  // Populates |current_frame_| from the |buffer_pool_| if |current_frame_| is
+  // nullptr. Does not do anything otherwise. Returns true on success, false
+  // otherwise.
+  bool EnsureCurrentFrameIsNotNull();
+
+  // Parses the basic bitstream information from the given AV1 stream in |data|.
+  // This is used for generating the AV1CodecConfigurationBox.
+  static StatusCode ParseBasicStreamInfo(const uint8_t* data, size_t size,
+                                         ObuSequenceHeader* sequence_header,
+                                         size_t* sequence_header_offset,
+                                         size_t* sequence_header_size);
+
   // Parser elements.
   std::unique_ptr<RawBitReader> bit_reader_;
   const uint8_t* data_;
@@ -383,7 +383,6 @@ class ObuParser : public Allocable {
   ObuSequenceHeader sequence_header_ = {};
   ObuFrameHeader frame_header_ = {};
   Vector<TileBuffer> tile_buffers_;
-  ObuMetadata metadata_ = {};
   // The expected starting tile number of the next Tile Group.
   int next_tile_group_start_ = 0;
   // If true, the sequence_header_ field is valid.

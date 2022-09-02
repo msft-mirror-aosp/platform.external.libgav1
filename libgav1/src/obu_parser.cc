@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 
 #include "src/buffer_pool.h"
 #include "src/decoder_impl.h"
@@ -1767,11 +1768,7 @@ bool ObuParser::ParseFrameParameters() {
   int64_t scratch;
   if (sequence_header_.reduced_still_picture_header) {
     frame_header_.show_frame = true;
-    current_frame_ = buffer_pool_->GetFreeBuffer();
-    if (current_frame_ == nullptr) {
-      LIBGAV1_DLOG(ERROR, "Could not get current_frame from the buffer pool.");
-      return false;
-    }
+    if (!EnsureCurrentFrameIsNotNull()) return false;
   } else {
     OBU_READ_BIT_OR_FAIL;
     frame_header_.show_existing_frame = scratch != 0;
@@ -1840,11 +1837,7 @@ bool ObuParser::ParseFrameParameters() {
       }
       return true;
     }
-    current_frame_ = buffer_pool_->GetFreeBuffer();
-    if (current_frame_ == nullptr) {
-      LIBGAV1_DLOG(ERROR, "Could not get current_frame from the buffer pool.");
-      return false;
-    }
+    if (!EnsureCurrentFrameIsNotNull()) return false;
     OBU_READ_LITERAL_OR_FAIL(2);
     frame_header_.frame_type = static_cast<FrameType>(scratch);
     current_frame_->set_frame_type(frame_header_.frame_type);
@@ -2395,50 +2388,58 @@ bool ObuParser::ParseMetadata(const uint8_t* data, size_t size) {
   size -= metadata_type_size;
   int64_t scratch;
   switch (metadata_type) {
-    case kMetadataTypeHdrContentLightLevel:
+    case kMetadataTypeHdrContentLightLevel: {
+      ObuMetadataHdrCll hdr_cll;
       OBU_READ_LITERAL_OR_FAIL(16);
-      metadata_.max_cll = scratch;
+      hdr_cll.max_cll = scratch;
       OBU_READ_LITERAL_OR_FAIL(16);
-      metadata_.max_fall = scratch;
+      hdr_cll.max_fall = scratch;
+      if (!EnsureCurrentFrameIsNotNull()) return false;
+      current_frame_->set_hdr_cll(hdr_cll);
       break;
-    case kMetadataTypeHdrMasteringDisplayColorVolume:
+    }
+    case kMetadataTypeHdrMasteringDisplayColorVolume: {
+      ObuMetadataHdrMdcv hdr_mdcv;
       for (int i = 0; i < 3; ++i) {
         OBU_READ_LITERAL_OR_FAIL(16);
-        metadata_.primary_chromaticity_x[i] = scratch;
+        hdr_mdcv.primary_chromaticity_x[i] = scratch;
         OBU_READ_LITERAL_OR_FAIL(16);
-        metadata_.primary_chromaticity_y[i] = scratch;
+        hdr_mdcv.primary_chromaticity_y[i] = scratch;
       }
       OBU_READ_LITERAL_OR_FAIL(16);
-      metadata_.white_point_chromaticity_x = scratch;
+      hdr_mdcv.white_point_chromaticity_x = scratch;
       OBU_READ_LITERAL_OR_FAIL(16);
-      metadata_.white_point_chromaticity_y = scratch;
+      hdr_mdcv.white_point_chromaticity_y = scratch;
       OBU_READ_LITERAL_OR_FAIL(32);
-      metadata_.luminance_max = static_cast<uint32_t>(scratch);
+      hdr_mdcv.luminance_max = static_cast<uint32_t>(scratch);
       OBU_READ_LITERAL_OR_FAIL(32);
-      metadata_.luminance_min = static_cast<uint32_t>(scratch);
+      hdr_mdcv.luminance_min = static_cast<uint32_t>(scratch);
+      if (!EnsureCurrentFrameIsNotNull()) return false;
+      current_frame_->set_hdr_mdcv(hdr_mdcv);
       break;
+    }
     case kMetadataTypeScalability:
       if (!ParseMetadataScalability()) return false;
       break;
     case kMetadataTypeItutT35: {
+      ObuMetadataItutT35 itut_t35;
       OBU_READ_LITERAL_OR_FAIL(8);
-      metadata_.itu_t_t35_country_code = static_cast<uint8_t>(scratch);
+      itut_t35.country_code = static_cast<uint8_t>(scratch);
       ++data;
       --size;
-      if (metadata_.itu_t_t35_country_code == 0xFF) {
+      if (itut_t35.country_code == 0xFF) {
         OBU_READ_LITERAL_OR_FAIL(8);
-        metadata_.itu_t_t35_country_code_extension_byte =
-            static_cast<uint8_t>(scratch);
+        itut_t35.country_code_extension_byte = static_cast<uint8_t>(scratch);
         ++data;
         --size;
       }
-      // Read itu_t_t35_payload_bytes. Section 6.7.2 of the spec says:
-      //   itu_t_t35_payload_bytes shall be bytes containing data registered as
+      // Read itut_t35.payload_bytes. Section 6.7.2 of the spec says:
+      //   itut_t35.payload_bytes shall be bytes containing data registered as
       //   specified in Recommendation ITU-T T.35.
-      // Therefore itu_t_t35_payload_bytes is byte aligned and the first
-      // trailing byte should be 0x80. Since the exact syntax of
-      // itu_t_t35_payload_bytes is not defined in the AV1 spec, identify the
-      // end of itu_t_t35_payload_bytes by searching for the trailing bit.
+      // Therefore itut_t35.payload_bytes is byte aligned and the first trailing
+      // byte should be 0x80. Since the exact syntax of itut_t35.payload_bytes
+      // is not defined in the AV1 spec, identify the end of
+      // itut_t35.payload_bytes by searching for the trailing bit.
       const int i = GetLastNonzeroByteIndex(data, size);
       if (i < 0) {
         LIBGAV1_DLOG(ERROR, "Trailing bit is missing.");
@@ -2447,20 +2448,15 @@ bool ObuParser::ParseMetadata(const uint8_t* data, size_t size) {
       if (data[i] != 0x80) {
         LIBGAV1_DLOG(
             ERROR,
-            "itu_t_t35_payload_bytes is not byte aligned. The last nonzero "
-            "byte of the payload data is 0x%x, should be 0x80.",
+            "itut_t35.payload_bytes is not byte aligned. The last nonzero byte "
+            "of the payload data is 0x%x, should be 0x80.",
             data[i]);
         return false;
       }
-      if (i != 0) {
-        // data[0]..data[i - 1] are itu_t_t35_payload_bytes.
-        metadata_.itu_t_t35_payload_bytes.reset(new (std::nothrow) uint8_t[i]);
-        if (metadata_.itu_t_t35_payload_bytes == nullptr) {
-          LIBGAV1_DLOG(ERROR, "Allocation of itu_t_t35_payload_bytes failed.");
-          return false;
-        }
-        memcpy(metadata_.itu_t_t35_payload_bytes.get(), data, i);
-        metadata_.itu_t_t35_payload_size = i;
+      itut_t35.payload_size = i;
+      if (!EnsureCurrentFrameIsNotNull() ||
+          !current_frame_->set_itut_t35(itut_t35, data)) {
+        return false;
       }
       // Skip all bits before the trailing bit.
       bit_reader_->SkipBytes(i);
@@ -2637,6 +2633,16 @@ bool ObuParser::InitBitReader(const uint8_t* const data, size_t size) {
   return bit_reader_ != nullptr;
 }
 
+bool ObuParser::EnsureCurrentFrameIsNotNull() {
+  if (current_frame_ != nullptr) return true;
+  current_frame_ = buffer_pool_->GetFreeBuffer();
+  if (current_frame_ == nullptr) {
+    LIBGAV1_DLOG(ERROR, "Could not get current_frame from the buffer pool.");
+    return false;
+  }
+  return true;
+}
+
 bool ObuParser::HasData() const { return size_ > 0; }
 
 StatusCode ObuParser::ParseOneFrame(RefCountedBufferPtr* const current_frame) {
@@ -2652,7 +2658,6 @@ StatusCode ObuParser::ParseOneFrame(RefCountedBufferPtr* const current_frame) {
   // Clear everything except the sequence header.
   obu_headers_.clear();
   frame_header_ = {};
-  metadata_ = {};
   tile_buffers_.clear();
   next_tile_group_start_ = 0;
   sequence_header_changed_ = false;
@@ -2871,6 +2876,146 @@ StatusCode ObuParser::ParseOneFrame(RefCountedBufferPtr* const current_frame) {
   size_ = size;
   *current_frame = std::move(current_frame_);
   return kStatusOk;
+}
+
+// AV1CodecConfigurationBox specification:
+// https://aomediacodec.github.io/av1-isobmff/#av1codecconfigurationbox.
+// static
+std::unique_ptr<uint8_t[]> ObuParser::GetAV1CodecConfigurationBox(
+    const uint8_t* data, size_t size, size_t* const av1c_size) {
+  if (data == nullptr || av1c_size == nullptr) return nullptr;
+
+  ObuSequenceHeader sequence_header;
+  size_t sequence_header_offset;
+  size_t sequence_header_size;
+  const StatusCode status =
+      ParseBasicStreamInfo(data, size, &sequence_header,
+                           &sequence_header_offset, &sequence_header_size);
+  if (status != kStatusOk) {
+    *av1c_size = 0;
+    return nullptr;
+  }
+
+  *av1c_size = 4 + sequence_header_size;
+  std::unique_ptr<uint8_t[]> av1c_ptr(new (std::nothrow) uint8_t[*av1c_size]);
+  if (av1c_ptr == nullptr) {
+    *av1c_size = 0;
+    return nullptr;
+  }
+  uint8_t* av1c = av1c_ptr.get();
+  // unsigned int (1) marker = 1;
+  // unsigned int (7) version = 1;
+  av1c[0] = 0x81;
+
+  // unsigned int (3) seq_profile;
+  // unsigned int (5) seq_level_idx_0;
+  const uint8_t seq_level_idx_0 = ((sequence_header.level[0].major - 2) << 2) |
+                                  sequence_header.level[0].minor;
+  av1c[1] = (sequence_header.profile << 5) | seq_level_idx_0;
+
+  // unsigned int (1) seq_tier_0;
+  // unsigned int (1) high_bitdepth;
+  // unsigned int (1) twelve_bit;
+  // unsigned int (1) monochrome;
+  // unsigned int (1) chroma_subsampling_x;
+  // unsigned int (1) chroma_subsampling_y;
+  // unsigned int (2) chroma_sample_position;
+  const auto high_bitdepth =
+      static_cast<uint8_t>(sequence_header.color_config.bitdepth > 8);
+  const auto twelve_bit =
+      static_cast<uint8_t>(sequence_header.color_config.bitdepth == 12);
+  av1c[2] =
+      (sequence_header.tier[0] << 7) | (high_bitdepth << 6) |
+      (twelve_bit << 5) |
+      (static_cast<uint8_t>(sequence_header.color_config.is_monochrome) << 4) |
+      (sequence_header.color_config.subsampling_x << 3) |
+      (sequence_header.color_config.subsampling_y << 2) |
+      sequence_header.color_config.chroma_sample_position;
+
+  // unsigned int (3) reserved = 0;
+  // unsigned int (1) initial_presentation_delay_present;
+  // if (initial_presentation_delay_present) {
+  //   unsigned int (4) initial_presentation_delay_minus_one;
+  // } else {
+  //   unsigned int (4) reserved = 0;
+  // }
+  av1c[3] = 0;
+
+  // unsigned int (8) configOBUs[];
+  memcpy(av1c + 4, data + sequence_header_offset, sequence_header_size);
+
+  return av1c_ptr;
+}
+
+// static
+StatusCode ObuParser::ParseBasicStreamInfo(const uint8_t* data, size_t size,
+                                           ObuSequenceHeader* sequence_header,
+                                           size_t* sequence_header_offset,
+                                           size_t* sequence_header_size) {
+  DecoderState state;
+  ObuParser parser(nullptr, 0, 0, nullptr, &state);
+  if (!parser.InitBitReader(data, size)) {
+    LIBGAV1_DLOG(ERROR, "Failed to initialize bit reader.");
+    return kStatusOutOfMemory;
+  }
+  while (!parser.bit_reader_->Finished()) {
+    const size_t obu_start_offset = parser.bit_reader_->byte_offset();
+    if (!parser.ParseHeader()) {
+      LIBGAV1_DLOG(ERROR, "Failed to parse OBU Header.");
+      return kStatusBitstreamError;
+    }
+    const ObuHeader& obu_header = parser.obu_headers_.back();
+    if (!obu_header.has_size_field) {
+      LIBGAV1_DLOG(
+          ERROR,
+          "has_size_field is zero. libgav1 does not support such streams.");
+      return kStatusUnimplemented;
+    }
+    size_t obu_size;
+    if (!parser.bit_reader_->ReadUnsignedLeb128(&obu_size)) {
+      LIBGAV1_DLOG(ERROR, "Could not read OBU size.");
+      return kStatusBitstreamError;
+    }
+    if (size - parser.bit_reader_->byte_offset() < obu_size) {
+      LIBGAV1_DLOG(ERROR, "Not enough bits left to parse OBU %zu vs %zu.",
+                   size - parser.bit_reader_->bit_offset(), obu_size);
+      return kStatusBitstreamError;
+    }
+    if (obu_header.type != kObuSequenceHeader) {
+      parser.obu_headers_.pop_back();
+      parser.bit_reader_->SkipBytes(obu_size);
+      continue;
+    }
+    const size_t obu_start_position = parser.bit_reader_->bit_offset();
+    if (!parser.ParseSequenceHeader(false)) {
+      LIBGAV1_DLOG(ERROR, "Failed to parse SequenceHeader OBU.");
+      return kStatusBitstreamError;
+    }
+    const size_t parsed_obu_size_in_bits =
+        parser.bit_reader_->bit_offset() - obu_start_position;
+    const uint64_t obu_size_in_bits = static_cast<uint64_t>(obu_size) * 8;
+    if (obu_size_in_bits < parsed_obu_size_in_bits) {
+      LIBGAV1_DLOG(
+          ERROR,
+          "Parsed OBU size (%zu bits) is greater than expected OBU size "
+          "(%zu bytes)..",
+          parsed_obu_size_in_bits, obu_size);
+      return kStatusBitstreamError;
+    }
+    if (!parser.bit_reader_->VerifyAndSkipTrailingBits(
+            static_cast<size_t>(obu_size_in_bits - parsed_obu_size_in_bits))) {
+      LIBGAV1_DLOG(
+          ERROR, "Error when verifying trailing bits for the sequence header.");
+      return kStatusBitstreamError;
+    }
+    *sequence_header = parser.sequence_header_;
+    *sequence_header_offset = obu_start_offset;
+    *sequence_header_size =
+        parser.bit_reader_->byte_offset() - obu_start_offset;
+    return kStatusOk;
+  }
+  // Sequence header was never found.
+  return kStatusBitstreamError;
 }
 
 }  // namespace libgav1
