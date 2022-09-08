@@ -141,9 +141,8 @@ class DecoderImpl : public Allocable {
                           int64_t user_private_data, void* buffer_private_data);
   StatusCode DequeueFrame(const DecoderBuffer** out_ptr);
   static constexpr int GetMaxBitdepth() {
-    static_assert(LIBGAV1_MAX_BITDEPTH == 8 || LIBGAV1_MAX_BITDEPTH == 10 ||
-                      LIBGAV1_MAX_BITDEPTH == 12,
-                  "LIBGAV1_MAX_BITDEPTH must be 8, 10 or 12.");
+    static_assert(LIBGAV1_MAX_BITDEPTH == 8 || LIBGAV1_MAX_BITDEPTH == 10,
+                  "LIBGAV1_MAX_BITDEPTH must be 8 or 10.");
     return LIBGAV1_MAX_BITDEPTH;
   }
 

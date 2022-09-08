@@ -1767,7 +1767,11 @@ bool ObuParser::ParseFrameParameters() {
   int64_t scratch;
   if (sequence_header_.reduced_still_picture_header) {
     frame_header_.show_frame = true;
-    if (!EnsureCurrentFrameIsNotNull()) return false;
+    current_frame_ = buffer_pool_->GetFreeBuffer();
+    if (current_frame_ == nullptr) {
+      LIBGAV1_DLOG(ERROR, "Could not get current_frame from the buffer pool.");
+      return false;
+    }
   } else {
     OBU_READ_BIT_OR_FAIL;
     frame_header_.show_existing_frame = scratch != 0;
@@ -1836,7 +1840,11 @@ bool ObuParser::ParseFrameParameters() {
       }
       return true;
     }
-    if (!EnsureCurrentFrameIsNotNull()) return false;
+    current_frame_ = buffer_pool_->GetFreeBuffer();
+    if (current_frame_ == nullptr) {
+      LIBGAV1_DLOG(ERROR, "Could not get current_frame from the buffer pool.");
+      return false;
+    }
     OBU_READ_LITERAL_OR_FAIL(2);
     frame_header_.frame_type = static_cast<FrameType>(scratch);
     current_frame_->set_frame_type(frame_header_.frame_type);
@@ -2387,58 +2395,50 @@ bool ObuParser::ParseMetadata(const uint8_t* data, size_t size) {
   size -= metadata_type_size;
   int64_t scratch;
   switch (metadata_type) {
-    case kMetadataTypeHdrContentLightLevel: {
-      ObuMetadataHdrCll hdr_cll;
+    case kMetadataTypeHdrContentLightLevel:
       OBU_READ_LITERAL_OR_FAIL(16);
-      hdr_cll.max_cll = scratch;
+      metadata_.max_cll = scratch;
       OBU_READ_LITERAL_OR_FAIL(16);
-      hdr_cll.max_fall = scratch;
-      if (!EnsureCurrentFrameIsNotNull()) return false;
-      current_frame_->set_hdr_cll(hdr_cll);
+      metadata_.max_fall = scratch;
       break;
-    }
-    case kMetadataTypeHdrMasteringDisplayColorVolume: {
-      ObuMetadataHdrMdcv hdr_mdcv;
+    case kMetadataTypeHdrMasteringDisplayColorVolume:
       for (int i = 0; i < 3; ++i) {
         OBU_READ_LITERAL_OR_FAIL(16);
-        hdr_mdcv.primary_chromaticity_x[i] = scratch;
+        metadata_.primary_chromaticity_x[i] = scratch;
         OBU_READ_LITERAL_OR_FAIL(16);
-        hdr_mdcv.primary_chromaticity_y[i] = scratch;
+        metadata_.primary_chromaticity_y[i] = scratch;
       }
       OBU_READ_LITERAL_OR_FAIL(16);
-      hdr_mdcv.white_point_chromaticity_x = scratch;
+      metadata_.white_point_chromaticity_x = scratch;
       OBU_READ_LITERAL_OR_FAIL(16);
-      hdr_mdcv.white_point_chromaticity_y = scratch;
+      metadata_.white_point_chromaticity_y = scratch;
       OBU_READ_LITERAL_OR_FAIL(32);
-      hdr_mdcv.luminance_max = static_cast<uint32_t>(scratch);
+      metadata_.luminance_max = static_cast<uint32_t>(scratch);
       OBU_READ_LITERAL_OR_FAIL(32);
-      hdr_mdcv.luminance_min = static_cast<uint32_t>(scratch);
-      if (!EnsureCurrentFrameIsNotNull()) return false;
-      current_frame_->set_hdr_mdcv(hdr_mdcv);
+      metadata_.luminance_min = static_cast<uint32_t>(scratch);
       break;
-    }
     case kMetadataTypeScalability:
       if (!ParseMetadataScalability()) return false;
       break;
     case kMetadataTypeItutT35: {
-      ObuMetadataItutT35 itut_t35;
       OBU_READ_LITERAL_OR_FAIL(8);
-      itut_t35.country_code = static_cast<uint8_t>(scratch);
+      metadata_.itu_t_t35_country_code = static_cast<uint8_t>(scratch);
       ++data;
       --size;
-      if (itut_t35.country_code == 0xFF) {
+      if (metadata_.itu_t_t35_country_code == 0xFF) {
         OBU_READ_LITERAL_OR_FAIL(8);
-        itut_t35.country_code_extension_byte = static_cast<uint8_t>(scratch);
+        metadata_.itu_t_t35_country_code_extension_byte =
+            static_cast<uint8_t>(scratch);
         ++data;
         --size;
       }
-      // Read itut_t35.payload_bytes. Section 6.7.2 of the spec says:
-      //   itut_t35.payload_bytes shall be bytes containing data registered as
+      // Read itu_t_t35_payload_bytes. Section 6.7.2 of the spec says:
+      //   itu_t_t35_payload_bytes shall be bytes containing data registered as
       //   specified in Recommendation ITU-T T.35.
-      // Therefore itut_t35.payload_bytes is byte aligned and the first trailing
-      // byte should be 0x80. Since the exact syntax of itut_t35.payload_bytes
-      // is not defined in the AV1 spec, identify the end of
-      // itut_t35.payload_bytes by searching for the trailing bit.
+      // Therefore itu_t_t35_payload_bytes is byte aligned and the first
+      // trailing byte should be 0x80. Since the exact syntax of
+      // itu_t_t35_payload_bytes is not defined in the AV1 spec, identify the
+      // end of itu_t_t35_payload_bytes by searching for the trailing bit.
       const int i = GetLastNonzeroByteIndex(data, size);
       if (i < 0) {
         LIBGAV1_DLOG(ERROR, "Trailing bit is missing.");
@@ -2447,15 +2447,20 @@ bool ObuParser::ParseMetadata(const uint8_t* data, size_t size) {
       if (data[i] != 0x80) {
         LIBGAV1_DLOG(
             ERROR,
-            "itut_t35.payload_bytes is not byte aligned. The last nonzero byte "
-            "of the payload data is 0x%x, should be 0x80.",
+            "itu_t_t35_payload_bytes is not byte aligned. The last nonzero "
+            "byte of the payload data is 0x%x, should be 0x80.",
             data[i]);
         return false;
       }
-      itut_t35.payload_size = i;
-      if (!EnsureCurrentFrameIsNotNull() ||
-          !current_frame_->set_itut_t35(itut_t35, data)) {
-        return false;
+      if (i != 0) {
+        // data[0]..data[i - 1] are itu_t_t35_payload_bytes.
+        metadata_.itu_t_t35_payload_bytes.reset(new (std::nothrow) uint8_t[i]);
+        if (metadata_.itu_t_t35_payload_bytes == nullptr) {
+          LIBGAV1_DLOG(ERROR, "Allocation of itu_t_t35_payload_bytes failed.");
+          return false;
+        }
+        memcpy(metadata_.itu_t_t35_payload_bytes.get(), data, i);
+        metadata_.itu_t_t35_payload_size = i;
       }
       // Skip all bits before the trailing bit.
       bit_reader_->SkipBytes(i);
@@ -2632,16 +2637,6 @@ bool ObuParser::InitBitReader(const uint8_t* const data, size_t size) {
   return bit_reader_ != nullptr;
 }
 
-bool ObuParser::EnsureCurrentFrameIsNotNull() {
-  if (current_frame_ != nullptr) return true;
-  current_frame_ = buffer_pool_->GetFreeBuffer();
-  if (current_frame_ == nullptr) {
-    LIBGAV1_DLOG(ERROR, "Could not get current_frame from the buffer pool.");
-    return false;
-  }
-  return true;
-}
-
 bool ObuParser::HasData() const { return size_ > 0; }
 
 StatusCode ObuParser::ParseOneFrame(RefCountedBufferPtr* const current_frame) {
@@ -2657,6 +2652,7 @@ StatusCode ObuParser::ParseOneFrame(RefCountedBufferPtr* const current_frame) {
   // Clear everything except the sequence header.
   obu_headers_.clear();
   frame_header_ = {};
+  metadata_ = {};
   tile_buffers_.clear();
   next_tile_group_start_ = 0;
   sequence_header_changed_ = false;

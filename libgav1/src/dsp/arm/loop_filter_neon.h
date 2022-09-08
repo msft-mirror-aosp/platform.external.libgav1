@@ -26,7 +26,6 @@ namespace dsp {
 // Initializes Dsp::loop_filters, see the defines below for specifics. This
 // function is not thread-safe.
 void LoopFilterInit_NEON();
-void LoopFilterInit10bpp_NEON();
 
 }  // namespace dsp
 }  // namespace libgav1

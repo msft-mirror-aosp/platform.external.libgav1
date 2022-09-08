@@ -37,10 +37,10 @@ namespace {
 constexpr int kRoundingBits8bpp = 4;
 
 template <bool mask_is_inverse, bool is_store_16>
-inline void WeightMask16_SSE4_1(const int16_t* LIBGAV1_RESTRICT prediction_0,
-                                const int16_t* LIBGAV1_RESTRICT prediction_1,
-                                uint8_t* LIBGAV1_RESTRICT mask,
-                                ptrdiff_t mask_stride) {
+inline void WeightMask16_SSE4(const int16_t* LIBGAV1_RESTRICT prediction_0,
+                              const int16_t* LIBGAV1_RESTRICT prediction_1,
+                              uint8_t* LIBGAV1_RESTRICT mask,
+                              ptrdiff_t mask_stride) {
   const __m128i pred_00 = LoadAligned16(prediction_0);
   const __m128i pred_10 = LoadAligned16(prediction_1);
   const __m128i difference_0 = RightShiftWithRounding_U16(
@@ -78,7 +78,7 @@ inline void WeightMask16_SSE4_1(const int16_t* LIBGAV1_RESTRICT prediction_0,
 }
 
 #define WEIGHT8_PAIR_WITHOUT_STRIDE \
-  WeightMask16_SSE4_1<mask_is_inverse, false>(pred_0, pred_1, mask, mask_stride)
+  WeightMask16_SSE4<mask_is_inverse, false>(pred_0, pred_1, mask, mask_stride)
 
 #define WEIGHT8_PAIR_AND_STRIDE \
   WEIGHT8_PAIR_WITHOUT_STRIDE;  \
@@ -87,10 +87,9 @@ inline void WeightMask16_SSE4_1(const int16_t* LIBGAV1_RESTRICT prediction_0,
   mask += mask_stride << 1
 
 template <bool mask_is_inverse>
-void WeightMask8x8_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                          const void* LIBGAV1_RESTRICT prediction_1,
-                          uint8_t* LIBGAV1_RESTRICT mask,
-                          ptrdiff_t mask_stride) {
+void WeightMask8x8_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                        const void* LIBGAV1_RESTRICT prediction_1,
+                        uint8_t* LIBGAV1_RESTRICT mask, ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
 
@@ -101,10 +100,10 @@ void WeightMask8x8_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask8x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                           const void* LIBGAV1_RESTRICT prediction_1,
-                           uint8_t* LIBGAV1_RESTRICT mask,
-                           ptrdiff_t mask_stride) {
+void WeightMask8x16_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 3;
@@ -117,10 +116,10 @@ void WeightMask8x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask8x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                           const void* LIBGAV1_RESTRICT prediction_1,
-                           uint8_t* LIBGAV1_RESTRICT mask,
-                           ptrdiff_t mask_stride) {
+void WeightMask8x32_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 5;
@@ -133,7 +132,7 @@ void WeightMask8x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 #define WEIGHT16_WITHOUT_STRIDE \
-  WeightMask16_SSE4_1<mask_is_inverse, true>(pred_0, pred_1, mask, mask_stride)
+  WeightMask16_SSE4<mask_is_inverse, true>(pred_0, pred_1, mask, mask_stride)
 
 #define WEIGHT16_AND_STRIDE \
   WEIGHT16_WITHOUT_STRIDE;  \
@@ -142,10 +141,10 @@ void WeightMask8x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask16x8_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                           const void* LIBGAV1_RESTRICT prediction_1,
-                           uint8_t* LIBGAV1_RESTRICT mask,
-                           ptrdiff_t mask_stride) {
+void WeightMask16x8_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y = 7;
@@ -156,10 +155,10 @@ void WeightMask16x8_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask16x16_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 5;
@@ -172,10 +171,10 @@ void WeightMask16x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask16x32_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 6;
@@ -191,10 +190,10 @@ void WeightMask16x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask16x64_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 21;
@@ -206,11 +205,10 @@ void WeightMask16x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   WEIGHT16_WITHOUT_STRIDE;
 }
 
-#define WEIGHT32_WITHOUT_STRIDE                                        \
-  WeightMask16_SSE4_1<mask_is_inverse, true>(pred_0, pred_1, mask,     \
-                                             mask_stride);             \
-  WeightMask16_SSE4_1<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16, \
-                                             mask + 16, mask_stride)
+#define WEIGHT32_WITHOUT_STRIDE                                                \
+  WeightMask16_SSE4<mask_is_inverse, true>(pred_0, pred_1, mask, mask_stride); \
+  WeightMask16_SSE4<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16,           \
+                                           mask + 16, mask_stride)
 
 #define WEIGHT32_AND_STRIDE \
   WEIGHT32_WITHOUT_STRIDE;  \
@@ -219,10 +217,10 @@ void WeightMask16x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask32x8_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                           const void* LIBGAV1_RESTRICT prediction_1,
-                           uint8_t* LIBGAV1_RESTRICT mask,
-                           ptrdiff_t mask_stride) {
+void WeightMask32x8_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                         const void* LIBGAV1_RESTRICT prediction_1,
+                         uint8_t* LIBGAV1_RESTRICT mask,
+                         ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   WEIGHT32_AND_STRIDE;
@@ -236,10 +234,10 @@ void WeightMask32x8_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask32x16_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 5;
@@ -252,10 +250,10 @@ void WeightMask32x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask32x32_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 6;
@@ -271,10 +269,10 @@ void WeightMask32x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask32x64_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 21;
@@ -286,15 +284,14 @@ void WeightMask32x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   WEIGHT32_WITHOUT_STRIDE;
 }
 
-#define WEIGHT64_WITHOUT_STRIDE                                        \
-  WeightMask16_SSE4_1<mask_is_inverse, true>(pred_0, pred_1, mask,     \
-                                             mask_stride);             \
-  WeightMask16_SSE4_1<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16, \
-                                             mask + 16, mask_stride);  \
-  WeightMask16_SSE4_1<mask_is_inverse, true>(pred_0 + 32, pred_1 + 32, \
-                                             mask + 32, mask_stride);  \
-  WeightMask16_SSE4_1<mask_is_inverse, true>(pred_0 + 48, pred_1 + 48, \
-                                             mask + 48, mask_stride)
+#define WEIGHT64_WITHOUT_STRIDE                                                \
+  WeightMask16_SSE4<mask_is_inverse, true>(pred_0, pred_1, mask, mask_stride); \
+  WeightMask16_SSE4<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16,           \
+                                           mask + 16, mask_stride);            \
+  WeightMask16_SSE4<mask_is_inverse, true>(pred_0 + 32, pred_1 + 32,           \
+                                           mask + 32, mask_stride);            \
+  WeightMask16_SSE4<mask_is_inverse, true>(pred_0 + 48, pred_1 + 48,           \
+                                           mask + 48, mask_stride)
 
 #define WEIGHT64_AND_STRIDE \
   WEIGHT64_WITHOUT_STRIDE;  \
@@ -303,10 +300,10 @@ void WeightMask32x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask64x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask64x16_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -319,10 +316,10 @@ void WeightMask64x16_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask64x32_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y5 = 0;
@@ -338,10 +335,10 @@ void WeightMask64x32_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                            const void* LIBGAV1_RESTRICT prediction_1,
-                            uint8_t* LIBGAV1_RESTRICT mask,
-                            ptrdiff_t mask_stride) {
+void WeightMask64x64_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                          const void* LIBGAV1_RESTRICT prediction_1,
+                          uint8_t* LIBGAV1_RESTRICT mask,
+                          ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -354,10 +351,10 @@ void WeightMask64x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x128_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                             const void* LIBGAV1_RESTRICT prediction_1,
-                             uint8_t* LIBGAV1_RESTRICT mask,
-                             ptrdiff_t mask_stride) {
+void WeightMask64x128_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                           const void* LIBGAV1_RESTRICT prediction_1,
+                           uint8_t* LIBGAV1_RESTRICT mask,
+                           ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -371,10 +368,10 @@ void WeightMask64x128_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask128x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                             const void* LIBGAV1_RESTRICT prediction_1,
-                             uint8_t* LIBGAV1_RESTRICT mask,
-                             ptrdiff_t mask_stride) {
+void WeightMask128x64_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                           const void* LIBGAV1_RESTRICT prediction_1,
+                           uint8_t* LIBGAV1_RESTRICT mask,
+                           ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -415,10 +412,10 @@ void WeightMask128x64_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask128x128_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                              const void* LIBGAV1_RESTRICT prediction_1,
-                              uint8_t* LIBGAV1_RESTRICT mask,
-                              ptrdiff_t mask_stride) {
+void WeightMask128x128_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                            const void* LIBGAV1_RESTRICT prediction_1,
+                            uint8_t* LIBGAV1_RESTRICT mask,
+                            ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const int16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const int16_t*>(prediction_1);
   int y3 = 0;
@@ -469,9 +466,8 @@ void WeightMask128x128_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 
 #define INIT_WEIGHT_MASK_8BPP(width, height, w_index, h_index) \
   dsp->weight_mask[w_index][h_index][0] =                      \
-      WeightMask##width##x##height##_SSE4_1<0>;                \
-  dsp->weight_mask[w_index][h_index][1] =                      \
-      WeightMask##width##x##height##_SSE4_1<1>
+      WeightMask##width##x##height##_SSE4<0>;                  \
+  dsp->weight_mask[w_index][h_index][1] = WeightMask##width##x##height##_SSE4<1>
 void Init8bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth8);
   assert(dsp != nullptr);
@@ -505,7 +501,7 @@ constexpr int kRoundingBits10bpp = 6;
 constexpr int kScaledDiffShift = 4;
 
 template <bool mask_is_inverse, bool is_store_16>
-inline void WeightMask16_10bpp_SSE4_1(
+inline void WeightMask16_10bpp_SSE4(
     const uint16_t* LIBGAV1_RESTRICT prediction_0,
     const uint16_t* LIBGAV1_RESTRICT prediction_1,
     uint8_t* LIBGAV1_RESTRICT mask, ptrdiff_t mask_stride) {
@@ -566,9 +562,9 @@ inline void WeightMask16_10bpp_SSE4_1(
   }
 }
 
-#define WEIGHT8_PAIR_WITHOUT_STRIDE_10BPP                                 \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, false>(pred_0, pred_1, mask, \
-                                                    mask_stride)
+#define WEIGHT8_PAIR_WITHOUT_STRIDE_10BPP                               \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, false>(pred_0, pred_1, mask, \
+                                                  mask_stride)
 
 #define WEIGHT8_PAIR_AND_STRIDE_10BPP \
   WEIGHT8_PAIR_WITHOUT_STRIDE_10BPP;  \
@@ -577,10 +573,10 @@ inline void WeightMask16_10bpp_SSE4_1(
   mask += mask_stride << 1
 
 template <bool mask_is_inverse>
-void WeightMask8x8_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                const void* LIBGAV1_RESTRICT prediction_1,
-                                uint8_t* LIBGAV1_RESTRICT mask,
-                                ptrdiff_t mask_stride) {
+void WeightMask8x8_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                              const void* LIBGAV1_RESTRICT prediction_1,
+                              uint8_t* LIBGAV1_RESTRICT mask,
+                              ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
 
@@ -591,10 +587,10 @@ void WeightMask8x8_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask8x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                 const void* LIBGAV1_RESTRICT prediction_1,
-                                 uint8_t* LIBGAV1_RESTRICT mask,
-                                 ptrdiff_t mask_stride) {
+void WeightMask8x16_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                               const void* LIBGAV1_RESTRICT prediction_1,
+                               uint8_t* LIBGAV1_RESTRICT mask,
+                               ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 3;
@@ -607,10 +603,10 @@ void WeightMask8x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask8x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                 const void* LIBGAV1_RESTRICT prediction_1,
-                                 uint8_t* LIBGAV1_RESTRICT mask,
-                                 ptrdiff_t mask_stride) {
+void WeightMask8x32_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                               const void* LIBGAV1_RESTRICT prediction_1,
+                               uint8_t* LIBGAV1_RESTRICT mask,
+                               ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y5 = 5;
@@ -622,9 +618,9 @@ void WeightMask8x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   WEIGHT8_PAIR_WITHOUT_STRIDE_10BPP;
 }
 
-#define WEIGHT16_WITHOUT_STRIDE_10BPP                                    \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, true>(pred_0, pred_1, mask, \
-                                                   mask_stride)
+#define WEIGHT16_WITHOUT_STRIDE_10BPP                                  \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, true>(pred_0, pred_1, mask, \
+                                                 mask_stride)
 
 #define WEIGHT16_AND_STRIDE_10BPP \
   WEIGHT16_WITHOUT_STRIDE_10BPP;  \
@@ -633,10 +629,10 @@ void WeightMask8x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask16x8_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                 const void* LIBGAV1_RESTRICT prediction_1,
-                                 uint8_t* LIBGAV1_RESTRICT mask,
-                                 ptrdiff_t mask_stride) {
+void WeightMask16x8_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                               const void* LIBGAV1_RESTRICT prediction_1,
+                               uint8_t* LIBGAV1_RESTRICT mask,
+                               ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y = 7;
@@ -647,10 +643,10 @@ void WeightMask16x8_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask16x16_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 5;
@@ -663,10 +659,10 @@ void WeightMask16x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask16x32_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y5 = 6;
@@ -682,10 +678,10 @@ void WeightMask16x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask16x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask16x64_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 21;
@@ -697,11 +693,11 @@ void WeightMask16x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   WEIGHT16_WITHOUT_STRIDE_10BPP;
 }
 
-#define WEIGHT32_WITHOUT_STRIDE_10BPP                                        \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, true>(pred_0, pred_1, mask,     \
-                                                   mask_stride);             \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16, \
-                                                   mask + 16, mask_stride)
+#define WEIGHT32_WITHOUT_STRIDE_10BPP                                      \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, true>(pred_0, pred_1, mask,     \
+                                                 mask_stride);             \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16, \
+                                                 mask + 16, mask_stride)
 
 #define WEIGHT32_AND_STRIDE_10BPP \
   WEIGHT32_WITHOUT_STRIDE_10BPP;  \
@@ -710,10 +706,10 @@ void WeightMask16x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask32x8_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                 const void* LIBGAV1_RESTRICT prediction_1,
-                                 uint8_t* LIBGAV1_RESTRICT mask,
-                                 ptrdiff_t mask_stride) {
+void WeightMask32x8_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                               const void* LIBGAV1_RESTRICT prediction_1,
+                               uint8_t* LIBGAV1_RESTRICT mask,
+                               ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   WEIGHT32_AND_STRIDE_10BPP;
@@ -727,10 +723,10 @@ void WeightMask32x8_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask32x16_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 5;
@@ -743,10 +739,10 @@ void WeightMask32x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask32x32_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y5 = 6;
@@ -762,10 +758,10 @@ void WeightMask32x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask32x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask32x64_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 21;
@@ -777,15 +773,15 @@ void WeightMask32x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   WEIGHT32_WITHOUT_STRIDE_10BPP;
 }
 
-#define WEIGHT64_WITHOUT_STRIDE_10BPP                                        \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, true>(pred_0, pred_1, mask,     \
-                                                   mask_stride);             \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16, \
-                                                   mask + 16, mask_stride);  \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, true>(pred_0 + 32, pred_1 + 32, \
-                                                   mask + 32, mask_stride);  \
-  WeightMask16_10bpp_SSE4_1<mask_is_inverse, true>(pred_0 + 48, pred_1 + 48, \
-                                                   mask + 48, mask_stride)
+#define WEIGHT64_WITHOUT_STRIDE_10BPP                                      \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, true>(pred_0, pred_1, mask,     \
+                                                 mask_stride);             \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, true>(pred_0 + 16, pred_1 + 16, \
+                                                 mask + 16, mask_stride);  \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, true>(pred_0 + 32, pred_1 + 32, \
+                                                 mask + 32, mask_stride);  \
+  WeightMask16_10bpp_SSE4<mask_is_inverse, true>(pred_0 + 48, pred_1 + 48, \
+                                                 mask + 48, mask_stride)
 
 #define WEIGHT64_AND_STRIDE_10BPP \
   WEIGHT64_WITHOUT_STRIDE_10BPP;  \
@@ -794,10 +790,10 @@ void WeightMask32x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
   mask += mask_stride
 
 template <bool mask_is_inverse>
-void WeightMask64x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask64x16_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 5;
@@ -810,10 +806,10 @@ void WeightMask64x16_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask64x32_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y5 = 6;
@@ -829,10 +825,10 @@ void WeightMask64x32_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                  const void* LIBGAV1_RESTRICT prediction_1,
-                                  uint8_t* LIBGAV1_RESTRICT mask,
-                                  ptrdiff_t mask_stride) {
+void WeightMask64x64_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                const void* LIBGAV1_RESTRICT prediction_1,
+                                uint8_t* LIBGAV1_RESTRICT mask,
+                                ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 21;
@@ -845,10 +841,10 @@ void WeightMask64x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask64x128_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                   const void* LIBGAV1_RESTRICT prediction_1,
-                                   uint8_t* LIBGAV1_RESTRICT mask,
-                                   ptrdiff_t mask_stride) {
+void WeightMask64x128_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                 const void* LIBGAV1_RESTRICT prediction_1,
+                                 uint8_t* LIBGAV1_RESTRICT mask,
+                                 ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 42;
@@ -862,10 +858,10 @@ void WeightMask64x128_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask128x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                   const void* LIBGAV1_RESTRICT prediction_1,
-                                   uint8_t* LIBGAV1_RESTRICT mask,
-                                   ptrdiff_t mask_stride) {
+void WeightMask128x64_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                 const void* LIBGAV1_RESTRICT prediction_1,
+                                 uint8_t* LIBGAV1_RESTRICT mask,
+                                 ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 21;
@@ -906,10 +902,10 @@ void WeightMask128x64_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 }
 
 template <bool mask_is_inverse>
-void WeightMask128x128_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
-                                    const void* LIBGAV1_RESTRICT prediction_1,
-                                    uint8_t* LIBGAV1_RESTRICT mask,
-                                    ptrdiff_t mask_stride) {
+void WeightMask128x128_10bpp_SSE4(const void* LIBGAV1_RESTRICT prediction_0,
+                                  const void* LIBGAV1_RESTRICT prediction_1,
+                                  uint8_t* LIBGAV1_RESTRICT mask,
+                                  ptrdiff_t mask_stride) {
   const auto* pred_0 = static_cast<const uint16_t*>(prediction_0);
   const auto* pred_1 = static_cast<const uint16_t*>(prediction_1);
   int y3 = 42;
@@ -960,9 +956,9 @@ void WeightMask128x128_10bpp_SSE4_1(const void* LIBGAV1_RESTRICT prediction_0,
 
 #define INIT_WEIGHT_MASK_10BPP(width, height, w_index, h_index) \
   dsp->weight_mask[w_index][h_index][0] =                       \
-      WeightMask##width##x##height##_10bpp_SSE4_1<0>;           \
+      WeightMask##width##x##height##_10bpp_SSE4<0>;             \
   dsp->weight_mask[w_index][h_index][1] =                       \
-      WeightMask##width##x##height##_10bpp_SSE4_1<1>
+      WeightMask##width##x##height##_10bpp_SSE4<1>
 void Init10bpp() {
   Dsp* const dsp = dsp_internal::GetWritableDspTable(kBitdepth10);
   assert(dsp != nullptr);
