@@ -46,8 +46,8 @@ compliant AV1 decoder. More information on the AV1 video format can be found at
 
 Configuration options:
 
-*   `LIBGAV1_MAX_BITDEPTH`: defines the maximum supported bitdepth (8, 10;
-    default: 10).
+*   `LIBGAV1_MAX_BITDEPTH`: defines the maximum supported bitdepth (8, 10, 12;
+    default: 12).
 *   `LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS`: define to a non-zero value to disable
     [symbol reduction](#symbol-reduction) in an optimized build to keep all
     versions of dsp functions available. Automatically defined in
