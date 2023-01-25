@@ -55,7 +55,7 @@ static char* fuzzer_get_tmpfile_with_suffix(const uint8_t* data, size_t size,
   }
 
   if (snprintf(filename_buffer, buffer_sz, "%s%s", leading_temp_path, suffix) >=
-      buffer_sz) {
+      (int)buffer_sz) {  // NOLINT (this could be a C compilation unit)
     perror("File name buffer too short.");
     abort();
   }
