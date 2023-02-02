@@ -41,6 +41,11 @@ constexpr size_t kMaxDataSize = 200 * 1024;
 #endif
 
 inline void ParseObu(const uint8_t* const data, size_t size) {
+  size_t av1c_size;
+  const std::unique_ptr<uint8_t[]> av1c_box =
+      libgav1::ObuParser::GetAV1CodecConfigurationBox(data, size, &av1c_size);
+  static_cast<void>(av1c_box);
+
   libgav1::InternalFrameBufferList buffer_list;
   libgav1::BufferPool buffer_pool(libgav1::OnInternalFrameBufferSizeChanged,
                                   libgav1::GetInternalFrameBuffer,
