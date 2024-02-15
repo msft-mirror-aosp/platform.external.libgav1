@@ -44,7 +44,7 @@ cc_library_static {
     ],
 
     cflags: [
-        "-DLIBGAV1_MAX_BITDEPTH=10",
+        "-DLIBGAV1_MAX_BITDEPTH=12",
         "-DLIBGAV1_THREADPOOL_USE_STD_MUTEX",
         "-O2",
         "-Wall",
@@ -204,7 +204,7 @@ cc_library_static {
     ],
 
     cflags: [
-        "-DLIBGAV1_MAX_BITDEPTH=10",
+        "-DLIBGAV1_MAX_BITDEPTH=12",
         "-DLIBGAV1_THREADPOOL_USE_STD_MUTEX",
         "-O2",
         "-Wall",
@@ -238,7 +238,7 @@ cc_defaults {
     cflags: [
         "-DLIBGAV1_ENABLE_LOGGING=0",
         "-DLIBGAV1_EXAMPLES_ENABLE_LOGGING=0",
-        "-DLIBGAV1_MAX_BITDEPTH=10",
+        "-DLIBGAV1_MAX_BITDEPTH=12",
         "-DLIBGAV1_THREADPOOL_USE_STD_MUTEX",
     ],
 
