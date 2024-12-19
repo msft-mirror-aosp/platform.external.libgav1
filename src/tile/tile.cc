@@ -18,9 +18,11 @@
 #include <array>
 #include <cassert>
 #include <climits>
+#include <condition_variable>  // NOLINT (unapproved c++11 header)
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <mutex>  // NOLINT (unapproved c++11 header)
 #include <new>
 #include <numeric>
 #include <type_traits>
