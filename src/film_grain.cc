@@ -15,6 +15,7 @@
 #include "src/film_grain.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -277,6 +278,14 @@ FilmGrain<bitdepth>::FilmGrain(const FilmGrainParams& params,
       template_uv_height_((subsampling_y != 0) ? kMinChromaHeight
                                                : kMaxChromaHeight),
       thread_pool_(thread_pool) {}
+
+template <int bitdepth>
+FilmGrain<bitdepth>::~FilmGrain() {
+  // Clear the earlier poisoning to avoid false reports when the memory range
+  // is reused.
+  ASAN_UNPOISON_MEMORY_REGION(luma_grain_, sizeof(luma_grain_));
+  ASAN_UNPOISON_MEMORY_REGION(scaling_lut_y_, sizeof(scaling_lut_y_));
+}
 
 template <int bitdepth>
 bool FilmGrain<bitdepth>::Init() {
