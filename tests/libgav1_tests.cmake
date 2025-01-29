@@ -40,7 +40,10 @@ if((CMAKE_CXX_COMPILER_ID
     MATCHES
     "Clang|GNU"
     AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "5")
-   OR (MSVC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19"))
+   OR (CMAKE_CXX_COMPILER_ID
+       STREQUAL
+       "MSVC"
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "19"))
   macro(libgav1_add_tests_targets)
 
   endmacro()
@@ -1222,6 +1225,7 @@ macro(libgav1_add_tests_targets)
                          ${libgav1_test_objlib_deps}
                          LIB_DEPS
                          absl::strings
+                         absl::time
                          ${libgav1_common_test_absl_deps}
                          libgav1_gtest
                          libgav1_gtest_main)
