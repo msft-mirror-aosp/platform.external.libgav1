@@ -35,25 +35,25 @@ class SimpleGuardedInteger {
   SimpleGuardedInteger& operator=(const SimpleGuardedInteger&) = delete;
 
   void Decrement() {
-    absl::MutexLock l(&mutex_);
+    absl::MutexLock l(mutex_);
     assert(value_ >= 1);
     --value_;
     changed_.SignalAll();
   }
 
   void Increment() {
-    absl::MutexLock l(&mutex_);
+    absl::MutexLock l(mutex_);
     ++value_;
     changed_.SignalAll();
   }
 
   int Value() {
-    absl::MutexLock l(&mutex_);
+    absl::MutexLock l(mutex_);
     return value_;
   }
 
   void WaitForZero() {
-    absl::MutexLock l(&mutex_);
+    absl::MutexLock l(mutex_);
     while (value_ != 0) {
       changed_.Wait(&mutex_);
     }
