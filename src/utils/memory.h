@@ -173,8 +173,7 @@ struct Allocable {
 
 // A variant of Allocable that forces allocations to be aligned to
 // kMaxAlignment bytes. This is intended for use with classes that use
-// alignas() with this value. C++17 aligned new/delete are used if available,
-// otherwise we use AlignedAlloc/Free.
+// alignas() with this value.
 struct MaxAlignedAllocable {
   // Class-specific allocation functions.
   static void* operator new(size_t size) = delete;
@@ -183,58 +182,30 @@ struct MaxAlignedAllocable {
   // Class-specific non-throwing allocation functions
   static void* operator new(size_t size, const std::nothrow_t& tag) noexcept {
     if (size > 0x40000000) return nullptr;
-#ifdef __cpp_aligned_new
     return ::operator new(size, std::align_val_t(kMaxAlignment), tag);
-#else
-    static_cast<void>(tag);
-    return AlignedAlloc(kMaxAlignment, size);
-#endif
   }
   static void* operator new[](size_t size, const std::nothrow_t& tag) noexcept {
     if (size > 0x40000000) return nullptr;
-#ifdef __cpp_aligned_new
     return ::operator new[](size, std::align_val_t(kMaxAlignment), tag);
-#else
-    static_cast<void>(tag);
-    return AlignedAlloc(kMaxAlignment, size);
-#endif
   }
 
   // Class-specific deallocation functions.
   static void operator delete(void* ptr) noexcept {
-#ifdef __cpp_aligned_new
     ::operator delete(ptr, std::align_val_t(kMaxAlignment));
-#else
-    AlignedFree(ptr);
-#endif
   }
   static void operator delete[](void* ptr) noexcept {
-#ifdef __cpp_aligned_new
     ::operator delete[](ptr, std::align_val_t(kMaxAlignment));
-#else
-    AlignedFree(ptr);
-#endif
   }
 
   // Only called if new (std::nothrow) is used and the constructor throws an
   // exception.
   static void operator delete(void* ptr, const std::nothrow_t& tag) noexcept {
-#ifdef __cpp_aligned_new
     ::operator delete(ptr, std::align_val_t(kMaxAlignment), tag);
-#else
-    static_cast<void>(tag);
-    AlignedFree(ptr);
-#endif
   }
   // Only called if new[] (std::nothrow) is used and the constructor throws an
   // exception.
   static void operator delete[](void* ptr, const std::nothrow_t& tag) noexcept {
-#ifdef __cpp_aligned_new
     ::operator delete[](ptr, std::align_val_t(kMaxAlignment), tag);
-#else
-    static_cast<void>(tag);
-    AlignedFree(ptr);
-#endif
   }
 };
 
