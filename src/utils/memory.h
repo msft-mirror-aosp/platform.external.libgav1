@@ -29,6 +29,8 @@
 #include <memory>
 #include <new>
 
+#include "src/utils/compiler_attributes.h"
+
 namespace libgav1 {
 
 enum {
@@ -174,37 +176,50 @@ struct Allocable {
 // A variant of Allocable that forces allocations to be aligned to
 // kMaxAlignment bytes. This is intended for use with classes that use
 // alignas() with this value.
+// Note when building the source as C++17 or greater, gcc 11.2.0 may issue a
+// warning of the form:
+//   warning: 'void operator delete [](void*, std::align_val_t)' called on
+//     pointer returned from a mismatched allocation function
+//   note: returned from 'static void*
+//     libgav1::MaxAlignedAllocable::operator new [](size_t)'
+// This is a false positive and is due to unbalanced inlining of the functions,
+// so we force them to be inlined.
+// See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=103993
 struct MaxAlignedAllocable {
   // Class-specific allocation functions.
   static void* operator new(size_t size) = delete;
   static void* operator new[](size_t size) = delete;
 
   // Class-specific non-throwing allocation functions
-  static void* operator new(size_t size, const std::nothrow_t& tag) noexcept {
+  static LIBGAV1_ALWAYS_INLINE void* operator new(
+      size_t size, const std::nothrow_t& tag) noexcept {
     if (size > 0x40000000) return nullptr;
     return ::operator new(size, std::align_val_t(kMaxAlignment), tag);
   }
-  static void* operator new[](size_t size, const std::nothrow_t& tag) noexcept {
+  static LIBGAV1_ALWAYS_INLINE void* operator new[](
+      size_t size, const std::nothrow_t& tag) noexcept {
     if (size > 0x40000000) return nullptr;
     return ::operator new[](size, std::align_val_t(kMaxAlignment), tag);
   }
 
   // Class-specific deallocation functions.
-  static void operator delete(void* ptr) noexcept {
+  static LIBGAV1_ALWAYS_INLINE void operator delete(void* ptr) noexcept {
     ::operator delete(ptr, std::align_val_t(kMaxAlignment));
   }
-  static void operator delete[](void* ptr) noexcept {
+  static LIBGAV1_ALWAYS_INLINE void operator delete[](void* ptr) noexcept {
     ::operator delete[](ptr, std::align_val_t(kMaxAlignment));
   }
 
   // Only called if new (std::nothrow) is used and the constructor throws an
   // exception.
-  static void operator delete(void* ptr, const std::nothrow_t& tag) noexcept {
+  static LIBGAV1_ALWAYS_INLINE void operator delete(
+      void* ptr, const std::nothrow_t& tag) noexcept {
     ::operator delete(ptr, std::align_val_t(kMaxAlignment), tag);
   }
   // Only called if new[] (std::nothrow) is used and the constructor throws an
   // exception.
-  static void operator delete[](void* ptr, const std::nothrow_t& tag) noexcept {
+  static LIBGAV1_ALWAYS_INLINE void operator delete[](
+      void* ptr, const std::nothrow_t& tag) noexcept {
     ::operator delete[](ptr, std::align_val_t(kMaxAlignment), tag);
   }
 };
