@@ -15,6 +15,7 @@ third_party {
   identifier {
     type: "Git"
     value: "https://chromium.googlesource.com/codecs/libgav1"
-    version: "v0.20.0"
+    version: "c05bf9be660cf170d7c26bd06bb42b3322180e58"
+    closest_version: "v0.20.0"
   }
 }
