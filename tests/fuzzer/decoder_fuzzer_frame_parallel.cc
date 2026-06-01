@@ -20,7 +20,6 @@
 #include <vector>
 
 #include "examples/file_reader.h"
-#include "examples/file_reader_constants.h"
 #include "examples/file_reader_interface.h"
 #include "src/gav1/decoder.h"
 #include "src/gav1/status_code.h"

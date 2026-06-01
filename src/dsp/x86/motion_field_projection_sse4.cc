@@ -23,12 +23,13 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
-#include "src/dsp/constants.h"
 #include "src/dsp/dsp.h"
 #include "src/dsp/x86/common_sse4.h"
 #include "src/utils/common.h"
 #include "src/utils/constants.h"
+#include "src/utils/reference_info.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {
