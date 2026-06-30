@@ -163,6 +163,17 @@ void MotionFieldProjectionKernel_SSE4_1(
     const int y8_start, const int y8_end, const int x8_start, const int x8_end,
     TemporalMotionField* const motion_field) {
   const ptrdiff_t stride = motion_field->mv.columns();
+  // The final position calculation is represented with int16_t. Valid
+  // position_y8 from its base is at most 7. After considering the horizontal
+  // offset which is at most |stride - 1|, we have the following check,
+  // which means this optimization works for frame width up to 32K (each
+  // position is a 8x8 block).
+  if (stride > 32768 / 8) {
+    MotionFieldProjectionKernel_C(
+        reference_info, reference_to_current_with_sign, dst_sign, y8_start,
+        y8_end, x8_start, x8_end, motion_field);
+    return;
+  }
   // The column range has to be offset by kProjectionMvMaxHorizontalOffset since
   // coordinates in that range could end up being position_x8 because of
   // projection.
@@ -191,12 +202,6 @@ void MotionFieldProjectionKernel_SSE4_1(
   assert(stride == motion_field->reference_offset.columns());
   assert((y8_start & 7) == 0);
   assert((adjusted_x8_start & 7) == 0);
-  // The final position calculation is represented with int16_t. Valid
-  // position_y8 from its base is at most 7. After considering the horizontal
-  // offset which is at most |stride - 1|, we have the following assertion,
-  // which means this optimization works for frame width up to 32K (each
-  // position is a 8x8 block).
-  assert(8 * stride <= 32768);
   const __m128i skip_reference = LoadLo8(skip_references);
   const __m128i r_offsets = LoadLo8(reference_offsets);
   const __m128i division_table = LoadUnaligned16(projection_divisions);
