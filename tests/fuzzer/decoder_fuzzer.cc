@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -51,8 +52,8 @@ void Decode(const uint8_t* const data, const size_t size,
 // Always returns 0. Nonzero return values are reserved by libFuzzer for future
 // use.
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  // Reject large chunks of data to improve fuzzer throughput.
-  if (size > kMaxDataSize) return 0;
+  // Limit data size to improve fuzzer throughput.
+  size = std::min(size, kMaxDataSize);
 
   libgav1::Decoder decoder;
   libgav1::DecoderSettings settings = {};

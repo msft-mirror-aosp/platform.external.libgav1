@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -57,8 +58,8 @@ void ReleaseInputBuffer(void* callback_private_data,
 // Always returns 0. Nonzero return values are reserved by libFuzzer for future
 // use.
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  // Reject large chunks of data to improve fuzzer throughput.
-  if (size > kMaxDataSize) return 0;
+  // Limit data size to improve fuzzer throughput.
+  size = std::min(size, kMaxDataSize);
 
   // Note that |input_buffers| has to outlive the |decoder| object since the
   // |release_input_buffer| callback could be called on the |decoder|'s
