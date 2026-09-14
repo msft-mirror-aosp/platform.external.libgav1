@@ -2684,6 +2684,43 @@ TEST_P(FilmGrainSpeedTest12bpp, DISABLED_Speed) { TestSpeed(kNumSpeedTests); }
 INSTANTIATE_TEST_SUITE_P(C, FilmGrainSpeedTest12bpp, testing::Values(0, 3, 8));
 #endif  // LIBGAV1_MAX_BITDEPTH == 12
 
+// Frame dimensions from b/560292987. With these dimensions
+// |max_luma_num| is 1361 and, in profile 1 (4:4:4), the noise stripe buffer
+// size computation overflowed:
+//   luma: 1361 * 34 * 46408 = 2,147,483,792
+//   chroma: 2 * 1361 * 34 * 46408 = 4,294,967,584, which wrapped around
+//   modulo 2^32 to 288, resulting in a 7 + 288 = 295 entry allocation that
+//   was subsequently overrun.
+TEST(FilmGrainTest, NoiseStripeSizeOverflowFailsAllocation) {
+  // The whole frame path is exercised, so the dsp table must be fully
+  // populated: FilmGrainInit_C() skips the entries that are implemented by the
+  // SIMD versions (e.g. chroma auto regression with NEON).
+  test_utils::ResetDspTable(kBitdepth8);
+  FilmGrainInit_C();
+#if LIBGAV1_ENABLE_NEON
+  FilmGrainInit_NEON();
+#endif
+  if ((GetCpuInfo() & kSSE4_1) != 0) FilmGrainInit_SSE4_1();
+  for (const int num_y_points : {0, 1}) {
+    FilmGrainParams params = {};
+    params.apply_grain = true;
+    params.update_grain = true;
+    params.overlap_flag = false;
+    params.num_y_points = num_y_points;
+    params.num_u_points = 1;
+    params.num_v_points = 1;
+    FilmGrain<8> film_grain(params, /*is_monochrome=*/false,
+                            /*color_matrix_is_identity=*/false,
+                            /*subsampling_x=*/0, /*subsampling_y=*/0,
+                            /*width=*/46408, /*height=*/43521,
+                            /*thread_pool=*/nullptr);
+    uint8_t dummy = 0;
+    EXPECT_FALSE(film_grain.AddNoise(&dummy, 0, &dummy, &dummy, 0, &dummy, 0,
+                                     &dummy, &dummy, 0))
+        << "num_y_points: " << num_y_points;
+  }
+}
+
 }  // namespace
 }  // namespace film_grain
 }  // namespace dsp

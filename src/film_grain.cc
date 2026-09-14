@@ -442,34 +442,45 @@ bool FilmGrain<bitdepth>::AllocateNoiseStripes() {
   // ceil(half_height / 16.0)
   const int max_luma_num = DivideBy16(half_height + 15);
   constexpr int kNoiseStripeHeight = 34;
-  size_t noise_buffer_size = kNoiseStripePadding;
+  // The buffer sizes are computed with 64-bit arithmetic as the products can
+  // exceed the range of int with large frame sizes. Each plane's buffer is
+  // limited to INT32_MAX entries as |noise_stripes_| is an Array2DView whose
+  // row stride is an int.
+  int64_t luma_stripe_size = 0;
+  int64_t luma_buffer_size = 0;
+  int64_t chroma_stripe_size = 0;
+  int64_t chroma_buffer_size = 0;
+  int64_t noise_buffer_size = kNoiseStripePadding;
   if (params_.num_y_points > 0) {
-    noise_buffer_size += max_luma_num * kNoiseStripeHeight * width_;
+    luma_stripe_size = static_cast<int64_t>(kNoiseStripeHeight) * width_;
+    luma_buffer_size = luma_stripe_size * max_luma_num;
+    if (luma_buffer_size > INT32_MAX) return false;
+    noise_buffer_size += luma_buffer_size;
   }
   if (!is_monochrome_) {
-    noise_buffer_size += 2 * max_luma_num *
-                         (kNoiseStripeHeight >> subsampling_y_) *
-                         SubsampledValue(width_, subsampling_x_);
+    chroma_stripe_size =
+        static_cast<int64_t>(kNoiseStripeHeight >> subsampling_y_) *
+        SubsampledValue(width_, subsampling_x_);
+    chroma_buffer_size = chroma_stripe_size * max_luma_num;
+    if (chroma_buffer_size > INT32_MAX) return false;
+    noise_buffer_size += 2 * chroma_buffer_size;
   }
-  noise_buffer_.reset(new (std::nothrow) GrainType[noise_buffer_size]);
+  if (noise_buffer_size > INT32_MAX) return false;
+  noise_buffer_.reset(new (std::nothrow)
+                          GrainType[static_cast<size_t>(noise_buffer_size)]);
   if (noise_buffer_ == nullptr) return false;
   GrainType* noise_buffer = noise_buffer_.get();
   if (params_.num_y_points > 0) {
-    noise_stripes_[kPlaneY].Reset(max_luma_num, kNoiseStripeHeight * width_,
-                                  noise_buffer);
-    noise_buffer += max_luma_num * kNoiseStripeHeight * width_;
+    noise_stripes_[kPlaneY].Reset(
+        max_luma_num, static_cast<int>(luma_stripe_size), noise_buffer);
+    noise_buffer += luma_buffer_size;
   }
   if (!is_monochrome_) {
-    noise_stripes_[kPlaneU].Reset(max_luma_num,
-                                  (kNoiseStripeHeight >> subsampling_y_) *
-                                      SubsampledValue(width_, subsampling_x_),
-                                  noise_buffer);
-    noise_buffer += max_luma_num * (kNoiseStripeHeight >> subsampling_y_) *
-                    SubsampledValue(width_, subsampling_x_);
-    noise_stripes_[kPlaneV].Reset(max_luma_num,
-                                  (kNoiseStripeHeight >> subsampling_y_) *
-                                      SubsampledValue(width_, subsampling_x_),
-                                  noise_buffer);
+    noise_stripes_[kPlaneU].Reset(
+        max_luma_num, static_cast<int>(chroma_stripe_size), noise_buffer);
+    noise_buffer += chroma_buffer_size;
+    noise_stripes_[kPlaneV].Reset(
+        max_luma_num, static_cast<int>(chroma_stripe_size), noise_buffer);
   }
   return true;
 }
