@@ -171,7 +171,7 @@ void PostFilter::PrepareCdefBlock(int block_width4x4, int block_height4x4,
     uint16_t* cdef_src = cdef_source + static_cast<int>(plane == kPlaneV) *
                                            kCdefUnitSizeWithBorders *
                                            kCdefUnitSizeWithBorders;
-    const int src_stride = frame_buffer_.stride(plane) / sizeof(Pixel);
+    const ptrdiff_t src_stride = frame_buffer_.stride(plane) / sizeof(Pixel);
     const Pixel* src_buffer =
         reinterpret_cast<const Pixel*>(source_buffer_[plane]) +
         (start_y - y_offset) * src_stride + start_x;
@@ -201,7 +201,7 @@ void PostFilter::PrepareCdefBlock(int block_width4x4, int block_height4x4,
     } else {
       const Pixel* top_border =
           (thread_pool_ == nullptr) ? src_buffer : cdef_border;
-      const int top_border_stride =
+      const ptrdiff_t top_border_stride =
           (thread_pool_ == nullptr) ? src_stride : cdef_border_stride;
       for (int y = 0; y < kCdefBorder; ++y) {
         CopyRowForCdef(top_border, block_width, unit_width, is_frame_left,
@@ -265,7 +265,7 @@ void PostFilter::PrepareCdefBlock(int block_width4x4, int block_height4x4,
     } else {
       const Pixel* bottom_border =
           (thread_pool_ == nullptr) ? src_buffer : cdef_border;
-      const int bottom_border_stride =
+      const ptrdiff_t bottom_border_stride =
           (thread_pool_ == nullptr) ? src_stride : cdef_border_stride;
       do {
         CopyRowForCdef(bottom_border, block_width, unit_width, is_frame_left,

@@ -121,7 +121,8 @@ void PostFilter::ApplySuperResForOneSuperBlockRow(int row4x4_start, int sb4x4,
     do {
       const int row =
           (MultiplyBy4(row4x4) >> subsampling_y_[plane]) + num_rows_extra;
-      const ptrdiff_t row_offset = row * frame_buffer_.stride(plane);
+      const ptrdiff_t row_offset =
+          static_cast<ptrdiff_t>(row) * frame_buffer_.stride(plane);
       src[plane] = cdef_buffer_[plane] + row_offset;
       dst[plane] = superres_buffer_[plane] + row_offset;
       // Note that the |num_rows_extra| subtraction is done after the value is
@@ -141,7 +142,8 @@ void PostFilter::ApplySuperResForOneSuperBlockRow(int row4x4_start, int sb4x4,
     int plane = kPlaneY;
     do {
       const ptrdiff_t row_offset =
-          (MultiplyBy4(row4x4_start) >> subsampling_y_[plane]) *
+          static_cast<ptrdiff_t>(MultiplyBy4(row4x4_start) >>
+                                 subsampling_y_[plane]) *
           frame_buffer_.stride(plane);
       src[plane] = cdef_buffer_[plane] + row_offset;
       dst[plane] = superres_buffer_[plane] + row_offset;
@@ -198,7 +200,8 @@ void PostFilter::ApplySuperResThreaded() {
       const int plane_width =
           MultiplyBy4(frame_header_.columns4x4) >> subsampling_x_[plane];
       uint8_t* const input =
-          src[plane] + rows[plane] * frame_buffer_.stride(plane);
+          src[plane] +
+          rows[plane] * static_cast<ptrdiff_t>(frame_buffer_.stride(plane));
       uint8_t* const line_buffer_start =
           superres_line_buffer_.data(plane) +
           line_buffer_row * superres_line_buffer_.stride(plane) +

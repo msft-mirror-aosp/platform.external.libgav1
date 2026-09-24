@@ -215,8 +215,10 @@ class PostFilter {
   LoopRestorationInfo* restoration_info() const { return restoration_info_; }
   uint8_t* GetBufferOffset(uint8_t* base_buffer, int stride, Plane plane,
                            int row, int column) const {
-    return base_buffer + (row >> subsampling_y_[plane]) * stride +
-           ((column >> subsampling_x_[plane]) << pixel_size_log2_);
+    return base_buffer +
+           static_cast<ptrdiff_t>(row >> subsampling_y_[plane]) * stride +
+           (static_cast<ptrdiff_t>(column >> subsampling_x_[plane])
+            << pixel_size_log2_);
   }
   uint8_t* GetSourceBuffer(Plane plane, int row4x4, int column4x4) const {
     return GetBufferOffset(source_buffer_[plane], frame_buffer_.stride(plane),

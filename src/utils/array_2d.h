@@ -19,6 +19,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <new>
@@ -79,7 +80,12 @@ class Array2D {
 
   LIBGAV1_MUST_USE_RESULT bool Reset(int rows, int columns,
                                      bool zero_initialize = true) {
-    size_ = rows * columns;
+    // The product is computed with 64-bit arithmetic as it can exceed the
+    // range of int with large frame sizes. The buffer is limited to INT32_MAX
+    // entries as Array2DView's row stride is an int.
+    const int64_t size = static_cast<int64_t>(rows) * columns;
+    if (size > INT32_MAX) return false;
+    size_ = static_cast<size_t>(size);
     // If T is not a trivial type, we should always reallocate the data_
     // buffer, so that the destructors of any existing objects are invoked.
     if (!std::is_trivial<T>::value || allocated_size_ < size_) {

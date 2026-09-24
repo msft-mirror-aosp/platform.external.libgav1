@@ -1173,12 +1173,12 @@ bool Tile::BlockInterPrediction(
     convolve_buffer_stride = reference_buffer->stride(plane);
     if (reference_frame_index == -1 || is_scaled) {
       block_start = reference_buffer->data(plane) +
-                    ref_block_start_y * reference_buffer->stride(plane) +
+                    ref_block_start_y * convolve_buffer_stride +
                     ref_block_start_x * pixel_size;
     } else {
       block_start = reference_buffer->data(plane) +
                     (ref_block_start_y + kConvolveBorderLeftTop) *
-                        reference_buffer->stride(plane) +
+                        convolve_buffer_stride +
                     (ref_block_start_x + kConvolveBorderLeftTop) * pixel_size;
     }
   } else {
